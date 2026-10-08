@@ -19,7 +19,7 @@ import {
   type Quote,
   type QuoteLine,
 } from "../api";
-import { errorMessage, formatEuro, formatUnitPrice, round2, todayIso } from "../format";
+import { errorMessage, formatEuro, formatUnitPrice, MOD, round2, todayIso } from "../format";
 import { exportQuotePdf } from "../composables/usePdf";
 import { readDraft, removeDraft, writeDraft, type QuoteDraft } from "../drafts";
 import { useConfirm } from "primevue/useconfirm";
@@ -540,7 +540,7 @@ async function pasteLines(anchor: EditLine | null = null) {
   }
 }
 
-// ---------- Raccourcis clavier ⌘C / ⌘X / ⌘V / Échap ----------
+// ---------- Raccourcis clavier ⌘C / ⌘X / ⌘V / Échap (Ctrl sous Windows) ----------
 // Le copier-coller de texte dans les champs reste prioritaire :
 // - ⌘C / ⌘X copient les lignes sélectionnées, sauf si du texte est sélectionné dans le champ actif ;
 // - ⌘V colle les lignes si le presse-papiers contient encore nos lignes (sinon, collage de texte normal),
@@ -1116,15 +1116,15 @@ onMounted(async () => {
       <div v-if="selectedKeys.size || clipboard" class="selection-bar">
         <template v-if="selectedKeys.size">
           <strong>{{ selectedKeys.size }} sélectionnée(s)</strong>
-          <Button v-tooltip.bottom="'⌘C'" label="Copier" icon="pi pi-copy" text size="small" @click="copySelection()" />
-          <Button v-tooltip.bottom="'⌘X'" label="Couper" icon="pi pi-clone" text size="small" @click="cutSelection()" />
+          <Button v-tooltip.bottom="`${MOD}C`" label="Copier" icon="pi pi-copy" text size="small" @click="copySelection()" />
+          <Button v-tooltip.bottom="`${MOD}X`" label="Couper" icon="pi pi-clone" text size="small" @click="cutSelection()" />
           <Button label="Supprimer" icon="pi pi-trash" text size="small" severity="danger" @click="deleteSelection" />
           <Button v-tooltip.bottom="'Échap'" icon="pi pi-times" text rounded size="small" severity="secondary" @click="clearSelection" />
         </template>
         <span class="spacer" />
         <Button
           v-if="clipboard"
-          v-tooltip.bottom="selectedKeys.size ? 'Colle après la dernière ligne sélectionnée (⌘V)' : 'Colle en fin de devis (⌘V)'"
+          v-tooltip.bottom="`${selectedKeys.size ? 'Colle après la dernière ligne sélectionnée' : 'Colle en fin de devis'} (${MOD}V)`"
           :label="`Coller ${clipboard.lines.length} ligne(s)`"
           icon="pi pi-clipboard"
           size="small"

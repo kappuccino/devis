@@ -10,7 +10,9 @@ npm run tauri dev      # développement
 npm run tauri build    # application installable
 ```
 
-La base SQLite est stockée dans `~/Library/Application Support/fr.devis.app/devis.db` (macOS).
+La base SQLite est stockée dans le dossier de données de l'utilisateur :
+- macOS : `~/Library/Application Support/fr.devis.app/devis.db`
+- Windows : `%APPDATA%\fr.devis.app\devis.db`
 Au premier lancement, aller dans **Réglages → Importer un fichier LPN…**.
 
 ## Données importées

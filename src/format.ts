@@ -28,3 +28,6 @@ export const round2 = (v: number) => Math.round(Math.round(v * 1e9) / 1e7) / 100
 export function errorMessage(e: unknown) {
   return typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
 }
+
+/** Touche de raccourci affichée : ⌘ sur Mac, Ctrl+ sous Windows. */
+export const MOD = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? "⌘" : "Ctrl+";

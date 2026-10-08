@@ -4,6 +4,7 @@ import Toast from "primevue/toast";
 import ConfirmDialog from "primevue/confirmdialog";
 import { useRoute } from "vue-router";
 import logo from "./assets/logo-cahors.png";
+import { MOD } from "./format";
 
 const route = useRoute();
 
@@ -51,7 +52,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
           <span class="brand-app">Devis</span>
         </span>
         <button
-          v-tooltip.right="collapsed ? 'Déplier (⌘B)' : 'Replier (⌘B)'"
+          v-tooltip.right="`${collapsed ? 'Déplier' : 'Replier'} (${MOD}B)`"
           class="icon-btn"
           :aria-label="collapsed ? 'Déplier la barre latérale' : 'Replier la barre latérale'"
           @click="toggle"
