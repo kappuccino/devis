@@ -58,6 +58,7 @@ const blankLine = (): EditLine => ({
   unit_price: 0,
   discount: 0,
   is_option: false,
+  enedis_code: null,
   price_source: null,
   public_price: null,
   threshold_price: null,
@@ -328,6 +329,7 @@ async function resolve(line: EditLine, focusNext = false) {
     const p = await api.resolvePrice(pricing.value, r);
     Object.assign(line, {
       product_ref: p.product_ref,
+      enedis_code: p.enedis_code,
       designation: p.designation,
       unit_price: p.unit_price,
       priceText: editText(p.unit_price, 2),
@@ -644,6 +646,7 @@ const isBelowThreshold = (l: EditLine) =>
 const toQuoteLine = (l: EditLine): QuoteLine => ({
   kind: l.kind,
   product_ref: l.product_ref,
+  enedis_code: l.enedis_code ?? null,
   designation: l.designation,
   quantity: l.quantity,
   unit_price: l.unit_price,
@@ -728,7 +731,11 @@ async function fillMissingReferencePrices() {
     missing.map(async (l) => {
       try {
         const p = await api.resolvePrice(ctx, l.product_ref);
-        Object.assign(l, { public_price: p.public_price, threshold_price: p.threshold_price });
+        Object.assign(l, {
+          public_price: p.public_price,
+          threshold_price: p.threshold_price,
+          enedis_code: l.enedis_code ?? p.enedis_code,
+        });
       } catch {
         // Produit disparu du catalogue : colonnes laissées vides.
       }
@@ -1145,6 +1152,7 @@ onMounted(async () => {
                 @click="toggleAll"
               />
             </th>
+            <th style="width: 100px">Code ENEDIS</th>
             <th style="width: 190px">Référence</th>
             <th>Désignation</th>
             <th style="width: 90px" class="num">Qté</th>
@@ -1191,7 +1199,7 @@ onMounted(async () => {
                 />
               </td>
               <template v-if="line.kind === 'text'">
-                <td colspan="8">
+                <td colspan="9">
                   <Textarea
                     :id="`text-${line.key}`"
                     v-model="line.designation"
@@ -1206,7 +1214,7 @@ onMounted(async () => {
                 <td></td>
               </template>
               <template v-else>
-                <td colspan="6">
+                <td colspan="7">
                   <InputText v-model="line.designation" fluid size="small" class="subtotal-label" />
                 </td>
                 <td class="num subtotal-amount">{{ formatEuro(subtotalAmounts.get(line.key)) }}</td>
@@ -1252,6 +1260,7 @@ onMounted(async () => {
                   @click="onSelectClick(line, $event)"
                 />
               </td>
+              <td class="enedis mono">{{ line.enedis_code }}</td>
               <td>
                 <AutoComplete
                   :model-value="line.product_ref"
@@ -1360,7 +1369,7 @@ onMounted(async () => {
         </tbody>
         <tfoot>
           <tr>
-            <td colspan="2"></td>
+            <td colspan="3"></td>
             <td colspan="2" class="add-lines">
               <Button
                 v-tooltip.bottom="'Ajoutée en fin de devis, à déplacer avec la poignée'"
@@ -1384,7 +1393,7 @@ onMounted(async () => {
             <td colspan="3"></td>
           </tr>
           <tr class="global-discount">
-            <td colspan="4"></td>
+            <td colspan="5"></td>
             <td colspan="3" class="num total-label">
               <label for="global-discount">Remise sur le total</label>
             </td>
@@ -1405,14 +1414,14 @@ onMounted(async () => {
             <td colspan="3"></td>
           </tr>
           <tr>
-            <td colspan="4"></td>
+            <td colspan="5"></td>
             <td colspan="4" class="num total-label">Total HT remisé</td>
             <td class="num total">{{ formatEuro(netTotal) }}</td>
             <td colspan="3"></td>
           </tr>
           <!-- Lignes en option : à part, tout en bas, hors total HT. -->
           <tr v-if="lines.some((l) => l.is_option && l.product_ref)" class="options-total">
-            <td colspan="4"></td>
+            <td colspan="5"></td>
             <td colspan="4" class="num total-label">Total options HT</td>
             <td class="num total">{{ formatEuro(totals.options) }}</td>
             <td colspan="3"></td>
@@ -1566,6 +1575,12 @@ tr:hover .drag-handle i {
 
 /* Glisser-déposer : lignes déplacées estompées, trait vert à l'endroit du dépôt. */
 /* Lignes en option : hors total, en italique avec un liseré. */
+.lines td.enedis {
+  padding-top: 11px;
+  color: var(--app-muted);
+  white-space: nowrap;
+}
+
 .lines tr.option-row td {
   font-style: italic;
   background: color-mix(in srgb, var(--app-muted) 7%, transparent);

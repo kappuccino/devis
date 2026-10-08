@@ -40,6 +40,8 @@ fn cheapest_in(conn: &Connection, lists_json: &str, product_ref: &str) -> rusqli
 #[derive(Debug, Serialize, PartialEq)]
 pub struct ResolvedPrice {
     pub product_ref: String,
+    /// Code ENEDIS du produit (catalogue), s'il en a un.
+    pub enedis_code: Option<String>,
     pub designation: String,
     pub unit_price: f64,
     /// Code de la liste de prix, ou « Public -X% CFO » quand on retombe sur le prix public.
@@ -58,6 +60,11 @@ pub fn resolve_price(conn: &Connection, ctx: &PricingContext, product_ref: &str)
     let typed = product_ref.trim();
     let canonical = canonical_ref(conn, &lists, typed).map_err(|e| e.to_string())?;
     let product_ref = canonical.as_deref().unwrap_or(typed);
+    let enedis_code: Option<String> = conn
+        .query_row("SELECT enedis_code FROM products WHERE ref = ?1", [product_ref], |r| r.get(0))
+        .optional()
+        .map_err(|e| e.to_string())?
+        .flatten();
     let product: Option<(String, f64, Option<String>, Option<f64>)> = conn
         .query_row(
             "SELECT designation, public_price, family, threshold_price FROM products WHERE ref = ?1",
@@ -91,6 +98,7 @@ pub fn resolve_price(conn: &Connection, ctx: &PricingContext, product_ref: &str)
         };
         return Ok(ResolvedPrice {
             product_ref: product_ref.to_string(),
+            enedis_code,
             designation,
             unit_price: round2(price),
             source: list_code,
@@ -117,6 +125,7 @@ pub fn resolve_price(conn: &Connection, ctx: &PricingContext, product_ref: &str)
 
     Ok(ResolvedPrice {
         product_ref: product_ref.to_string(),
+        enedis_code,
         designation,
         unit_price,
         source,
@@ -315,6 +324,14 @@ mod tests {
         assert_eq!(line_total(3.0, 12.35, 0.0), 37.05);
         assert_eq!(discounted_total(1000.0, 5.0), 950.0);
         assert_eq!(discounted_total(1243.78, 3.5), 1200.25);
+    }
+
+    #[test]
+    fn enedis_code_comes_from_catalogue() {
+        let conn = setup();
+        conn.execute("UPDATE products SET enedis_code = '67.98.302' WHERE ref = 'A1'", []).unwrap();
+        assert_eq!(resolve_price(&conn, &ctx(), "A1").unwrap().enedis_code.as_deref(), Some("67.98.302"));
+        assert_eq!(resolve_price(&conn, &ctx(), "X9").unwrap().enedis_code, None);
     }
 
     #[test]

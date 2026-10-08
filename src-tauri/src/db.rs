@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS quote_lines (
     position     INTEGER NOT NULL,
     kind         TEXT NOT NULL DEFAULT 'item',
     product_ref  TEXT NOT NULL,
+    -- Code ENEDIS du produit, copié au moment du devis (imprimé sur le PDF).
+    enedis_code  TEXT,
     designation  TEXT NOT NULL DEFAULT '',
     quantity     REAL NOT NULL DEFAULT 1,
     unit_price   REAL NOT NULL DEFAULT 0,
@@ -140,6 +142,13 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // Lignes en option et liste de prix forcée.
     add_column(conn, "quote_lines", "is_option", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "quotes", "forced_price_list", "TEXT NOT NULL DEFAULT ''")?;
+    // Code ENEDIS sur les lignes : repris du catalogue pour les devis existants.
+    if add_column(conn, "quote_lines", "enedis_code", "TEXT")? {
+        conn.execute_batch(
+            "UPDATE quote_lines SET enedis_code = (SELECT enedis_code FROM products WHERE ref = quote_lines.product_ref)
+             WHERE kind = 'item'",
+        )?;
+    }
     Ok(())
 }
 

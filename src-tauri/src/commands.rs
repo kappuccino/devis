@@ -310,6 +310,9 @@ pub struct QuoteLine {
     #[serde(default = "item_kind")]
     pub kind: String,
     pub product_ref: String,
+    /// Code ENEDIS, copié du catalogue à la saisie de la ligne.
+    #[serde(default)]
+    pub enedis_code: Option<String>,
     pub designation: String,
     pub quantity: f64,
     pub unit_price: f64,
@@ -398,7 +401,7 @@ fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
     quote.lines = query_all(
         conn,
         "SELECT kind, product_ref, designation, quantity, unit_price, price_source, public_price, threshold_price,
-                discount, is_option
+                discount, is_option, enedis_code
          FROM quote_lines WHERE quote_id = ?1 ORDER BY position",
         [id],
         |r| {
@@ -413,6 +416,7 @@ fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
                 threshold_price: r.get(7)?,
                 discount: r.get(8)?,
                 is_option: r.get(9)?,
+                enedis_code: r.get(10)?,
             })
         },
     )?;
@@ -509,8 +513,8 @@ pub fn save_quote(state: State<AppState>, mut quote: Quote) -> CmdResult<Quote> 
         tx.execute(
             "INSERT INTO quote_lines
              (quote_id, position, kind, product_ref, designation, quantity, unit_price, price_source, line_total,
-              public_price, threshold_price, discount, is_option)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+              public_price, threshold_price, discount, is_option, enedis_code)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 id,
                 i as i64,
@@ -524,7 +528,8 @@ pub fn save_quote(state: State<AppState>, mut quote: Quote) -> CmdResult<Quote> 
                 l.public_price,
                 l.threshold_price,
                 l.discount,
-                l.is_option
+                l.is_option,
+                l.enedis_code
             ],
         )
         .map_err(err)?;

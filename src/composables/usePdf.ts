@@ -64,11 +64,14 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
   const th = (text: string, alignment: "left" | "right" = "left") => ({ text, style: "th", alignment });
   // Lignes de texte sur toute la largeur ; sous-totaux surlignés.
   // La colonne « Remise » n'apparaît que si au moins une ligne a une remise supplémentaire.
+  // Idem pour le code ENEDIS (avant la référence) : seulement si au moins un produit en a un.
   const withDiscount = quote.lines.some((l) => l.kind === "item" && l.discount > 0);
-  const cols = withDiscount ? 7 : 6;
+  const withEnedis = quote.lines.some((l) => l.kind === "item" && l.enedis_code);
+  const cols = 6 + (withDiscount ? 1 : 0) + (withEnedis ? 1 : 0);
   const empties = (n: number) => Array.from({ length: n }, () => ({}));
   const body: TableCell[][] = [
     [
+      ...(withEnedis ? [th("Code ENEDIS")] : []),
       th("Référence"),
       th("Désignation"),
       th("Qté", "right"),
@@ -92,6 +95,7 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
       ]);
     } else {
       body.push([
+        ...(withEnedis ? [{ text: l.enedis_code ?? "", style: "mono" }] : []),
         { text: l.product_ref, style: "mono" },
         // Ligne en option : signalée, et hors total HT (comptée dans « Total options »).
         l.is_option ? { text: [l.designation, { text: "  (option)", style: "optionTag" }], italics: true } : l.designation,
@@ -107,7 +111,16 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
   const lines: Content = {
     table: {
       headerRows: 1,
-      widths: withDiscount ? [58, "*", 34, 58, 58, 44, 66] : [62, "*", 38, 62, 62, 70],
+      widths: [
+        ...(withEnedis ? [54] : []),
+        withEnedis ? 54 : 62,
+        "*",
+        34,
+        withDiscount || withEnedis ? 56 : 62,
+        withDiscount || withEnedis ? 56 : 62,
+        ...(withDiscount ? [42] : []),
+        withDiscount || withEnedis ? 64 : 70,
+      ],
       body,
       dontBreakRows: true,
     },

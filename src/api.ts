@@ -64,6 +64,7 @@ export interface ClientRef {
 
 export interface ResolvedPrice {
   product_ref: string;
+  enedis_code: string | null;
   designation: string;
   unit_price: number;
   source: string;
@@ -92,6 +93,8 @@ export interface QuoteSummary {
 export interface QuoteLine {
   kind: "item" | "text" | "subtotal";
   product_ref: string;
+  /** Code ENEDIS, copié du catalogue à la saisie de la ligne. */
+  enedis_code: string | null;
   designation: string;
   /** Vide (null) tant qu'elle n'a pas été saisie ; enregistrée à 0. */
   quantity: number | null;
