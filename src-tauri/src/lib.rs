@@ -1,0 +1,59 @@
+mod commands;
+mod db;
+mod import;
+mod pricing;
+
+use rusqlite::Connection;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, MutexGuard};
+use tauri::Manager;
+
+pub struct AppState {
+    pub db: Arc<Mutex<Connection>>,
+    pub db_path: PathBuf,
+}
+
+impl AppState {
+    pub fn conn(&self) -> MutexGuard<'_, Connection> {
+        self.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            // ~/Library/Application Support/fr.devis.app/devis.db sur macOS
+            let dir = app.path().app_data_dir()?;
+            std::fs::create_dir_all(&dir)?;
+            let db_path = dir.join("devis.db");
+            let conn = db::open(&db_path)?;
+            app.manage(AppState { db: Arc::new(Mutex::new(conn)), db_path });
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::list_products,
+            commands::search_products,
+            commands::list_clients,
+            commands::get_client,
+            commands::update_client,
+            commands::list_price_lists,
+            commands::get_price_list_items,
+            commands::get_price_list_clients,
+            commands::resolve_price,
+            commands::list_quotes,
+            commands::get_quote,
+            commands::save_quote,
+            commands::delete_quote,
+            commands::duplicate_quote,
+            commands::get_settings,
+            commands::save_settings,
+            commands::db_stats,
+            commands::import_lpn,
+            commands::save_file,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
