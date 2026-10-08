@@ -1152,7 +1152,7 @@ onMounted(async () => {
                 @click="toggleAll"
               />
             </th>
-            <th style="width: 100px">Code ENEDIS</th>
+            <th style="width: 90px">ENEDIS</th>
             <th style="width: 190px">Référence</th>
             <th>Désignation</th>
             <th style="width: 90px" class="num">Qté</th>
