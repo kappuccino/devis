@@ -168,7 +168,15 @@ fn canonical_ref(conn: &Connection, lists_json: &str, typed: &str) -> rusqlite::
             _ => return Ok(None),
         }
     }
-    Ok(None)
+    // Enfin, un code ENEDIS (« 67.98.302 » ou « 6798302 ») : la référence du produit qui le porte.
+    let by_enedis: Vec<String> = conn
+        .prepare(
+            "SELECT ref FROM products
+             WHERE enedis_code IS NOT NULL AND replace(enedis_code, '.', '') = replace(replace(?1, '.', ''), ' ', '')",
+        )?
+        .query_map([typed], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(if by_enedis.len() == 1 { by_enedis.into_iter().next() } else { None })
 }
 
 /// Prix unitaire après la remise supplémentaire de la ligne (en %), au centime.
@@ -332,6 +340,15 @@ mod tests {
         conn.execute("UPDATE products SET enedis_code = '67.98.302' WHERE ref = 'A1'", []).unwrap();
         assert_eq!(resolve_price(&conn, &ctx(), "A1").unwrap().enedis_code.as_deref(), Some("67.98.302"));
         assert_eq!(resolve_price(&conn, &ctx(), "X9").unwrap().enedis_code, None);
+    }
+
+    #[test]
+    fn product_found_by_enedis_code() {
+        let conn = setup();
+        conn.execute("UPDATE products SET enedis_code = '67.98.302' WHERE ref = 'A1'", []).unwrap();
+        assert_eq!(resolve_price(&conn, &ctx(), "67.98.302").unwrap().product_ref, "A1");
+        assert_eq!(resolve_price(&conn, &ctx(), "6798302").unwrap().product_ref, "A1");
+        assert!(resolve_price(&conn, &ctx(), "67.98.999").is_err());
     }
 
     #[test]

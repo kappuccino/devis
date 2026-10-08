@@ -36,6 +36,8 @@ const confirm = useConfirm();
 interface EditLine extends QuoteLine {
   key: number;
   resolvedRef: string | null;
+  /** Code ENEDIS du produit trouvé (pour savoir si la colonne ENEDIS a été modifiée). */
+  resolvedEnedis?: string | null;
   /** Réf en cours de résolution : évite un double appel (sélection + Entrée + blur). */
   pendingRef: string | null;
   error: string | null;
@@ -91,6 +93,8 @@ const editText = (v: number | null, decimals: 2 | 3) =>
 /** Ligne chargée (devis, collage) : on prépare le texte de ses champs. */
 const withTexts = <T extends QuoteLine>(l: T) => ({
   ...l,
+  // Le code ENEDIS affiché correspond déjà au produit : le quitter ne relance pas de recherche.
+  resolvedEnedis: l.enedis_code,
   qtyText: editText(l.quantity, 3),
   priceText: editText(l.unit_price, 2),
   discountText: l.discount ? editText(l.discount, 3) : "",
@@ -297,13 +301,14 @@ async function searchProducts(e: AutoCompleteCompleteEvent, line: EditLine) {
 }
 
 /** La dernière ligne est toujours vide : on y place le curseur pour enchaîner la saisie. */
-async function focusNewLine() {
+/** `field` : on reste dans la colonne utilisée pour saisir (référence ou code ENEDIS). */
+async function focusNewLine(field: "ref" | "enedis" = "ref") {
   const last = lines.value[lines.value.length - 1];
   await nextTick();
-  document.getElementById(`ref-${last.key}`)?.focus();
+  document.getElementById(`${field}-${last.key}`)?.focus();
 }
 
-async function resolve(line: EditLine, focusNext = false) {
+async function resolve(line: EditLine, focusNext = false, field: "ref" | "enedis" = "ref") {
   const r = line.product_ref.trim();
   if (r && r === line.pendingRef) return;
   line.product_ref = r;
@@ -337,6 +342,7 @@ async function resolve(line: EditLine, focusNext = false) {
       public_price: p.public_price,
       threshold_price: p.threshold_price,
       resolvedRef: p.product_ref,
+      resolvedEnedis: p.enedis_code,
       error: null,
     });
   } catch (e) {
@@ -352,7 +358,7 @@ async function resolve(line: EditLine, focusNext = false) {
   }
   if (lines.value[lines.value.length - 1] === line) lines.value.push(blankLine());
   // En cas d'erreur, le curseur reste sur la ligne à corriger.
-  if (focusNext && !line.error) focusNewLine();
+  if (focusNext && !line.error) focusNewLine(field);
 }
 
 function onRefBlur(line: EditLine) {
@@ -363,6 +369,22 @@ function onRefBlur(line: EditLine) {
 function commitRef(line: EditLine) {
   if (line.product_ref.trim() !== line.resolvedRef) resolve(line, true);
   else if (line.product_ref && !line.error) focusNewLine();
+}
+
+/**
+ * Saisie par code ENEDIS (colonne ENEDIS) : le serveur retrouve le produit qui porte ce code
+ * (avec ou sans les points). Entrée valide et passe à la colonne ENEDIS d'une nouvelle ligne.
+ */
+function commitEnedis(line: EditLine, focusNext: boolean) {
+  const code = (line.enedis_code ?? "").trim();
+  if (!code) return;
+  const unchanged = line.resolvedRef != null && code === line.resolvedEnedis;
+  if (unchanged) {
+    if (focusNext && !line.error) focusNewLine("enedis");
+    return;
+  }
+  line.product_ref = code;
+  resolve(line, focusNext, "enedis");
 }
 
 /**
@@ -1260,7 +1282,20 @@ onMounted(async () => {
                   @click="onSelectClick(line, $event)"
                 />
               </td>
-              <td class="enedis mono">{{ line.enedis_code }}</td>
+              <td>
+                <InputText
+                  :id="`enedis-${line.key}`"
+                  :model-value="line.enedis_code ?? ''"
+                  autocomplete="off"
+                  placeholder="Code…"
+                  fluid
+                  size="small"
+                  class="mono enedis-input"
+                  @update:model-value="(v: string | undefined) => (line.enedis_code = v ?? '')"
+                  @keydown.enter="commitEnedis(line, true)"
+                  @blur="commitEnedis(line, false)"
+                />
+              </td>
               <td>
                 <AutoComplete
                   :model-value="line.product_ref"
@@ -1283,6 +1318,7 @@ onMounted(async () => {
                   <template #option="{ option }">
                     <div class="opt">
                       <span class="mono">{{ option.ref }}</span>
+                      <span v-if="option.enedis_code" class="mono muted">{{ option.enedis_code }}</span>
                       <span class="muted">{{ option.designation }}</span>
                     </div>
                   </template>
@@ -1575,10 +1611,8 @@ tr:hover .drag-handle i {
 
 /* Glisser-déposer : lignes déplacées estompées, trait vert à l'endroit du dépôt. */
 /* Lignes en option : hors total, en italique avec un liseré. */
-.lines td.enedis {
-  padding-top: 11px;
-  color: var(--app-muted);
-  white-space: nowrap;
+.lines :deep(.enedis-input) {
+  font-size: 0.9em;
 }
 
 .lines tr.option-row td {

@@ -65,6 +65,7 @@ pub fn list_products(state: State<AppState>) -> CmdResult<Vec<Product>> {
 pub struct ProductHit {
     pub r#ref: String,
     pub designation: String,
+    pub enedis_code: Option<String>,
 }
 
 /// Recherche pour l'autocomplétion des lignes de devis : produits du catalogue
@@ -75,11 +76,12 @@ pub fn search_products(state: State<AppState>, query: String, price_lists: Vec<S
     let like = format!("%{}%", query.trim());
     query_all(
         &conn,
-        "SELECT ref, designation FROM (
-             SELECT ref, designation FROM products
+        "SELECT ref, designation, enedis_code FROM (
+             SELECT ref, designation, enedis_code FROM products
              WHERE ref LIKE ?1 OR designation LIKE ?1
+                OR replace(enedis_code, '.', '') LIKE replace(?1, '.', '')
              UNION
-             SELECT pli.product_ref, MAX(COALESCE(pli.designation, ''))
+             SELECT pli.product_ref, MAX(COALESCE(pli.designation, '')), NULL
              FROM price_list_items pli
              WHERE pli.price_list_code IN (SELECT value FROM json_each(?2))
                AND (pli.product_ref LIKE ?1 OR pli.designation LIKE ?1)
@@ -87,7 +89,7 @@ pub fn search_products(state: State<AppState>, query: String, price_lists: Vec<S
              GROUP BY pli.product_ref
          ) ORDER BY ref LIMIT 50",
         params![like, serde_json::to_string(&price_lists).map_err(err)?],
-        |r| Ok(ProductHit { r#ref: r.get(0)?, designation: r.get(1)? }),
+        |r| Ok(ProductHit { r#ref: r.get(0)?, designation: r.get(1)?, enedis_code: r.get(2)? }),
     )
 }
 

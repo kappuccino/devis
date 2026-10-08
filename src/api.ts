@@ -16,6 +16,7 @@ export interface Product {
 export interface ProductHit {
   ref: string;
   designation: string;
+  enedis_code: string | null;
 }
 
 export interface Client {
