@@ -265,8 +265,17 @@ mod tests {
         let report = import_lpn(&mut conn, Path::new(&path)).unwrap();
         println!("{report:#?}");
         assert!(report.products > 0 && report.clients > 0 && report.price_list_items > 0);
-        let ctx = crate::pricing::PricingContext { price_lists: vec!["TLISTE1".into()], discount_cfa: 60.0, discount_cfo: 60.0, forced_price_list: None };
-        let p = crate::pricing::resolve_price(&conn, &ctx, "REF0001").unwrap();
-        println!("{p:?}");
+        // Un prix de liste pris dans le fichier lui-même doit se retrouver tel quel.
+        let (list, product, price): (String, String, f64) = conn
+            .query_row(
+                "SELECT price_list_code, product_ref, MIN(price) FROM price_list_items
+                 GROUP BY price_list_code, product_ref LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        let ctx = crate::pricing::PricingContext { price_lists: vec![list], ..Default::default() };
+        let p = crate::pricing::resolve_price(&conn, &ctx, &product).unwrap();
+        assert_eq!(p.unit_price, crate::pricing::round2(price));
     }
 }
