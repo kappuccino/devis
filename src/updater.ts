@@ -1,5 +1,5 @@
 // Mises à jour de l'application depuis les releases GitHub (signées avec la clé du projet).
-import { reactive } from "vue";
+import { markRaw, reactive } from "vue";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 
@@ -25,8 +25,11 @@ export async function checkForUpdate(silent = false) {
   updater.error = "";
   updater.upToDate = false;
   try {
-    updater.available = await check();
-    updater.upToDate = !updater.available;
+    // markRaw : l'objet Update a des champs privés (#rid) qu'un Proxy réactif de Vue
+    // rend illisibles (« Cannot read private member… » au téléchargement).
+    const update = await check();
+    updater.available = update ? markRaw(update) : null;
+    updater.upToDate = !update;
   } catch (e) {
     if (!silent) updater.error = e instanceof Error ? e.message : String(e);
     else console.warn("[updater] vérification impossible :", e);
