@@ -50,6 +50,18 @@
       "webviewInstallMode": {
         "type": "embedBootstrapper"
       }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJGRTQ3N0FEMDZFNkE4REYKUldUZnFPWUdyWGZrdjZ0UjBQd3J4NHQ5RVNOUDJ1RmlCc05sTm8rT2twQlN3NGxBa2VpdythL3IK",
+      "endpoints": [
+        "https://github.com/kappuccino/devis/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

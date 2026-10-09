@@ -79,9 +79,34 @@ clic droit → Ouvrir. Pour une signature Developer ID et la notarisation, ajout
 du dépôt : `APPLE_CERTIFICATE` (.p12 en base64), `APPLE_CERTIFICATE_PASSWORD`,
 `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` (mot de passe d'app), `APPLE_TEAM_ID`.
 
+### Mises à jour automatiques
+
+L'application installée cherche une nouvelle version à chaque démarrage (et dans
+Réglages → À propos) : elle lit `latest.json` de la **dernière release officielle** du dépôt,
+télécharge l'installeur signé, l'installe et redémarre.
+
+- Les mises à jour sont signées avec la clé `~/.tauri/devis-groupe-cahors.key` (à sauvegarder :
+  perdue, les applications installées ne peuvent plus être mises à jour). Sa clé publique est dans
+  `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`) ; la clé privée et son mot de passe sont dans
+  les secrets du dépôt `TAURI_SIGNING_PRIVATE_KEY` et `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+- Les builds `build-N` (à chaque push) sont des **pré-versions** : jamais proposées en mise à jour.
+
+**Publier une version** :
+
+1. monter la version dans `src-tauri/tauri.conf.json` (et `package.json`), ex. `0.2.0` ;
+2. commiter, puis `git tag v0.2.0 && git push && git push --tags` ;
+3. la CI construit, signe et publie la release `v0.2.0` avec `latest.json` (elle échoue si le tag
+   ne correspond pas à la version).
+
 ### Build local
 
+Les installeurs incluent les fichiers de mise à jour signés : il faut la clé de signature.
+
 ```sh
+export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/devis-groupe-cahors.key)"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="…"
 npm run tauri build                     # installeurs de la machine courante
 npm run tauri build -- --bundles app    # seulement « Devis Groupe Cahors.app » (plus rapide)
 ```
+
+Sans la clé (simple essai) : `npm run tauri build -- --config '{"bundle":{"createUpdaterArtifacts":false}}'`.

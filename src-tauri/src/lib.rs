@@ -29,6 +29,9 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         // Glisser une page ou un fichier de la documentation vers une autre application.
         .plugin(tauri_plugin_drag::init())
+        // Mises à jour depuis les releases GitHub (signées), puis redémarrage.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             // ~/Library/Application Support/fr.devis.app/devis.db sur macOS
             let dir = app.path().app_data_dir()?;

@@ -17,6 +17,8 @@ import { docs, indexing, reindex, setFolder, setIndexOnStartup } from "../docs/s
 import { CONDITIONS_KEY, DEFAULT_CONDITIONS } from "../conditions";
 import SelectButton from "primevue/selectbutton";
 import { getTheme, setTheme, type ThemeMode } from "../theme";
+import { getVersion } from "@tauri-apps/api/app";
+import { checkForUpdate, installUpdate, updater } from "../updater";
 import { FEE_SETTINGS } from "../fees";
 import { CGV_PDF_KEY } from "../composables/usePdf";
 import { FAVORITE_LISTS_KEY, favoriteLists } from "../favorites";
@@ -30,6 +32,7 @@ const sections = [
   { key: "favoris", label: "Favoris", hint: "Listes de prix favorites", icon: "pi pi-star" },
   { key: "pdf", label: "Config PDF", hint: "Société, numérotation", icon: "pi pi-file-pdf" },
   { key: "interface", label: "Interface", hint: "Thème clair ou sombre", icon: "pi pi-palette" },
+  { key: "about", label: "À propos", hint: "Version, mises à jour", icon: "pi pi-info-circle" },
   // Fonctions de documentation (ex-PDF Finder) : à part, en fin de liste.
   { key: "documentation", label: "Documentation", hint: "Dossier indexé, statistiques", icon: "pi pi-book", separated: true },
 ];
@@ -111,6 +114,10 @@ const themeOptions = [
   { value: "dark", label: "Sombre", icon: "pi pi-moon" },
 ];
 watch(theme, (mode) => setTheme(mode));
+
+// À propos : version installée.
+const appVersion = ref("");
+getVersion().then((v) => (appVersion.value = v)).catch(() => {});
 
 /** CGV complètes : PDF ajouté en dernière page des devis. */
 async function chooseCgv() {
@@ -347,6 +354,36 @@ onMounted(async () => {
             <span>{{ option.label }}</span>
           </template>
         </SelectButton>
+      </section>
+
+      <!-- À propos -->
+      <section v-else-if="current.key === 'about'" class="card">
+        <h2>Devis Groupe Cahors</h2>
+        <p>Version installée : <strong>{{ appVersion || "…" }}</strong></p>
+        <p class="muted">
+          Les mises à jour sont publiées sur GitHub ; l'application les cherche à chaque démarrage.
+        </p>
+        <div class="update-row">
+          <Button
+            label="Vérifier les mises à jour"
+            icon="pi pi-refresh"
+            severity="secondary"
+            :loading="updater.checking"
+            :disabled="updater.installing"
+            @click="checkForUpdate()"
+          />
+          <Button
+            v-if="updater.available"
+            :label="`Installer la version ${updater.available.version}`"
+            icon="pi pi-download"
+            :loading="updater.installing"
+            @click="installUpdate"
+          />
+        </div>
+        <Message v-if="updater.upToDate" severity="success" :closable="false" class="notice">
+          L'application est à jour.
+        </Message>
+        <Message v-if="updater.error" severity="error" :closable="false" class="notice">{{ updater.error }}</Message>
       </section>
 
       <!-- Favoris -->
@@ -605,6 +642,11 @@ onMounted(async () => {
   gap: 0.6rem;
   align-items: center;
   margin-bottom: 1rem;
+}
+
+.update-row {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .notice {

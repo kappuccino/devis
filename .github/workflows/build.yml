@@ -93,7 +93,26 @@ jobs:
           done
           if [ -n "$APPLE_SIGNING_IDENTITY" ]; then echo "Signature Developer ID"; else echo "Signature ad-hoc (aucun secret)"; fi
 
+      # Clé de signature des mises à jour (secrets du dépôt) : sans elle, l'appli installée
+      # ne peut pas vérifier les mises à jour. On échoue clairement plutôt qu'au milieu du build.
+      - name: Vérifier la clé de signature des mises à jour
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::Secret TAURI_SIGNING_PRIVATE_KEY absent (Settings → Secrets and variables → Actions)"; exit 1
+          fi
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
+            echo "::warning::Secret TAURI_SIGNING_PRIVATE_KEY_PASSWORD vide (normal seulement si la clé n'a pas de mot de passe)"
+          fi
+          echo "Clé de signature des mises à jour : présente"
+
       - name: Build Tauri
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri -- build ${{ matrix.args }}
 
       - name: Taille des installeurs
@@ -112,13 +131,18 @@ jobs:
         with:
           name: devis-${{ runner.os }}
           if-no-files-found: error
+          # Installeurs + fichiers de mise à jour signés (.app.tar.gz pour macOS, installeur NSIS pour Windows).
           path: |
             ${{ matrix.bundle-dir }}/dmg/*.dmg
+            ${{ matrix.bundle-dir }}/macos/*.app.tar.gz
+            ${{ matrix.bundle-dir }}/macos/*.app.tar.gz.sig
             ${{ matrix.bundle-dir }}/nsis/*.exe
+            ${{ matrix.bundle-dir }}/nsis/*.exe.sig
             ${{ matrix.bundle-dir }}/msi/*.msi
 
   release:
-    # Une release par commit poussé sur main (tag build-N), et une release « officielle » par tag v*.
+    # Une pré-version par commit poussé sur main (tag build-N), jamais proposée en mise à jour ;
+    # une release « officielle » par tag v*, avec latest.json lu par l'appli pour se mettre à jour.
     name: Release
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     needs: build
@@ -126,6 +150,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: src-tauri/tauri.conf.json
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -133,8 +161,12 @@ jobs:
       - name: Installeurs à publier
         shell: bash
         run: |
-          # les artifacts arrivent dans des sous-dossiers (dmg/, nsis/, msi/) : on les liste et on échoue s'il n'y a rien
-          find dist -type f | tee /dev/stderr | grep -qE '\.(dmg|exe|msi)$'
+          # Les fichiers arrivent dans des sous-dossiers (dmg/, macos/, nsis/, msi/) : on les met à plat,
+          # sans espaces dans les noms (GitHub les remplacerait, et latest.json doit donner l'URL exacte).
+          mkdir -p out
+          find dist -type f | while read -r f; do cp "$f" "out/$(basename "$f" | tr ' ' '-')"; done
+          ls -la out
+          ls out | grep -qE '\.(dmg|exe|msi)$'
       - name: Nom de la release
         id: meta
         shell: bash
@@ -144,20 +176,52 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
             echo "name=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            echo "official=true" >> "$GITHUB_OUTPUT"
           else
             echo "tag=build-$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
             echo "name=Build $GITHUB_RUN_NUMBER — $(echo "$MESSAGE" | head -1)" >> "$GITHUB_OUTPUT"
+            echo "official=false" >> "$GITHUB_OUTPUT"
           fi
           { echo "body<<__EOF__"; echo "$MESSAGE"; echo; echo "Commit : $GITHUB_SHA"; echo "__EOF__"; } >> "$GITHUB_OUTPUT"
+      - name: latest.json (mises à jour)
+        if: steps.meta.outputs.official == 'true'
+        shell: bash
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          REPO: ${{ github.repository }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          python3 - <<'PY'
+          import datetime, glob, json, os, sys
+          version = json.load(open("src-tauri/tauri.conf.json"))["version"]
+          tag = os.environ["TAG"]
+          if tag != f"v{version}":
+              sys.exit(f"::error::Le tag {tag} ne correspond pas à la version {version} de tauri.conf.json")
+          base = f"https://github.com/{os.environ['REPO']}/releases/download/{tag}/"
+          def entry(pattern):
+              files = [f for f in glob.glob(f"out/{pattern}") if not f.endswith(".sig")]
+              if len(files) != 1:
+                  sys.exit(f"::error::Fichier de mise à jour introuvable ou ambigu : {pattern} → {files}")
+              f = files[0]
+              return {"signature": open(f + ".sig").read().strip(), "url": base + os.path.basename(f)}
+          mac = entry("*.app.tar.gz")
+          json.dump({
+              "version": version,
+              "notes": os.environ.get("MESSAGE", ""),
+              "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              # Application macOS universelle : la même archive pour Apple Silicon et Intel.
+              "platforms": {"darwin-aarch64": mac, "darwin-x86_64": mac, "windows-x86_64": entry("*-setup.exe")},
+          }, open("out/latest.json", "w"), indent=2)
+          print(open("out/latest.json").read())
+          PY
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: ${{ steps.meta.outputs.name }}
           body: ${{ steps.meta.outputs.body }}
           target_commitish: ${{ github.sha }}
-          make_latest: true
+          # Seules les releases officielles sont « latest » : c'est là que l'appli cherche latest.json.
+          prerelease: ${{ steps.meta.outputs.official != 'true' }}
+          make_latest: ${{ steps.meta.outputs.official == 'true' }}
           fail_on_unmatched_files: true
-          files: |
-            dist/**/*.dmg
-            dist/**/*.exe
-            dist/**/*.msi
+          files: out/*

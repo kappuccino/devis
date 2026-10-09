@@ -18,6 +18,8 @@
     },
     "dialog:default",
     "opener:allow-reveal-item-in-dir",
-    "drag:default"
+    "drag:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

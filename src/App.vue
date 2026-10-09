@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { indexing, startDocs } from "./docs/store";
+import UpdateDialog from "./components/UpdateDialog.vue";
+import { checkForUpdate } from "./updater";
 import Toast from "primevue/toast";
 import ConfirmDialog from "primevue/confirmdialog";
 import { useRoute } from "vue-router";
@@ -46,6 +48,8 @@ onMounted(() => {
   window.addEventListener("keydown", onKeydown);
   // Index de la documentation mis à jour en tâche de fond, sans bloquer l'appli.
   startDocs();
+  // Nouvelle version ? Vérifié discrètement quelques secondes après le lancement (application installée seulement).
+  if (import.meta.env.PROD) setTimeout(() => checkForUpdate(true), 5000);
 });
 onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 </script>
@@ -112,6 +116,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
     </main>
     <Toast position="bottom-right" />
     <ConfirmDialog />
+    <UpdateDialog />
   </div>
 </template>
 
