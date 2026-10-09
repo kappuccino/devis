@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import type { QuoteLine } from "../api";
 import type { SearchResult } from "./search";
 
 // Lecture des fichiers : directement sur le disque (pas de Tauri dans les tests).
@@ -10,9 +11,11 @@ vi.mock("./files", async (orig) => ({
   ...(await orig<typeof import("./files")>()),
   readFile: async (p: string) => new Uint8Array(await readFile(p)),
 }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []) }));
+vi.mock("./search", () => ({ searchDocs: vi.fn() }));
 
-const { assembleQuoteWithDocs, includedParts, toAttachments } = await import("./attachments");
+const { assembleQuoteWithDocs, buildProposals, includedParts, toAttachments } = await import("./attachments");
+const { searchDocs } = await import("./search");
 
 /** PDF de n pages, chaque page portant son libellé. */
 async function pdf(label: string, pages: number) {
@@ -69,6 +72,24 @@ describe("PDF devis + documentation", () => {
     { key: "f", path: file("absent.pdf"), included: true, missing: true },
   ];
 
+  it("ne coche aucun document par défaut, mais reprend les choix enregistrés", async () => {
+    vi.mocked(searchDocs).mockResolvedValue([
+      result(file("catalogue.pdf"), 2),
+      result(file("notice.pdf"), null, "filename"),
+      result(file("catalogue.pdf"), 1, "partial"),
+    ]);
+    const line = { kind: "item", product_ref: "00188", enedis_code: null, designation: "E4R 10-35" } as unknown as QuoteLine;
+
+    const fresh = await buildProposals([line], []);
+    const all = fresh.groups.flatMap((g) => [...g.proposals, ...g.approx]);
+    expect(all).toHaveLength(3);
+    expect(all.every((p) => !p.included)).toBe(true);
+
+    const saved = [{ source: "index", product_ref: "00188", path: file("notice.pdf"), page_num: null, included: true }] as const;
+    const again = await buildProposals([line], [...saved]);
+    expect(again.groups[0].proposals.map((p) => p.included)).toEqual([false, true]);
+  });
+
   it("enchaîne devis, page de transition puis documents cochés, dans l'ordre du devis", async () => {
     const quote = await pdf("Devis", 2);
     const parts = includedParts(groups(), externals());
@@ -85,13 +106,12 @@ describe("PDF devis + documentation", () => {
     expect(out.getPageCount()).toBe(7);
   });
 
-  it("mémorise les choix : cochés, et les exacts décochés (pour ne pas les recocher)", () => {
+  it("mémorise les propositions cochées et les documents ajoutés", () => {
     const saved = toAttachments(groups(), externals());
     expect(saved.map((a) => [path.basename(a.path), a.page_num, a.included])).toEqual([
       ["catalogue.pdf", 2, true],
       ["notice.pdf", null, true],
-      ["catalogue.pdf", 3, false], // exact décoché : mémorisé
-      // approximatif décoché : non mémorisé (décoché par défaut)
+      // propositions décochées : non mémorisées (rien n'est coché par défaut)
       ["photo.png", null, true],
       ["absent.pdf", null, true],
     ]);

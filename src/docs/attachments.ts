@@ -54,7 +54,7 @@ function savedResult(path: string, page: number | null): SearchResult {
 
 /**
  * Propositions pour chaque produit du devis (référence, puis code ENEDIS), dans l'ordre du devis.
- * Coché par défaut : les correspondances exactes. Les choix déjà enregistrés pour ce devis priment.
+ * Rien n'est coché par défaut ; les choix déjà enregistrés pour ce devis sont repris.
  */
 export async function buildProposals(lines: QuoteLine[], saved: QuoteAttachment[]) {
   const savedIndex = new Map(saved.filter((a) => a.source === "index").map((a) => [keyOf(a.path, a.page_num), a]));
@@ -73,7 +73,7 @@ export async function buildProposals(lines: QuoteLine[], saved: QuoteAttachment[
       if (seen.has(key)) continue; // une même page n'est proposée qu'une fois (au premier produit)
       seen.add(key);
       const choice = savedIndex.get(key);
-      const proposal = { key, result, included: choice ? choice.included : result.match === "exact" };
+      const proposal = { key, result, included: choice?.included ?? false };
       (result.match === "partial" ? group.approx : group.proposals).push(proposal);
     }
     groups.push(group);
@@ -105,15 +105,12 @@ export async function buildProposals(lines: QuoteLine[], saved: QuoteAttachment[
 /** Nouveau document ajouté à la main. */
 export const externalDoc = (path: string): ExternalDoc => ({ key: keyOf(path, null), path, included: true, missing: false });
 
-/**
- * Choix à mémoriser avec le devis : toutes les propositions cochées, et celles décochées
- * qui auraient été cochées par défaut (pour ne pas les recocher à la prochaine ouverture).
- */
+/** Choix à mémoriser avec le devis : les propositions cochées et les documents ajoutés à la main. */
 export function toAttachments(groups: ProductGroup[], externals: ExternalDoc[]): QuoteAttachment[] {
   const out: QuoteAttachment[] = [];
   for (const g of groups) {
     for (const p of [...g.proposals, ...g.approx]) {
-      if (!p.included && p.result.match !== "exact") continue;
+      if (!p.included) continue;
       out.push({ source: "index", product_ref: g.ref, path: p.result.docPath, page_num: p.result.pageNum, included: p.included });
     }
   }
