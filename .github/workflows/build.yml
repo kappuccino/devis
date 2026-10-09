@@ -130,29 +130,41 @@ jobs:
           find dist -type f | while read -r f; do cp "$f" "out/$(basename "$f" | tr ' ' '-')"; done
           ls -la out
           ls out | grep -qE '\.(exe|msi)$'
-      - name: Nom de la release
+      - name: Nom et notes de la release
         id: meta
         shell: bash
         env:
           MESSAGE: ${{ github.event.head_commit.message }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # Version officielle : notes = message du tag (git tag -a v0.2.0 -m "…"),
+            # affichées aussi dans la fenêtre de mise à jour de l'appli.
+            ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME")
+            notes=""
+            if [ "$(echo "$ref" | jq -r .object.type)" = "tag" ]; then
+              notes=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$(echo "$ref" | jq -r .object.sha)" --jq .message)
+            fi
+            [ -n "$notes" ] || notes="Version ${GITHUB_REF_NAME#v}"
             echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
             echo "name=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
             echo "official=true" >> "$GITHUB_OUTPUT"
+            { echo "body<<__EOF__"; echo "$notes"; echo "__EOF__"; } >> "$GITHUB_OUTPUT"
           else
+            # Pré-version : message du commit, sans les lignes techniques (Co-Authored-By…).
+            notes=$(echo "$MESSAGE" | grep -v '^Co-Authored-By:')
             echo "tag=build-$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
-            echo "name=Build $GITHUB_RUN_NUMBER — $(echo "$MESSAGE" | head -1)" >> "$GITHUB_OUTPUT"
+            echo "name=Build $GITHUB_RUN_NUMBER — $(echo "$notes" | head -1)" >> "$GITHUB_OUTPUT"
             echo "official=false" >> "$GITHUB_OUTPUT"
+            { echo "body<<__EOF__"; echo "$notes"; echo; echo "Commit : $GITHUB_SHA"; echo "__EOF__"; } >> "$GITHUB_OUTPUT"
           fi
-          { echo "body<<__EOF__"; echo "$MESSAGE"; echo; echo "Commit : $GITHUB_SHA"; echo "__EOF__"; } >> "$GITHUB_OUTPUT"
       - name: latest.json (mises à jour)
         if: steps.meta.outputs.official == 'true'
         shell: bash
         env:
           TAG: ${{ steps.meta.outputs.tag }}
           REPO: ${{ github.repository }}
-          MESSAGE: ${{ github.event.head_commit.message }}
+          NOTES: ${{ steps.meta.outputs.body }}
         run: |
           python3 - <<'PY'
           import datetime, glob, json, os, sys
@@ -169,7 +181,7 @@ jobs:
               return {"signature": open(f + ".sig").read().strip(), "url": base + os.path.basename(f)}
           json.dump({
               "version": version,
-              "notes": os.environ.get("MESSAGE", ""),
+              "notes": os.environ.get("NOTES", "").strip(),
               "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
               # Windows seulement : la version Mac est construite en local, sans mise à jour automatique.
               "platforms": {"windows-x86_64": entry("*-setup.exe")},

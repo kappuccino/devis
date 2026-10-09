@@ -89,7 +89,9 @@ ne se met pas à jour toute seule.
 **Publier une version** :
 
 1. monter la version dans `src-tauri/tauri.conf.json` (et `package.json`), ex. `0.2.0` ;
-2. commiter, puis `git tag v0.2.0 && git push && git push --tags` ;
+2. commiter, puis poser le tag **avec les notes de version** (affichées dans la release et dans la
+   fenêtre de mise à jour de l'appli) :
+   `git tag -a v0.2.0 -m "Nouveautés : …" && git push && git push origin v0.2.0` ;
 3. la CI construit, signe et publie la release `v0.2.0` avec `latest.json` (elle échoue si le tag
    ne correspond pas à la version).
 
