@@ -1,5 +1,40 @@
 use crate::import::{self, ImportReport};
 use crate::pricing::{self, discounted_total, line_total, round2, PricingContext, ResolvedPrice};
+
+/// Lignes de frais (toujours en bas du devis) : montant HT dans `unit_price`, jamais remisé.
+fn is_fee(kind: &str) -> bool {
+    kind == "shipping" || kind == "billing"
+}
+
+/// Totaux d'un devis.
+/// - total HT : produits (hors options) + frais de port et de facturation ;
+/// - remise globale : sur les produits seulement ;
+/// - options : à part, hors total.
+struct Totals {
+    total_ht: f64,
+    total_net: f64,
+    options: f64,
+}
+
+fn quote_totals(lines: &[QuoteLine], discount_pct: f64) -> Totals {
+    let (mut products, mut fees, mut options) = (0.0, 0.0, 0.0);
+    for l in lines {
+        if l.kind == "item" {
+            let amount = line_total(l.quantity, l.unit_price, l.discount);
+            if l.is_option {
+                options += amount;
+            } else {
+                products += amount;
+            }
+        } else if is_fee(&l.kind) {
+            fees += round2(l.unit_price);
+        }
+    }
+    let products = round2(products);
+    let discount = round2(products - discounted_total(products, discount_pct));
+    let total_ht = round2(products + fees);
+    Totals { total_ht, total_net: round2(total_ht - discount), options: round2(options) }
+}
 use crate::AppState;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
@@ -282,7 +317,7 @@ pub fn list_quotes(state: State<AppState>) -> CmdResult<Vec<QuoteSummary>> {
     let conn = state.conn();
     query_all(
         &conn,
-        "SELECT q.id, q.number, q.client_code, q.client_name, q.date, q.total_ht, q.discount_pct,
+        "SELECT q.id, q.number, q.client_code, q.client_name, q.date, q.total_ht, q.total_net,
                 (SELECT COUNT(*) FROM quote_lines WHERE quote_id = q.id AND kind = 'item')
          FROM quotes q ORDER BY q.date DESC, q.id DESC",
         [],
@@ -294,7 +329,7 @@ pub fn list_quotes(state: State<AppState>) -> CmdResult<Vec<QuoteSummary>> {
                 client_name: r.get(3)?,
                 date: r.get(4)?,
                 total_ht: r.get(5)?,
-                total_net: discounted_total(r.get(5)?, r.get(6)?),
+                total_net: r.get(6)?,
                 line_count: r.get(7)?,
             })
         },
@@ -387,7 +422,7 @@ fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
                     notes: r.get(5)?,
                     total_ht: r.get(6)?,
                     discount_pct: r.get(10)?,
-                    total_net: discounted_total(r.get(6)?, r.get(10)?),
+                    total_net: 0.0,
                     total_options: 0.0,
                     pricing: PricingContext {
                         discount_cfa: r.get(7)?,
@@ -422,14 +457,9 @@ fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
             })
         },
     )?;
-    quote.total_options = round2(
-        quote
-            .lines
-            .iter()
-            .filter(|l| l.kind == "item" && l.is_option)
-            .map(|l| line_total(l.quantity, l.unit_price, l.discount))
-            .sum(),
-    );
+    let totals = quote_totals(&quote.lines, quote.discount_pct);
+    quote.total_net = totals.total_net;
+    quote.total_options = totals.options;
     Ok(quote)
 }
 
@@ -472,12 +502,14 @@ pub fn save_quote(state: State<AppState>, mut quote: Quote) -> CmdResult<Quote> 
     let total_of = |l: &QuoteLine| {
         if l.kind == "item" {
             line_total(l.quantity, l.unit_price, l.discount)
+        } else if is_fee(&l.kind) {
+            l.unit_price
         } else {
             0.0
         }
     };
-    // Les lignes en option ne comptent pas dans le total HT.
-    let total: f64 = round2(quote.lines.iter().filter(|l| !l.is_option).map(total_of).sum());
+    let totals = quote_totals(&quote.lines, quote.discount_pct);
+    let (total, total_net) = (totals.total_ht, totals.total_net);
     let forced = quote.pricing.forced_price_list.clone().unwrap_or_default();
     let discount_pct = quote.discount_pct;
 
@@ -489,9 +521,22 @@ pub fn save_quote(state: State<AppState>, mut quote: Quote) -> CmdResult<Quote> 
             tx.execute(
                 "UPDATE quotes SET client_code = ?2, client_name = ?3, date = ?4, notes = ?5, total_ht = ?6,
                         discount_cfa = ?7, discount_cfo = ?8, price_lists = ?9, discount_pct = ?10,
-                        forced_price_list = ?11, updated_at = datetime('now', 'localtime')
+                        forced_price_list = ?11, total_net = ?12, updated_at = datetime('now', 'localtime')
                  WHERE id = ?1",
-                params![id, client_code, quote.client_name, quote.date, quote.notes, total, cfa, cfo, lists, discount_pct, forced],
+                params![
+                    id,
+                    client_code,
+                    quote.client_name,
+                    quote.date,
+                    quote.notes,
+                    total,
+                    cfa,
+                    cfo,
+                    lists,
+                    discount_pct,
+                    forced,
+                    total_net
+                ],
             )
             .map_err(err)?;
             tx.execute("DELETE FROM quote_lines WHERE quote_id = ?1", [id]).map_err(err)?;
@@ -502,9 +547,22 @@ pub fn save_quote(state: State<AppState>, mut quote: Quote) -> CmdResult<Quote> 
             tx.execute(
                 "INSERT INTO quotes
                  (number, client_code, client_name, date, notes, total_ht, discount_cfa, discount_cfo, price_lists,
-                  discount_pct, forced_price_list)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-                params![number, client_code, quote.client_name, quote.date, quote.notes, total, cfa, cfo, lists, discount_pct, forced],
+                  discount_pct, forced_price_list, total_net)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                params![
+                    number,
+                    client_code,
+                    quote.client_name,
+                    quote.date,
+                    quote.notes,
+                    total,
+                    cfa,
+                    cfo,
+                    lists,
+                    discount_pct,
+                    forced,
+                    total_net
+                ],
             )
             .map_err(err)?;
             tx.last_insert_rowid()
@@ -622,4 +680,41 @@ pub async fn import_lpn(state: State<'_, AppState>, path: String) -> CmdResult<I
 #[tauri::command]
 pub fn save_file(path: String, contents: Vec<u8>) -> CmdResult<()> {
     std::fs::write(path, contents).map_err(err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(kind: &str, quantity: f64, unit_price: f64, is_option: bool) -> QuoteLine {
+        QuoteLine {
+            kind: kind.into(),
+            product_ref: String::new(),
+            enedis_code: None,
+            designation: String::new(),
+            quantity,
+            unit_price,
+            discount: 0.0,
+            is_option,
+            price_source: None,
+            public_price: None,
+            threshold_price: None,
+        }
+    }
+
+    #[test]
+    fn fees_are_in_total_but_not_discounted() {
+        let lines = [
+            line("item", 2.0, 50.0, false),     // 100 €
+            line("item", 1.0, 30.0, true),      // option : hors total
+            line("text", 0.0, 0.0, false),
+            line("shipping", 1.0, 25.0, false), // frais de port
+            line("billing", 1.0, 5.0, false),   // frais de facturation
+        ];
+        let t = quote_totals(&lines, 10.0);
+        assert_eq!(t.total_ht, 130.0);
+        // remise de 10 % sur les 100 € de produits seulement
+        assert_eq!(t.total_net, 120.0);
+        assert_eq!(t.options, 30.0);
+    }
 }

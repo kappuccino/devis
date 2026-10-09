@@ -24,7 +24,17 @@ import { exportQuotePdf } from "../composables/usePdf";
 import { readDraft, removeDraft, writeDraft, type QuoteDraft } from "../drafts";
 import { useConfirm } from "primevue/useconfirm";
 import { useLineClipboard } from "../composables/useLineClipboard";
-import { discountedTotal, insertBlock, lineTotal, moveBlockBefore, netUnitPrice, quoteTotals, subtotals } from "../quoteLines";
+import {
+  FEE_KINDS,
+  insertBlock,
+  isFee,
+  lineTotal,
+  moveBlockBefore,
+  netUnitPrice,
+  quoteTotals,
+  subtotals,
+  type FeeKind,
+} from "../quoteLines";
 import { favoriteLists } from "../favorites";
 
 const props = defineProps<{ id?: string }>();
@@ -171,12 +181,30 @@ const pricingKey = computed(() => JSON.stringify(pricing.value));
 const productSuggestions = ref<ProductHit[]>([]);
 const saving = ref(false);
 
-/** Total HT (lignes en option exclues) et total des options. */
-const totals = computed(() => quoteTotals(lines.value));
-const total = computed(() => totals.value.total);
-/** Remise globale sur le total du devis, en %. */
+// Frais de port / de facturation : à part des autres lignes, toujours en bas du devis
+// (pas de déplacement ni de sélection), un seul de chaque.
+const feeLines = ref<EditLine[]>([]);
+const FEE_LABELS: Record<FeeKind, string> = { shipping: "Frais de port", billing: "Frais de facturation" };
+const hasFee = (kind: FeeKind) => feeLines.value.some((l) => l.kind === kind);
+
+function addFee(kind: FeeKind) {
+  if (hasFee(kind)) return;
+  const fee: EditLine = { ...blankLine(), kind, quantity: 1, designation: FEE_LABELS[kind] };
+  // Ordre fixe : frais de port, puis frais de facturation.
+  feeLines.value = [...feeLines.value, fee].sort((a, b) => FEE_KINDS.indexOf(a.kind as FeeKind) - FEE_KINDS.indexOf(b.kind as FeeKind));
+  nextTick(() => document.getElementById(`fee-${fee.key}`)?.focus());
+}
+
+function removeFee(fee: EditLine) {
+  feeLines.value = feeLines.value.filter((l) => l !== fee);
+}
+
+/** Remise globale sur les produits, en % (les frais ne sont pas remisés). */
 const globalDiscount = ref(0);
-const netTotal = computed(() => discountedTotal(total.value, globalDiscount.value));
+/** Total HT (produits hors options + frais), remise, total remisé et total des options. */
+const totals = computed(() => quoteTotals([...lines.value, ...feeLines.value], globalDiscount.value));
+const total = computed(() => totals.value.total);
+const netTotal = computed(() => totals.value.net);
 const filledLines = computed(() => lines.value.filter((l) => l.kind === "item" && l.product_ref.trim()));
 /** Montant de chaque sous-total, par clé de ligne (recalculé à chaque frappe et déplacement). */
 const subtotalAmounts = computed(() => {
@@ -692,15 +720,23 @@ function toQuote(): Quote {
     discount_pct: globalDiscount.value ?? 0,
     total_net: netTotal.value,
     total_options: totals.value.options,
-    lines: lines.value
-      // Articles sans réf et lignes de texte vides : ignorés.
-      .filter((l) => (l.kind === "item" ? l.product_ref.trim() : l.kind === "subtotal" || l.designation.trim()))
-      .map((l) => ({
+    lines: [
+      ...lines.value
+        // Articles sans réf et lignes de texte vides : ignorés.
+        .filter((l) => (l.kind === "item" ? l.product_ref.trim() : l.kind === "subtotal" || l.designation.trim()))
+        .map((l) => ({
+          ...toQuoteLine(l),
+          designation: l.kind === "subtotal" ? l.designation.trim() || "Sous-total" : l.designation,
+          quantity: l.quantity ?? 0,
+          discount: l.discount ?? 0,
+        })),
+      // Frais toujours en dernier.
+      ...feeLines.value.map((l) => ({
         ...toQuoteLine(l),
-        designation: l.kind === "subtotal" ? l.designation.trim() || "Sous-total" : l.designation,
-        quantity: l.quantity ?? 0,
-        discount: l.discount ?? 0,
+        designation: l.designation.trim() || FEE_LABELS[l.kind as FeeKind],
+        quantity: 1,
       })),
+    ],
   };
 }
 
@@ -781,9 +817,16 @@ const snapshot = () =>
     date: date.value,
     notes: notes.value,
     discount: globalDiscount.value,
-    lines: lines.value
-      .filter((l) => !isEntryLine(l))
-      .map((l) => [l.kind, l.product_ref, l.designation, l.quantity, l.unit_price, l.discount, l.is_option, l.price_source]),
+    lines: [...lines.value.filter((l) => !isEntryLine(l)), ...feeLines.value].map((l) => [
+      l.kind,
+      l.product_ref,
+      l.designation,
+      l.quantity,
+      l.unit_price,
+      l.discount,
+      l.is_option,
+      l.price_source,
+    ]),
   });
 
 function markSaved() {
@@ -806,7 +849,7 @@ function persistDraft() {
     date: date.value,
     notes: notes.value,
     discount_pct: globalDiscount.value,
-    lines: lines.value.filter((l) => !isEntryLine(l)).map(toQuoteLine),
+    lines: [...lines.value.filter((l) => !isEntryLine(l)), ...feeLines.value].map(toQuoteLine),
     savedAt: new Date().toISOString(),
   };
   writeDraft(draftKey(), draft);
@@ -839,14 +882,13 @@ function applyDraft(draft: QuoteDraft) {
     price_lists: draft.price_lists ?? known?.price_lists ?? [],
     forced_price_list: draft.forced_price_list ?? null,
   });
-  lines.value = [
-    ...draft.lines.map((l) => ({
-      ...blankLine(),
-      ...withTexts(l),
-      resolvedRef: l.kind === "item" ? l.product_ref : null,
-    })),
-    blankLine(),
-  ];
+  const restored = draft.lines.map((l) => ({
+    ...blankLine(),
+    ...withTexts(l),
+    resolvedRef: l.kind === "item" ? l.product_ref : null,
+  }));
+  lines.value = [...restored.filter((l) => !isFee(l.kind)), blankLine()];
+  feeLines.value = restored.filter((l) => isFee(l.kind));
   hasDraft.value = true;
 }
 
@@ -929,6 +971,7 @@ async function loadSaved(id: string | undefined) {
         forced_price_list: null,
       });
       lines.value = [blankLine()];
+      feeLines.value = [];
       return;
     }
     const q = await api.getQuote(Number(id));
@@ -938,21 +981,20 @@ async function loadSaved(id: string | undefined) {
     notes.value = q.notes ?? "";
     globalDiscount.value = q.discount_pct;
     setClientFields(q);
-    lines.value = [
-      ...q.lines.map((l) => ({
-        ...withTexts({
-          ...l,
-          // Une quantité enregistrée à 0 revient vide, comme à la saisie.
-          quantity: l.kind === "item" && !l.quantity ? null : l.quantity,
-          unit_price: round2(l.unit_price),
-        }),
-        key: nextKey++,
-        resolvedRef: l.product_ref,
-        pendingRef: null,
-        error: null,
-      })),
-      blankLine(),
-    ];
+    const loaded: EditLine[] = q.lines.map((l) => ({
+      ...withTexts({
+        ...l,
+        // Une quantité enregistrée à 0 revient vide, comme à la saisie.
+        quantity: l.kind === "item" && !l.quantity ? null : l.quantity,
+        unit_price: round2(l.unit_price),
+      }),
+      key: nextKey++,
+      resolvedRef: l.product_ref,
+      pendingRef: null,
+      error: null,
+    }));
+    lines.value = [...loaded.filter((l) => !isFee(l.kind)), blankLine()];
+    feeLines.value = loaded.filter((l) => isFee(l.kind));
     fillMissingReferencePrices();
   } catch (e) {
     toast.add({ severity: "error", summary: "Chargement du devis", detail: errorMessage(e) });
@@ -1402,6 +1444,39 @@ onMounted(async () => {
               </td>
             </tr>
           </template>
+          <!-- Frais de port / de facturation : toujours en bas, montant HT dans la colonne Total. -->
+          <tr v-for="fee in feeLines" :key="fee.key" class="fee-row">
+            <td colspan="2"></td>
+            <td colspan="7">
+              <InputText v-model="fee.designation" fluid size="small" class="fee-label" />
+            </td>
+            <td>
+              <InputText
+                :id="`fee-${fee.key}`"
+                :model-value="fee.priceText"
+                inputmode="decimal"
+                autocomplete="off"
+                placeholder="0,00"
+                fluid
+                size="small"
+                class="num"
+                @update:model-value="(v: string | undefined) => onPriceInput(fee, v ?? '')"
+                @blur="onPriceBlur(fee)"
+              />
+            </td>
+            <td colspan="2" class="muted fee-hint">non remisé</td>
+            <td>
+              <Button
+                v-tooltip.left="`Retirer les ${fee.designation.toLowerCase() || 'frais'}`"
+                icon="pi pi-times"
+                text
+                rounded
+                size="small"
+                severity="secondary"
+                @click="removeFee(fee)"
+              />
+            </td>
+          </tr>
         </tbody>
         <tfoot>
           <tr>
@@ -1423,6 +1498,24 @@ onMounted(async () => {
                 size="small"
                 @click="insertSpecialLine('subtotal')"
               />
+              <Button
+                v-tooltip.bottom="'Toujours en bas du devis, non remisés'"
+                label="Frais de port"
+                icon="pi pi-truck"
+                text
+                size="small"
+                :disabled="hasFee('shipping')"
+                @click="addFee('shipping')"
+              />
+              <Button
+                v-tooltip.bottom="'Toujours en bas du devis, non remisés'"
+                label="Frais de facturation"
+                icon="pi pi-receipt"
+                text
+                size="small"
+                :disabled="hasFee('billing')"
+                @click="addFee('billing')"
+              />
             </td>
             <td colspan="4" class="num total-label">Total HT</td>
             <td class="num total">{{ formatEuro(total) }}</td>
@@ -1431,7 +1524,7 @@ onMounted(async () => {
           <tr class="global-discount">
             <td colspan="5"></td>
             <td colspan="3" class="num total-label">
-              <label for="global-discount">Remise sur le total</label>
+              <label v-tooltip.top="'Les frais de port et de facturation ne sont pas remisés'" for="global-discount">Remise sur les produits</label>
             </td>
             <td>
               <InputNumber
@@ -1670,7 +1763,23 @@ tr:hover .drag-handle i {
   font-size: 1rem;
 }
 
+.fee-row td {
+  background: color-mix(in srgb, var(--app-muted) 6%, transparent);
+}
+
+.fee-row :deep(.fee-label) {
+  text-align: right;
+  font-weight: 600;
+  background: transparent;
+}
+
+.lines td.fee-hint {
+  padding-top: 11px;
+  font-size: 0.85em;
+}
+
 .add-lines {
+  flex-wrap: wrap;
   display: flex;
   gap: 0.25rem;
 }

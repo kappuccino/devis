@@ -4,9 +4,15 @@ import { round2 } from "./format";
  * Lignes d'un devis :
  * - `item` : un article (réf, quantité, prix) ;
  * - `text` : une ligne de texte libre (dans `designation`) ;
- * - `subtotal` : sous-total des articles depuis le sous-total précédent (ou le début du devis).
+ * - `subtotal` : sous-total des articles depuis le sous-total précédent (ou le début du devis) ;
+ * - `shipping` / `billing` : frais de port / de facturation, toujours en bas, montant HT dans
+ *   `unit_price`, compris dans le total HT mais jamais remisés.
  */
-export type LineKind = "item" | "text" | "subtotal";
+export type LineKind = "item" | "text" | "subtotal" | "shipping" | "billing";
+
+export const FEE_KINDS = ["shipping", "billing"] as const;
+export type FeeKind = (typeof FEE_KINDS)[number];
+export const isFee = (kind: LineKind): kind is FeeKind => kind === "shipping" || kind === "billing";
 
 export interface LineLike {
   kind: LineKind;
@@ -23,21 +29,38 @@ export const netUnitPrice = (unitPrice: number, discount: number | null | undefi
   round2(unitPrice * (1 - (discount ?? 0) / 100));
 
 export const lineTotal = (l: LineLike) =>
-  l.kind === "item" ? round2((l.quantity ?? 0) * netUnitPrice(l.unit_price, l.discount)) : 0;
+  l.kind === "item"
+    ? round2((l.quantity ?? 0) * netUnitPrice(l.unit_price, l.discount))
+    : isFee(l.kind)
+      ? round2(l.unit_price)
+      : 0;
 
 /** Total après la remise globale du devis (en %). */
 export const discountedTotal = (total: number, discountPct: number | null | undefined) =>
   round2(total * (1 - (discountPct ?? 0) / 100));
 
-/** Total HT (hors options) et total des options. */
-export function quoteTotals(lines: LineLike[]) {
-  let total = 0;
+/**
+ * Totaux du devis :
+ * - `total` (Total HT) = produits hors options + frais ;
+ * - `discount` = remise globale, sur les produits seulement ; `net` = total − remise ;
+ * - `options` = lignes en option, à part.
+ */
+export function quoteTotals(lines: LineLike[], discountPct: number | null | undefined = 0) {
+  let products = 0;
+  let fees = 0;
   let options = 0;
   for (const l of lines) {
-    if (l.is_option) options += lineTotal(l);
-    else total += lineTotal(l);
+    if (l.kind === "item") {
+      if (l.is_option) options += lineTotal(l);
+      else products += lineTotal(l);
+    } else if (isFee(l.kind)) {
+      fees += lineTotal(l);
+    }
   }
-  return { total: round2(total), options: round2(options) };
+  products = round2(products);
+  const total = round2(products + round2(fees));
+  const discount = round2(products - discountedTotal(products, discountPct));
+  return { products, fees: round2(fees), total, discount, net: round2(total - discount), options: round2(options) };
 }
 
 /** Montant de chaque ligne de sous-total (lignes en option exclues). */
@@ -48,7 +71,7 @@ export function subtotals<T extends LineLike>(lines: T[]): Map<T, number> {
     if (l.kind === "subtotal") {
       result.set(l, round2(running));
       running = 0;
-    } else if (!l.is_option) {
+    } else if (l.kind === "item" && !l.is_option) {
       running += lineTotal(l);
     }
   }

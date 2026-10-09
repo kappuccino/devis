@@ -92,7 +92,8 @@ export interface QuoteSummary {
  * `subtotal` : sous-total des articles depuis le sous-total précédent (libellé dans `designation`).
  */
 export interface QuoteLine {
-  kind: "item" | "text" | "subtotal";
+  /** `shipping` / `billing` : frais de port / de facturation (montant HT dans unit_price). */
+  kind: "item" | "text" | "subtotal" | "shipping" | "billing";
   product_ref: string;
   /** Code ENEDIS, copié du catalogue à la saisie de la ligne. */
   enedis_code: string | null;

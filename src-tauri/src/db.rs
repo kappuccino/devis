@@ -85,8 +85,10 @@ CREATE TABLE IF NOT EXISTS quotes (
     discount_cfo REAL NOT NULL DEFAULT 0,
     -- Codes des listes de prix, séparés par des virgules.
     price_lists TEXT NOT NULL DEFAULT '',
-    -- Remise globale sur le total (en %).
+    -- Remise globale sur les produits (en %).
     discount_pct REAL NOT NULL DEFAULT 0,
+    -- Total après remise (frais de port et de facturation compris, non remisés).
+    total_net    REAL NOT NULL DEFAULT 0,
     -- Liste de prix forcée (choisie parmi les favorites), prioritaire ; vide si aucune.
     forced_price_list TEXT NOT NULL DEFAULT '',
     date        TEXT NOT NULL,
@@ -142,6 +144,10 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // Lignes en option et liste de prix forcée.
     add_column(conn, "quote_lines", "is_option", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "quotes", "forced_price_list", "TEXT NOT NULL DEFAULT ''")?;
+    // Total remisé enregistré (avant : calculé sur le total HT, sans frais).
+    if add_column(conn, "quotes", "total_net", "REAL NOT NULL DEFAULT 0")? {
+        conn.execute_batch("UPDATE quotes SET total_net = round(total_ht * (1 - discount_pct / 100.0), 2)")?;
+    }
     // Code ENEDIS sur les lignes : repris du catalogue pour les devis existants.
     if add_column(conn, "quote_lines", "enedis_code", "TEXT")? {
         conn.execute_batch(

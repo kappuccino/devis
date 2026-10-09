@@ -5,7 +5,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { api, type Client, type Quote, type Settings } from "../api";
 import { formatDate, formatEuro, formatNumber, formatUnitPrice, round2 } from "../format";
-import { lineTotal, subtotals } from "../quoteLines";
+import { isFee, lineTotal, subtotals } from "../quoteLines";
 
 pdfMake.addVirtualFileSystem(pdfFonts);
 
@@ -82,10 +82,19 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     ],
   ];
   const subtotalRows = new Set<number>();
+  const feeRows = new Set<number>();
   const amounts = subtotals(quote.lines);
   for (const l of quote.lines) {
     if (l.kind === "text") {
       body.push([{ text: l.designation, colSpan: cols, style: "textLine" }, ...empties(cols - 1)]);
+    } else if (isFee(l.kind)) {
+      // Frais de port / de facturation (toujours en bas du devis).
+      feeRows.add(body.length);
+      body.push([
+        { text: l.designation, colSpan: cols - 1, alignment: "right" },
+        ...empties(cols - 2),
+        { text: formatEuro(lineTotal(l)), alignment: "right" },
+      ]);
     } else if (l.kind === "subtotal") {
       subtotalRows.add(body.length);
       body.push([
@@ -125,7 +134,9 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
       dontBreakRows: true,
     },
     layout: {
-      hLineWidth: (i, node) => (i === 0 || i === 1 || i === node.table.body.length ? 1 : 0.5),
+      // Trait plein au-dessus du bloc des frais (première ligne de frais).
+      hLineWidth: (i, node) =>
+        i === 0 || i === 1 || i === node.table.body.length || (feeRows.has(i) && !feeRows.has(i - 1)) ? 1 : 0.5,
       vLineWidth: () => 0,
       hLineColor: (i) => (i <= 1 ? ACCENT : "#ddd"),
       paddingTop: () => 5,
@@ -141,7 +152,7 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
   if (quote.discount_pct > 0) {
     totalRows.push(
       [
-        { text: `Remise ${formatNumber(quote.discount_pct)} %` },
+        { text: `Remise ${formatNumber(quote.discount_pct)} % sur les produits` },
         { text: `− ${formatEuro(round2(quote.total_ht - quote.total_net))}`, alignment: "right" },
       ],
       [

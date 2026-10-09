@@ -79,8 +79,19 @@ describe("options", () => {
   it("les lignes en option sortent du total HT et des sous-totaux", () => {
     const s = line("s", "subtotal");
     const lines = [line("a", "item", 2, 10), { ...line("o", "item", 1, 5), is_option: true }, s];
-    expect(quoteTotals(lines)).toEqual({ total: 20, options: 5 });
+    expect(quoteTotals(lines)).toMatchObject({ total: 20, options: 5 });
     expect(subtotals(lines).get(s)).toBe(20);
+  });
+});
+
+describe("frais de port et de facturation", () => {
+  it("sont dans le total HT mais pas remisés", () => {
+    const lines = [line("a", "item", 2, 50), line("port", "shipping", 0, 25), line("fact", "billing", 0, 5)];
+    expect(quoteTotals(lines, 10)).toEqual({ products: 100, fees: 30, total: 130, discount: 10, net: 120, options: 0 });
+  });
+  it("ne comptent pas dans les sous-totaux", () => {
+    const s = line("s", "subtotal");
+    expect(subtotals([line("a", "item", 1, 10), line("port", "shipping", 0, 25), s]).get(s)).toBe(10);
   });
 });
 
