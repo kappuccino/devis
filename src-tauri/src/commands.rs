@@ -610,7 +610,69 @@ pub fn duplicate_quote(state: State<AppState>, id: i64, date: String) -> CmdResu
     quote.id = None;
     quote.number = None;
     quote.date = date;
-    save_quote(state, quote)
+    let attachments = load_attachments(&state.conn(), id)?;
+    let copy = save_quote(state.clone(), quote)?;
+    // La copie reprend les documents joints.
+    if let Some(new_id) = copy.id {
+        store_attachments(&mut state.conn(), new_id, &attachments)?;
+    }
+    Ok(copy)
+}
+
+// ---------- Documents joints (PDF « Devis + Docs ») ----------
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct QuoteAttachment {
+    /// `index` (documentation) ou `external` (fichier ajouté à la main).
+    pub source: String,
+    pub product_ref: String,
+    pub path: String,
+    /// Page de la documentation ; None : fichier entier.
+    pub page_num: Option<i64>,
+    pub included: bool,
+}
+
+fn load_attachments(conn: &Connection, quote_id: i64) -> CmdResult<Vec<QuoteAttachment>> {
+    query_all(
+        conn,
+        "SELECT source, product_ref, path, page_num, included FROM quote_attachments
+         WHERE quote_id = ?1 ORDER BY position",
+        [quote_id],
+        |r| {
+            Ok(QuoteAttachment {
+                source: r.get(0)?,
+                product_ref: r.get(1)?,
+                path: r.get(2)?,
+                page_num: r.get(3)?,
+                included: r.get(4)?,
+            })
+        },
+    )
+}
+
+fn store_attachments(conn: &mut Connection, quote_id: i64, items: &[QuoteAttachment]) -> CmdResult<()> {
+    let tx = conn.transaction().map_err(err)?;
+    tx.execute("DELETE FROM quote_attachments WHERE quote_id = ?1", [quote_id]).map_err(err)?;
+    for (i, a) in items.iter().enumerate() {
+        tx.execute(
+            "INSERT INTO quote_attachments (quote_id, position, source, product_ref, path, page_num, included)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![quote_id, i as i64, a.source, a.product_ref, a.path, a.page_num, a.included],
+        )
+        .map_err(err)?;
+    }
+    tx.commit().map_err(err)
+}
+
+#[tauri::command]
+pub fn get_quote_attachments(state: State<AppState>, quote_id: i64) -> CmdResult<Vec<QuoteAttachment>> {
+    load_attachments(&state.conn(), quote_id)
+}
+
+/// Enregistre les choix de documents d'un devis (remplace les précédents).
+#[tauri::command]
+pub fn save_quote_attachments(state: State<AppState>, quote_id: i64, attachments: Vec<QuoteAttachment>) -> CmdResult<()> {
+    store_attachments(&mut state.conn(), quote_id, &attachments)
 }
 
 // ---------- Réglages / import ----------
@@ -700,6 +762,28 @@ mod tests {
             public_price: None,
             threshold_price: None,
         }
+    }
+
+    #[test]
+    fn attachments_round_trip() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::db::init(&conn).unwrap();
+        conn.execute("INSERT INTO quotes (id, number, client_code, date) VALUES (1, 'D-1', '', '2026-10-09')", []).unwrap();
+        let a = |path: &str, page: Option<i64>, included: bool| QuoteAttachment {
+            source: "index".into(),
+            product_ref: "00188".into(),
+            path: path.into(),
+            page_num: page,
+            included,
+        };
+        store_attachments(&mut conn, 1, &[a("/b.pdf", Some(3), true), a("/a.pdf", None, false)]).unwrap();
+        let back = load_attachments(&conn, 1).unwrap();
+        assert_eq!(back.len(), 2);
+        assert_eq!((back[0].path.as_str(), back[0].page_num, back[0].included), ("/b.pdf", Some(3), true));
+        assert_eq!((back[1].path.as_str(), back[1].page_num, back[1].included), ("/a.pdf", None, false));
+        // Supprimer le devis supprime ses documents.
+        conn.execute("DELETE FROM quotes WHERE id = 1", []).unwrap();
+        assert!(load_attachments(&conn, 1).unwrap().is_empty());
     }
 
     #[test]

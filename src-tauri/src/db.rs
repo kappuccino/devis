@@ -100,6 +100,21 @@ CREATE TABLE IF NOT EXISTS quotes (
 
 {QUOTE_LINES}
 
+-- Documents joints au PDF « Devis + Docs » : choix (inclus ou écarté) mémorisés par devis.
+-- source 'index' : page (ou fichier entier si page_num NULL) trouvée dans la documentation ;
+-- source 'external' : fichier ajouté à la main (PDF ou image), toujours en entier.
+CREATE TABLE IF NOT EXISTS quote_attachments (
+    id          INTEGER PRIMARY KEY,
+    quote_id    INTEGER NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+    position    INTEGER NOT NULL,
+    source      TEXT NOT NULL,
+    product_ref TEXT NOT NULL DEFAULT '',
+    path        TEXT NOT NULL,
+    page_num    INTEGER,
+    included    INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_quote_attachments ON quote_attachments(quote_id);
+
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT

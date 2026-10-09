@@ -130,6 +130,19 @@ export interface Quote extends PricingContext {
   lines: QuoteLine[];
 }
 
+/** Document joint au PDF « Devis + Docs » (choix mémorisé avec le devis). */
+export interface QuoteAttachment {
+  /** `index` : trouvé dans la documentation ; `external` : fichier ajouté à la main. */
+  source: "index" | "external";
+  /** Produit du devis auquel le document est rattaché ('' pour un document ajouté). */
+  product_ref: string;
+  path: string;
+  /** Page de la documentation ; null : fichier entier. */
+  page_num: number | null;
+  /** Coché (inclus dans le PDF) ou écarté. */
+  included: boolean;
+}
+
 export interface ImportReport {
   products: number;
   clients: number;
@@ -172,6 +185,11 @@ export const api = {
   saveQuote: (quote: Quote) => invoke<Quote>("save_quote", { quote }),
   deleteQuote: (id: number) => invoke<void>("delete_quote", { id }),
   duplicateQuote: (id: number, date: string) => invoke<Quote>("duplicate_quote", { id, date }),
+
+  getQuoteAttachments: (quoteId: number) => invoke<QuoteAttachment[]>("get_quote_attachments", { quoteId }),
+  saveQuoteAttachments: (quoteId: number, attachments: QuoteAttachment[]) =>
+    invoke<void>("save_quote_attachments", { quoteId, attachments }),
+  filesExist: (paths: string[]) => invoke<boolean[]>("files_exist", { paths }),
 
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),

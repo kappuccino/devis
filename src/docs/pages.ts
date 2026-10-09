@@ -1,4 +1,5 @@
 // Pages à la volée : rendu (aperçu, vignette du glisser) et PDF d'une page.
+import { PDFDocument } from "pdf-lib";
 import { exportFileName, exportPage } from "./core/index.js";
 import { readFile, writeDragFile } from "./files";
 import { pdfjs, PDFJS_OPTIONS } from "./pdfjs";
@@ -63,9 +64,43 @@ export async function thumbnailDataUrl(path: string, pageNum: number, width = 12
   return canvas.toDataURL("image/png");
 }
 
-/** PDF autonome d'une seule page. */
+/** Nombre de pages d'un PDF (lu par pdfjs). */
+export async function pdfPageCount(path: string) {
+  return (await getPdf(path)).numPages;
+}
+
+/**
+ * Page rendue en image (PNG haute définition) avec ses dimensions d'origine (points PDF).
+ * Plan B quand pdf-lib ne sait pas recopier la page (PDF mal formé que pdfjs, lui, sait lire).
+ */
+export async function rasterizePage(path: string, pageNum: number, scale = 2.5) {
+  const doc = await getPdf(path);
+  const page = await doc.getPage(pageNum);
+  const size = page.getViewport({ scale: 1 });
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.floor(viewport.width);
+  canvas.height = Math.floor(viewport.height);
+  await (page.render({ canvas, viewport }) as unknown as { promise: Promise<void> }).promise;
+  const blob = await new Promise<Blob>((ok, ko) => canvas.toBlob((b) => (b ? ok(b) : ko(new Error("rendu impossible"))), "image/png"));
+  return { png: new Uint8Array(await blob.arrayBuffer()), width: size.width, height: size.height };
+}
+
+/** Plan B commun (export, glisser, PDF devis + docs) : pages rendues en image par pdfjs. */
+export const rasterizer = { pageCount: pdfPageCount, page: rasterizePage };
+
+/** PDF autonome d'une seule page (copie exacte ; en image si le PDF est mal formé). */
 export async function pageBytes(path: string, pageNum: number): Promise<Uint8Array> {
-  return exportPage(await getBytes(path), pageNum);
+  try {
+    return await exportPage(await getBytes(path), pageNum);
+  } catch (e) {
+    console.warn("[docs] page recopiée en image :", path, e);
+    const { png, width, height } = await rasterizePage(path, pageNum);
+    const out = await PDFDocument.create();
+    const image = await out.embedPng(png);
+    out.addPage([width, height]).drawImage(image, { x: 0, y: 0, width, height });
+    return out.save();
+  }
 }
 
 /** Écrit le PDF d'une page dans le dossier temporaire du glisser ; renvoie son chemin. */

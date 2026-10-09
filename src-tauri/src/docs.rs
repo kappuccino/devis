@@ -189,6 +189,12 @@ pub async fn read_file(path: String) -> CmdResult<Response> {
     .map_err(err)?
 }
 
+/// Indique, pour chaque chemin, si le fichier existe encore.
+#[tauri::command]
+pub fn files_exist(paths: Vec<String>) -> Vec<bool> {
+    paths.iter().map(|p| Path::new(p).is_file()).collect()
+}
+
 #[tauri::command]
 pub async fn copy_file(from: String, to: String) -> CmdResult<()> {
     tauri::async_runtime::spawn_blocking(move || std::fs::copy(&from, &to).map(|_| ()).map_err(err))

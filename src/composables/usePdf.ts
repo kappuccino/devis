@@ -227,21 +227,54 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
   };
 }
 
-/** Génère le PDF du devis, demande où l'enregistrer puis l'ouvre. Renvoie le chemin, ou null si annulé. */
-export async function exportQuotePdf(quote: Quote): Promise<string | null> {
+/** PDF du devis seul. */
+export async function quotePdfBytes(quote: Quote): Promise<Uint8Array> {
   const [client, settings] = await Promise.all([
     quote.client_code ? api.getClient(quote.client_code) : Promise.resolve(null),
     api.getSettings(),
   ]);
+  const buffer = await pdfMake.createPdf(buildDocument(quote, client, settings)).getBuffer();
+  return new Uint8Array(buffer);
+}
+
+/** Demande où enregistrer le PDF d'un devis ; null si annulé. */
+export function askQuotePdfPath(quote: Quote, suffix = "") {
   const safeName = (quote.client_name || quote.client_code || "client").replace(/[\\/:*?"<>|]/g, "-");
-  const path = await save({
-    defaultPath: `${quote.number ?? "Devis"} - ${safeName}.pdf`,
+  return save({
+    defaultPath: `${quote.number ?? "Devis"} - ${safeName}${suffix}.pdf`,
     filters: [{ name: "PDF", extensions: ["pdf"] }],
   });
-  if (!path) return null;
+}
 
-  const buffer = await pdfMake.createPdf(buildDocument(quote, client, settings)).getBuffer();
-  await api.saveFile(path, new Uint8Array(buffer));
+/** Enregistre le PDF puis l'ouvre. */
+export async function writeAndOpenPdf(path: string, bytes: Uint8Array) {
+  await api.saveFile(path, bytes);
   await openPath(path).catch(() => {});
+}
+
+/** Génère le PDF du devis, demande où l'enregistrer puis l'ouvre. Renvoie le chemin, ou null si annulé. */
+export async function exportQuotePdf(quote: Quote): Promise<string | null> {
+  const path = await askQuotePdfPath(quote);
+  if (!path) return null;
+  await writeAndOpenPdf(path, await quotePdfBytes(quote));
   return path;
+}
+
+/** Page de transition entre le devis et la documentation : le titre seul, en gros, centré. */
+export async function transitionPdfBytes(): Promise<Uint8Array> {
+  const doc: TDocumentDefinitions = {
+    pageSize: "A4",
+    pageMargins: [56, 56, 56, 56],
+    content: [
+      {
+        text: "Documentation technique relative aux produits du devis",
+        fontSize: 26,
+        bold: true,
+        color: ACCENT,
+        alignment: "center",
+        margin: [24, 300, 24, 0],
+      },
+    ],
+  };
+  return new Uint8Array(await pdfMake.createPdf(doc).getBuffer());
 }

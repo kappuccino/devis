@@ -21,6 +21,7 @@ import {
 } from "../api";
 import { errorMessage, formatEuro, formatUnitPrice, MOD, round2, todayIso } from "../format";
 import { exportQuotePdf } from "../composables/usePdf";
+import QuoteDocsDialog from "../components/docs/QuoteDocsDialog.vue";
 import { readDraft, removeDraft, writeDraft, type QuoteDraft } from "../drafts";
 import { useConfirm } from "primevue/useconfirm";
 import { useLineClipboard } from "../composables/useLineClipboard";
@@ -769,6 +770,17 @@ async function save(): Promise<Quote | null> {
   }
 }
 
+// PDF + documentation technique : le devis est enregistré, puis la fenêtre de choix des documents s'ouvre.
+const docsDialogVisible = ref(false);
+const docsDialogQuote = ref<Quote | null>(null);
+
+async function savePdfWithDocs() {
+  const saved = await save();
+  if (!saved) return;
+  docsDialogQuote.value = saved;
+  docsDialogVisible.value = true;
+}
+
 async function savePdf() {
   const saved = await save();
   if (!saved) return;
@@ -1043,7 +1055,15 @@ onMounted(async () => {
       <Button label="Repartir de zéro" icon="pi pi-refresh" severity="secondary" text @click="startOver" />
       <Button label="Enregistrer" icon="pi pi-save" severity="secondary" :loading="saving" @click="save" />
       <Button label="Générer PDF" icon="pi pi-file-pdf" :loading="saving" @click="savePdf" />
+      <Button
+        v-tooltip.bottom="'Devis suivi de la documentation technique des produits'"
+        label="Devis PDF + Docs"
+        icon="pi pi-book"
+        :loading="saving"
+        @click="savePdfWithDocs"
+      />
     </div>
+    <QuoteDocsDialog v-model:visible="docsDialogVisible" :quote="docsDialogQuote" />
 
     <div class="card head">
       <div class="field client-field">

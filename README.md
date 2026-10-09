@@ -32,6 +32,13 @@ L'écran **Documentation** (ex-application PDF Finder) recherche une référence
 **Réglages → Documentation**. L'index (`docs-index.db`, à côté de `devis.db`) est un simple cache :
 il est mis à jour en tâche de fond à chaque démarrage, seuls les fichiers nouveaux ou modifiés sont relus.
 
+**Devis PDF + Docs** (éditeur de devis) : propose, pour chaque produit du devis (référence puis code
+ENEDIS), les pages trouvées dans la documentation — correspondances exactes cochées par défaut — et
+permet d'ajouter des documents pris sur l'ordinateur. Les choix sont mémorisés avec le devis
+(table `quote_attachments`). Le PDF enchaîne le devis, une page de transition (sommaire avec numéros
+de page) et les documents, dans l'ordre du devis (`src/docs/attachments.ts`). Les pages d'un PDF mal
+formé, que pdf-lib ne sait pas recopier, sont rendues en image par pdfjs.
+
 - Cœur (indexation, recherche, export de pages) : `src/docs/core/` (JS, repris de PDF Finder, avec ses tests).
 - pdfjs (build legacy + worker) : `src/docs/pdfjs.ts` ; ses ressources sont copiées dans `public/pdfjs/`
   par `scripts/copy-pdfjs-assets.js` (lancé automatiquement avant `dev` et `build`).
