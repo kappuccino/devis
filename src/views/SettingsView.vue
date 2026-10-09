@@ -31,10 +31,11 @@ const sections = [
   { key: "import", label: "Import de données", hint: "Fichier LPN, statistiques", icon: "pi pi-upload" },
   { key: "favoris", label: "Favoris", hint: "Listes de prix favorites", icon: "pi pi-star" },
   { key: "pdf", label: "Config PDF", hint: "Société, numérotation", icon: "pi pi-file-pdf" },
-  { key: "interface", label: "Interface", hint: "Thème clair ou sombre", icon: "pi pi-palette" },
-  { key: "about", label: "À propos", hint: "Version, mises à jour", icon: "pi pi-info-circle" },
-  // Fonctions de documentation (ex-PDF Finder) : à part, en fin de liste.
+  // Fonctions de documentation (ex-PDF Finder) : à part.
   { key: "documentation", label: "Documentation", hint: "Dossier indexé, statistiques", icon: "pi pi-book", separated: true },
+  // Réglages de l'application elle-même : à part, en fin de liste.
+  { key: "interface", label: "Interface", hint: "Thème clair ou sombre", icon: "pi pi-palette", separated: true },
+  { key: "about", label: "À propos", hint: "Version, mises à jour", icon: "pi pi-info-circle" },
 ];
 const current = computed(() => sections.find((s) => s.key === props.section) ?? sections[0]);
 
