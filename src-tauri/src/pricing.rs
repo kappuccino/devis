@@ -49,6 +49,11 @@ pub struct ResolvedPrice {
     pub family: Option<String>,
     pub public_price: Option<f64>,
     pub threshold_price: Option<f64>,
+    /// Prix public − remise CFA / CFO (produit du catalogue).
+    pub discounted_price: Option<f64>,
+    /// Prix de la liste de prix (LPN) retenue, s'il en existe un.
+    pub lpn_price: Option<f64>,
+    pub lpn_list: Option<String>,
 }
 
 /// Prix d'un produit dans les conditions d'un devis :
@@ -74,6 +79,7 @@ pub fn resolve_price(conn: &Connection, ctx: &PricingContext, product_ref: &str)
         .optional()
         .map_err(|e| e.to_string())?;
 
+    // LPN : prix de la liste forcée si le produit y figure, sinon le moins cher des listes du devis.
     let forced = match &ctx.forced_price_list {
         Some(code) => {
             let one = serde_json::to_string(&[code]).map_err(|e| e.to_string())?;
@@ -83,7 +89,8 @@ pub fn resolve_price(conn: &Connection, ctx: &PricingContext, product_ref: &str)
         }
         None => None,
     };
-    let best = match forced {
+    let is_forced = forced.is_some();
+    let lpn = match forced {
         Some(hit) => Some(hit),
         None => {
             let usual = serde_json::to_string(&ctx.price_lists).map_err(|e| e.to_string())?;
@@ -91,38 +98,39 @@ pub fn resolve_price(conn: &Connection, ctx: &PricingContext, product_ref: &str)
         }
     };
 
-    if let Some((price, list_code, list_designation)) = best {
-        let (designation, family, public_price, threshold_price) = match &product {
-            Some((d, p, f, t)) => (d.clone(), f.clone(), Some(*p), *t),
-            None => (list_designation.unwrap_or_default(), None, None, None),
+    // Prix remisé : prix public − remise CFA ou CFO du devis (produits du catalogue seulement).
+    let discounted = product.as_ref().map(|(_, public_price, family, _)| {
+        let discount = match family.as_deref() {
+            Some("CFA") => ctx.discount_cfa,
+            Some("CFO") => ctx.discount_cfo,
+            _ => 0.0,
         };
-        return Ok(ResolvedPrice {
-            product_ref: product_ref.to_string(),
-            enedis_code,
-            designation,
-            unit_price: round2(price),
-            source: list_code,
-            family,
-            public_price: public_price.map(round2),
-            threshold_price: threshold_price.map(round2),
-        });
-    }
+        let source = match family.as_deref() {
+            Some(f) => format!("Public -{}% {f}", fmt_pct(discount)),
+            None => "Public".to_string(),
+        };
+        (round2(public_price * (1.0 - discount / 100.0)), source)
+    });
 
-    let Some((designation, public_price, family, threshold_price)) = product else {
-        return Err(format!("Produit « {product_ref} » introuvable"));
+    // Prix retenu : la liste forcée ; sinon le plus bas entre le prix LPN et le prix remisé.
+    let (unit_price, source) = match (&lpn, &discounted) {
+        (Some((price, list, _)), _) if is_forced => (round2(*price), list.clone()),
+        (Some((price, list, _)), Some((remise, remise_source))) => {
+            if round2(*price) <= *remise {
+                (round2(*price), list.clone())
+            } else {
+                (*remise, remise_source.clone())
+            }
+        }
+        (Some((price, list, _)), None) => (round2(*price), list.clone()),
+        (None, Some((remise, remise_source))) => (*remise, remise_source.clone()),
+        (None, None) => return Err(format!("Produit « {product_ref} » introuvable")),
     };
 
-    let discount = match family.as_deref() {
-        Some("CFA") => ctx.discount_cfa,
-        Some("CFO") => ctx.discount_cfo,
-        _ => 0.0,
+    let (designation, family, public_price, threshold_price) = match &product {
+        Some((d, p, f, t)) => (d.clone(), f.clone(), Some(round2(*p)), t.map(round2)),
+        None => (lpn.as_ref().and_then(|(_, _, d)| d.clone()).unwrap_or_default(), None, None, None),
     };
-    let unit_price = round2(public_price * (1.0 - discount / 100.0));
-    let source = match family.as_deref() {
-        Some(f) => format!("Public -{}% {f}", fmt_pct(discount)),
-        None => "Public".to_string(),
-    };
-
     Ok(ResolvedPrice {
         product_ref: product_ref.to_string(),
         enedis_code,
@@ -130,8 +138,11 @@ pub fn resolve_price(conn: &Connection, ctx: &PricingContext, product_ref: &str)
         unit_price,
         source,
         family,
-        public_price: Some(round2(public_price)),
-        threshold_price: threshold_price.map(round2),
+        public_price,
+        threshold_price,
+        discounted_price: discounted.map(|(price, _)| price),
+        lpn_price: lpn.as_ref().map(|(price, _, _)| round2(*price)),
+        lpn_list: lpn.map(|(_, list, _)| list),
     })
 }
 
@@ -364,6 +375,26 @@ mod tests {
         // Produit absent de la liste forcée : règle habituelle.
         let r = resolve_price(&conn, &outside, "X9").unwrap();
         assert_eq!((r.unit_price, r.source.as_str()), (7.0, "T1"));
+    }
+
+    #[test]
+    fn lowest_of_lpn_and_discounted_price_wins() {
+        let conn = setup();
+        // D1 : public 100 € CFO → remisé 40 € ; dans T1 à 55 € → le prix remisé l'emporte.
+        conn.execute_batch(
+            "INSERT INTO products (ref, designation, public_price, family) VALUES ('D1', 'Produit', 100, 'CFO');
+             INSERT INTO price_list_items (price_list_code, product_ref, price) VALUES ('T1', 'D1', 55);",
+        )
+        .unwrap();
+        let r = resolve_price(&conn, &ctx(), "D1").unwrap();
+        assert_eq!((r.unit_price, r.source.as_str()), (40.0, "Public -60% CFO"));
+        assert_eq!((r.discounted_price, r.lpn_price, r.lpn_list.as_deref()), (Some(40.0), Some(55.0), Some("T1")));
+        // C1 : remisé 20 €, LPN 10 € (T2) → la LPN l'emporte.
+        let r = resolve_price(&conn, &ctx(), "C1").unwrap();
+        assert_eq!((r.unit_price, r.discounted_price, r.lpn_price), (10.0, Some(20.0), Some(10.0)));
+        // Liste forcée : prioritaire même si plus chère.
+        let forced = PricingContext { forced_price_list: Some("T1".into()), ..ctx() };
+        assert_eq!(resolve_price(&conn, &forced, "D1").unwrap().unit_price, 55.0);
     }
 
     #[test]

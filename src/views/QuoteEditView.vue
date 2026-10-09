@@ -17,6 +17,7 @@ import {
   type PricingContext,
   type ProductHit,
   type Quote,
+  type QuoteContact,
   type QuoteLine,
 } from "../api";
 import { errorMessage, formatEuro, formatUnitPrice, MOD, round2, todayIso } from "../format";
@@ -37,6 +38,7 @@ import {
   type FeeKind,
 } from "../quoteLines";
 import { favoriteLists } from "../favorites";
+import { autoFeeChanges, feeRulesFrom, type FeeRules } from "../fees";
 
 const props = defineProps<{ id?: string }>();
 const router = useRouter();
@@ -59,6 +61,8 @@ interface EditLine extends QuoteLine {
   qtyText: string;
   priceText: string;
   discountText: string;
+  /** Frais ajouté automatiquement (conditions de vente), tant qu'on ne l'a pas modifié. */
+  auto?: boolean;
 }
 
 let nextKey = 0;
@@ -75,6 +79,9 @@ const blankLine = (): EditLine => ({
   price_source: null,
   public_price: null,
   threshold_price: null,
+  discounted_price: null,
+  lpn_price: null,
+  lpn_list: null,
   resolvedRef: null,
   pendingRef: null,
   error: null,
@@ -188,22 +195,44 @@ const feeLines = ref<EditLine[]>([]);
 const FEE_LABELS: Record<FeeKind, string> = { shipping: "Frais de port", billing: "Frais de facturation" };
 const hasFee = (kind: FeeKind) => feeLines.value.some((l) => l.kind === kind);
 
-function addFee(kind: FeeKind) {
+function addFee(kind: FeeKind, auto?: { amount: number }) {
   if (hasFee(kind)) return;
   const fee: EditLine = { ...blankLine(), kind, quantity: 1, designation: FEE_LABELS[kind] };
+  if (auto) Object.assign(fee, { auto: true, unit_price: auto.amount, priceText: editText(auto.amount, 2) });
   // Ordre fixe : frais de port, puis frais de facturation.
   feeLines.value = [...feeLines.value, fee].sort((a, b) => FEE_KINDS.indexOf(a.kind as FeeKind) - FEE_KINDS.indexOf(b.kind as FeeKind));
-  nextTick(() => document.getElementById(`fee-${fee.key}`)?.focus());
+  if (!auto) nextTick(() => document.getElementById(`fee-${fee.key}`)?.focus());
 }
 
 function removeFee(fee: EditLine) {
   feeLines.value = feeLines.value.filter((l) => l !== fee);
+  // Retiré à la main : on ne le repropose plus sur ce devis.
+  dismissedFees.add(fee.kind as FeeKind);
+}
+
+// Frais automatiques (seuils dans Réglages → Config PDF) : ajoutés / retirés quand le total des
+// produits passe sous / au-dessus du seuil. Un frais modifié ou retiré à la main n'est plus touché.
+const feeRules = ref<FeeRules>({});
+const dismissedFees = new Set<FeeKind>();
+
+function applyAutoFees() {
+  const present = feeLines.value.map((l) => ({ kind: l.kind as FeeKind, auto: !!l.auto }));
+  const { add, remove } = autoFeeChanges(totals.value.products, feeRules.value, present, dismissedFees);
+  if (remove.length) feeLines.value = feeLines.value.filter((l) => !remove.includes(l.kind as FeeKind));
+  for (const kind of add) addFee(kind, { amount: feeRules.value[kind]!.amount });
 }
 
 /** Remise globale sur les produits, en % (les frais ne sont pas remisés). */
 const globalDiscount = ref(0);
 /** Total HT (produits hors options + frais), remise, total remisé et total des options. */
 const totals = computed(() => quoteTotals([...lines.value, ...feeLines.value], globalDiscount.value));
+// Frais automatiques : seulement sur les modifications du devis, pas à son chargement.
+watch(
+  () => totals.value.products,
+  () => {
+    if (draftReady.value) applyAutoFees();
+  },
+);
 const total = computed(() => totals.value.total);
 const netTotal = computed(() => totals.value.net);
 const filledLines = computed(() => lines.value.filter((l) => l.kind === "item" && l.product_ref.trim()));
@@ -247,9 +276,15 @@ function onClientTab(e: KeyboardEvent) {
 }
 
 /** Choix d'un client de la base : on copie ses conditions dans le devis et on recalcule les prix. */
+/** Contact chez le client et commercial : propres au devis. */
+const emptyContact = (): QuoteContact => ({ contact_name: "", contact_email: "", contact_phone: "", sales_rep: "" });
+const contact = ref<QuoteContact>(emptyContact());
+
 async function applyClient(c: Client) {
   clientCode.value = c.code;
   clientName.value = c.name;
+  // Nouveau client : contact vide, commercial repris de la fiche client.
+  contact.value = { ...emptyContact(), sales_rep: c.sales_rep ?? "" };
   discountCfa.value = c.discount_cfa;
   discountCfo.value = c.discount_cfo;
   priceLists.value = [...c.price_lists];
@@ -281,6 +316,7 @@ async function applyEphemeral() {
     return;
   }
   ephemeralVisible.value = false;
+  if (clientCode.value) contact.value = emptyContact();
   client.value = null;
   clientCode.value = null;
   clientName.value = name.trim();
@@ -350,6 +386,9 @@ async function resolve(line: EditLine, focusNext = false, field: "ref" | "enedis
       resolvedRef: null,
       public_price: null,
       threshold_price: null,
+      discounted_price: null,
+      lpn_price: null,
+      lpn_list: null,
       error: null,
     });
     return;
@@ -370,6 +409,9 @@ async function resolve(line: EditLine, focusNext = false, field: "ref" | "enedis
       price_source: p.source,
       public_price: p.public_price,
       threshold_price: p.threshold_price,
+      discounted_price: p.discounted_price,
+      lpn_price: p.lpn_price,
+      lpn_list: p.lpn_list,
       resolvedRef: p.product_ref,
       resolvedEnedis: p.enedis_code,
       error: null,
@@ -380,6 +422,9 @@ async function resolve(line: EditLine, focusNext = false, field: "ref" | "enedis
       price_source: null,
       public_price: null,
       threshold_price: null,
+      discounted_price: null,
+      lpn_price: null,
+      lpn_list: null,
       error: errorMessage(e),
     });
   } finally {
@@ -430,12 +475,12 @@ async function repriceLines(onlyPublic = false) {
   toast.add({ severity: "info", summary: "Prix recalculés", life: 2000 });
 }
 
-/** Ajoute une ligne de texte ou un sous-total en fin de devis ; on la déplace ensuite à la poignée. */
-function insertSpecialLine(kind: "text" | "subtotal") {
+/** Ajoute un titre, une ligne de texte ou un sous-total en fin de devis ; on la déplace ensuite à la poignée. */
+function insertSpecialLine(kind: "title" | "text" | "subtotal") {
   const added: EditLine = { ...blankLine(), kind, quantity: 0, designation: kind === "subtotal" ? "Sous-total" : "" };
   lines.value = insertBlock(lines.value, [added], null, entryLine());
   if (!entryLine()) lines.value.push(blankLine());
-  if (kind === "text") nextTick(() => document.getElementById(`text-${added.key}`)?.focus());
+  if (kind !== "subtotal") nextTick(() => document.getElementById(`text-${added.key}`)?.focus());
 }
 
 // ---------- Glisser-déposer ----------
@@ -705,6 +750,9 @@ const toQuoteLine = (l: EditLine): QuoteLine => ({
   is_option: !!l.is_option,
   price_source: l.price_source,
   public_price: l.public_price,
+  discounted_price: l.discounted_price ?? null,
+  lpn_price: l.lpn_price ?? null,
+  lpn_list: l.lpn_list ?? null,
   threshold_price: l.threshold_price,
 });
 
@@ -714,6 +762,7 @@ function toQuote(): Quote {
     number: number.value,
     client_code: clientCode.value,
     client_name: clientName.value.trim(),
+    ...contact.value,
     ...pricing.value,
     date: date.value,
     notes: notes.value.trim() || null,
@@ -785,8 +834,11 @@ async function savePdf() {
   const saved = await save();
   if (!saved) return;
   try {
-    const path = await exportQuotePdf(saved);
-    if (path) toast.add({ severity: "success", summary: "PDF enregistré", detail: path, life: 4000 });
+    const result = await exportQuotePdf(saved);
+    if (result) {
+      toast.add({ severity: "success", summary: "PDF enregistré", detail: result.path, life: 4000 });
+      if (result.warning) toast.add({ severity: "warn", summary: "Conditions générales", detail: result.warning });
+    }
   } catch (e) {
     toast.add({ severity: "error", summary: "Génération du PDF", detail: errorMessage(e) });
   }
@@ -796,7 +848,12 @@ async function savePdf() {
 async function fillMissingReferencePrices() {
   if (!hasClient.value) return;
   const ctx = pricing.value;
-  const missing = lines.value.filter((l) => l.kind === "item" && l.product_ref && l.public_price == null);
+  const missing = lines.value.filter(
+    (l) =>
+      l.kind === "item" &&
+      l.product_ref &&
+      (l.public_price == null || (l.discounted_price == null && l.lpn_price == null)),
+  );
   await Promise.all(
     missing.map(async (l) => {
       try {
@@ -804,6 +861,9 @@ async function fillMissingReferencePrices() {
         Object.assign(l, {
           public_price: p.public_price,
           threshold_price: p.threshold_price,
+          discounted_price: p.discounted_price,
+          lpn_price: p.lpn_price,
+          lpn_list: p.lpn_list,
           enedis_code: l.enedis_code ?? p.enedis_code,
         });
       } catch {
@@ -825,7 +885,7 @@ const hasDraft = ref(false);
 /** Ce qui compte pour savoir si le devis a changé (pas le prix public / seuil complétés en tâche de fond). */
 const snapshot = () =>
   JSON.stringify({
-    client: [clientCode.value, clientName.value, pricingKey.value],
+    client: [clientCode.value, clientName.value, pricingKey.value, contact.value],
     date: date.value,
     notes: notes.value,
     discount: globalDiscount.value,
@@ -855,8 +915,10 @@ function persistDraft() {
     return;
   }
   const draft: QuoteDraft = {
+    number: number.value,
     client_code: clientCode.value,
     client_name: clientName.value,
+    ...contact.value,
     ...pricing.value,
     date: date.value,
     notes: notes.value,
@@ -869,7 +931,7 @@ function persistDraft() {
 }
 
 let draftTimer: ReturnType<typeof setTimeout> | undefined;
-watch([clientCode, clientName, pricingKey, date, notes, globalDiscount, lines], () => {
+watch([clientCode, clientName, pricingKey, contact, date, notes, globalDiscount, lines], () => {
   clearTimeout(draftTimer);
   draftTimer = setTimeout(persistDraft, 300);
 }, { deep: true });
@@ -893,6 +955,10 @@ function applyDraft(draft: QuoteDraft) {
     discount_cfo: draft.discount_cfo ?? known?.discount_cfo ?? 0,
     price_lists: draft.price_lists ?? known?.price_lists ?? [],
     forced_price_list: draft.forced_price_list ?? null,
+    contact_name: draft.contact_name,
+    contact_email: draft.contact_email,
+    contact_phone: draft.contact_phone,
+    sales_rep: draft.sales_rep ?? known?.sales_rep ?? "",
   });
   const restored = draft.lines.map((l) => ({
     ...blankLine(),
@@ -926,7 +992,13 @@ function startOver() {
 }
 
 /** Client et conditions du devis ; la recherche affiche le client de la base s'il existe encore. */
-function setClientFields(q: Pick<Quote, "client_code" | "client_name"> & PricingContext) {
+function setClientFields(q: Pick<Quote, "client_code" | "client_name"> & PricingContext & Partial<QuoteContact>) {
+  contact.value = {
+    contact_name: q.contact_name ?? "",
+    contact_email: q.contact_email ?? "",
+    contact_phone: q.contact_phone ?? "",
+    sales_rep: q.sales_rep ?? "",
+  };
   clientCode.value = q.client_code;
   clientName.value = q.client_name;
   discountCfa.value = q.discount_cfa;
@@ -941,6 +1013,7 @@ function setClientFields(q: Pick<Quote, "client_code" | "client_name"> & Pricing
 }
 
 async function load(id: string | undefined) {
+  dismissedFees.clear();
   clearSelection();
   clearTimeout(draftTimer);
   draftReady.value = false;
@@ -949,7 +1022,12 @@ async function load(id: string | undefined) {
     savedSnapshot = snapshot();
     hasDraft.value = false;
     // Modifications non enregistrées laissées la dernière fois : on les reprend.
-    const draft = readDraft(draftKey());
+    let draft = readDraft(draftKey());
+    // Brouillon d'un devis supprimé dont l'identifiant a été réutilisé : on l'écarte.
+    if (draft && draft.number !== undefined && (draft.number ?? null) !== number.value) {
+      removeDraft(draftKey());
+      draft = null;
+    }
     if (draft) {
       applyDraft(draft);
       toast.add({
@@ -1032,6 +1110,7 @@ onMounted(async () => {
     clients.value = list;
     allPriceLists.value = priceListRows;
     favorites.value = favoriteLists(settings);
+    feeRules.value = feeRulesFrom(settings);
   } catch (e) {
     toast.add({ severity: "error", summary: "Chargement des clients", detail: errorMessage(e) });
   }
@@ -1168,6 +1247,15 @@ onMounted(async () => {
           />
           <span class="muted hint">pour ce devis uniquement</span>
         </div>
+        <!-- Contact chez le client et commercial : imprimés sur le PDF. -->
+        <div v-if="hasClient" class="conditions contact-row">
+          <label for="contact-name">Contact</label>
+          <InputText id="contact-name" v-model="contact.contact_name" placeholder="Nom du contact" size="small" />
+          <InputText v-model="contact.contact_email" placeholder="Email" size="small" type="email" class="contact-email" />
+          <InputText v-model="contact.contact_phone" placeholder="Téléphone" size="small" class="contact-phone" />
+          <label for="sales-rep">Commercial</label>
+          <InputText id="sales-rep" v-model="contact.sales_rep" placeholder="Commercial" size="small" />
+        </div>
 
         <Dialog v-model:visible="ephemeralVisible" modal header="Client ponctuel" :style="{ width: '480px' }">
           <p class="muted dialog-hint">Ce client n'est pas ajouté à la base : il n'existe que dans ce devis.</p>
@@ -1240,7 +1328,9 @@ onMounted(async () => {
             <th style="width: 190px">Référence</th>
             <th>Désignation</th>
             <th style="width: 90px" class="num">Qté</th>
-            <th style="width: 105px" class="num">Prix public</th>
+            <th style="width: 95px" class="num">Prix public</th>
+            <th v-tooltip.top="'Prix public − remise CFA / CFO du devis'" style="width: 95px" class="num">Prix remisé</th>
+            <th v-tooltip.top="'Prix négocié de la liste de prix'" style="width: 95px" class="num">LPN</th>
             <th style="width: 120px" class="num">PU HT (€)</th>
             <th v-tooltip.top="'Remise supplémentaire sur le prix de la ligne'" style="width: 90px" class="num">
               Remise sup. (%)
@@ -1283,7 +1373,7 @@ onMounted(async () => {
                 />
               </td>
               <template v-if="line.kind === 'text'">
-                <td colspan="9">
+                <td colspan="11">
                   <Textarea
                     :id="`text-${line.key}`"
                     v-model="line.designation"
@@ -1297,8 +1387,22 @@ onMounted(async () => {
                 </td>
                 <td></td>
               </template>
+              <!-- Titre : sépare le devis en paragraphes (gras, rouge, plus grand). -->
+              <template v-else-if="line.kind === 'title'">
+                <td colspan="11">
+                  <InputText
+                    :id="`text-${line.key}`"
+                    v-model="line.designation"
+                    fluid
+                    size="small"
+                    placeholder="Titre…"
+                    class="title-line"
+                  />
+                </td>
+                <td></td>
+              </template>
               <template v-else>
-                <td colspan="7">
+                <td colspan="9">
                   <InputText v-model="line.designation" fluid size="small" class="subtotal-label" />
                 </td>
                 <td class="num subtotal-amount">{{ formatEuro(subtotalAmounts.get(line.key)) }}</td>
@@ -1413,6 +1517,17 @@ onMounted(async () => {
                 />
               </td>
               <td class="num muted">{{ formatUnitPrice(line.public_price) }}</td>
+              <!-- En gras : le prix qui a fixé le PU HT (le plus bas des deux, ou la liste forcée). -->
+              <td class="num ref-price" :class="{ used: line.price_source?.startsWith('Public') }">
+                {{ formatUnitPrice(line.discounted_price) }}
+              </td>
+              <td
+                v-tooltip.top="line.lpn_list ? `Liste ${line.lpn_list}` : 'Aucun prix négocié'"
+                class="num ref-price"
+                :class="{ used: line.lpn_price != null && line.price_source === line.lpn_list }"
+              >
+                {{ formatUnitPrice(line.lpn_price) }}
+              </td>
               <td>
                 <InputText
                   :model-value="line.priceText"
@@ -1467,7 +1582,7 @@ onMounted(async () => {
           <!-- Frais de port / de facturation : toujours en bas, montant HT dans la colonne Total. -->
           <tr v-for="fee in feeLines" :key="fee.key" class="fee-row">
             <td colspan="2"></td>
-            <td colspan="7">
+            <td colspan="9">
               <InputText v-model="fee.designation" fluid size="small" class="fee-label" />
             </td>
             <td>
@@ -1480,7 +1595,7 @@ onMounted(async () => {
                 fluid
                 size="small"
                 class="num"
-                @update:model-value="(v: string | undefined) => onPriceInput(fee, v ?? '')"
+                @update:model-value="(v: string | undefined) => { fee.auto = false; onPriceInput(fee, v ?? ''); }"
                 @blur="onPriceBlur(fee)"
               />
             </td>
@@ -1502,8 +1617,16 @@ onMounted(async () => {
           <!-- Ajout de lignes : texte, sous-total, frais de port, frais de facturation. -->
           <tr>
             <td colspan="2"></td>
-            <td colspan="11">
+            <td colspan="13">
               <div class="add-lines">
+                <Button
+                  v-tooltip.bottom="'Titre de paragraphe, ajouté en fin de devis, à déplacer avec la poignée'"
+                  label="Titre"
+                  icon="pi pi-bars"
+                  text
+                  size="small"
+                  @click="insertSpecialLine('title')"
+                />
                 <Button
                   v-tooltip.bottom="'Ajoutée en fin de devis, à déplacer avec la poignée'"
                   label="Texte"
@@ -1542,13 +1665,13 @@ onMounted(async () => {
             </td>
           </tr>
           <tr>
-            <td colspan="5"></td>
+            <td colspan="7"></td>
             <td colspan="4" class="num total-label">Total HT</td>
             <td class="num total">{{ formatEuro(total) }}</td>
             <td colspan="3"></td>
           </tr>
           <tr class="global-discount">
-            <td colspan="5"></td>
+            <td colspan="7"></td>
             <td colspan="3" class="num total-label">
               <label v-tooltip.top="'Les frais de port et de facturation ne sont pas remisés'" for="global-discount">Remise sur les produits</label>
             </td>
@@ -1569,14 +1692,14 @@ onMounted(async () => {
             <td colspan="3"></td>
           </tr>
           <tr>
-            <td colspan="5"></td>
+            <td colspan="7"></td>
             <td colspan="4" class="num total-label">Total HT remisé</td>
             <td class="num total">{{ formatEuro(netTotal) }}</td>
             <td colspan="3"></td>
           </tr>
           <!-- Lignes en option : à part, tout en bas, hors total HT. -->
           <tr v-if="lines.some((l) => l.is_option && l.product_ref)" class="options-total">
-            <td colspan="5"></td>
+            <td colspan="7"></td>
             <td colspan="4" class="num total-label">Total options HT</td>
             <td class="num total">{{ formatEuro(totals.options) }}</td>
             <td colspan="3"></td>
@@ -1642,6 +1765,18 @@ onMounted(async () => {
 .conditions label {
   color: var(--app-muted);
   margin-left: 0.5rem;
+}
+
+.contact-row label:first-child {
+  margin-left: 0;
+}
+
+.contact-email {
+  width: 220px;
+}
+
+.contact-phone {
+  width: 140px;
 }
 
 .conditions-name {
@@ -1734,6 +1869,16 @@ tr:hover .drag-handle i {
   font-size: 0.9em;
 }
 
+/* Prix remisé / LPN : en gris, sauf celui qui a fixé le PU HT. */
+.lines td.ref-price {
+  color: var(--app-muted);
+}
+
+.lines td.ref-price.used {
+  color: var(--app-text);
+  font-weight: 600;
+}
+
 .lines tr.option-row td {
   font-style: italic;
   background: color-mix(in srgb, var(--app-muted) 7%, transparent);
@@ -1761,8 +1906,10 @@ tr:hover .drag-handle i {
   user-select: none;
 }
 
+/* Texte : noir, gras (taille 10–11 sur le PDF). */
 .text-row :deep(.text-line) {
-  font-style: italic;
+  font-weight: 600;
+  color: var(--app-text);
   border-color: transparent;
   background: transparent;
   box-shadow: none;
@@ -1771,6 +1918,25 @@ tr:hover .drag-handle i {
 .text-row :deep(.text-line:hover),
 .text-row :deep(.text-line:focus) {
   border-color: var(--app-border);
+}
+
+/* Titre : gras, rouge, plus grand (taille 12 sur le PDF). */
+.title-row :deep(.title-line) {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--app-accent);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.title-row :deep(.title-line:hover),
+.title-row :deep(.title-line:focus) {
+  border-color: var(--app-border);
+}
+
+.title-row td {
+  padding-top: 0.9rem;
 }
 
 .subtotal-row td {

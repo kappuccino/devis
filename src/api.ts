@@ -65,6 +65,11 @@ export interface ClientRef {
 
 export interface ResolvedPrice {
   product_ref: string;
+  /** Prix public − remise CFA / CFO (produit du catalogue). */
+  discounted_price: number | null;
+  /** Prix de la liste de prix (LPN) retenue, et son code. */
+  lpn_price: number | null;
+  lpn_list: string | null;
   enedis_code: string | null;
   designation: string;
   unit_price: number;
@@ -93,7 +98,7 @@ export interface QuoteSummary {
  */
 export interface QuoteLine {
   /** `shipping` / `billing` : frais de port / de facturation (montant HT dans unit_price). */
-  kind: "item" | "text" | "subtotal" | "shipping" | "billing";
+  kind: "item" | "title" | "text" | "subtotal" | "shipping" | "billing";
   product_ref: string;
   /** Code ENEDIS, copié du catalogue à la saisie de la ligne. */
   enedis_code: string | null;
@@ -109,9 +114,21 @@ export interface QuoteLine {
   public_price: number | null;
   /** Affiché dans l'appli, jamais sur le PDF. */
   threshold_price: number | null;
+  /** Affichage seulement (jamais sur le PDF) : prix public remisé et prix LPN au moment du devis. */
+  discounted_price: number | null;
+  lpn_price: number | null;
+  lpn_list: string | null;
 }
 
-export interface Quote extends PricingContext {
+/** Contact chez le client et commercial du devis (imprimés sur le PDF). */
+export interface QuoteContact {
+  contact_name: string;
+  contact_email: string;
+  contact_phone: string;
+  sales_rep: string;
+}
+
+export interface Quote extends PricingContext, QuoteContact {
   id: number | null;
   number: string | null;
   /** null : client ponctuel (n'existe que dans le devis). */

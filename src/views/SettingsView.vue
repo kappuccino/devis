@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
@@ -14,6 +14,11 @@ import { useConfirm } from "primevue/useconfirm";
 import { api, type DbStats, type ImportReport, type PriceList, type Settings } from "../api";
 import Checkbox from "primevue/checkbox";
 import { docs, indexing, reindex, setFolder, setIndexOnStartup } from "../docs/store";
+import { CONDITIONS_KEY, DEFAULT_CONDITIONS } from "../conditions";
+import SelectButton from "primevue/selectbutton";
+import { getTheme, setTheme, type ThemeMode } from "../theme";
+import { FEE_SETTINGS } from "../fees";
+import { CGV_PDF_KEY } from "../composables/usePdf";
 import { FAVORITE_LISTS_KEY, favoriteLists } from "../favorites";
 import { errorMessage, formatNumber } from "../format";
 
@@ -24,6 +29,7 @@ const sections = [
   { key: "import", label: "Import de données", hint: "Fichier LPN, statistiques", icon: "pi pi-upload" },
   { key: "favoris", label: "Favoris", hint: "Listes de prix favorites", icon: "pi pi-star" },
   { key: "pdf", label: "Config PDF", hint: "Société, numérotation", icon: "pi pi-file-pdf" },
+  { key: "interface", label: "Interface", hint: "Thème clair ou sombre", icon: "pi pi-palette" },
   // Fonctions de documentation (ex-PDF Finder) : à part, en fin de liste.
   { key: "documentation", label: "Documentation", hint: "Dossier indexé, statistiques", icon: "pi pi-book", separated: true },
 ];
@@ -85,10 +91,32 @@ const companyFields: Field[] = [
   { key: "company_siret", label: "SIRET" },
 ];
 const quoteFields: Field[] = [
-  { key: "quote_prefix", label: "Préfixe des n° de devis", placeholder: "DEV → DEV-2026-0001" },
+  { key: "quote_prefix", label: "Préfixe des n° de devis", placeholder: "JMOS → 26-JMOS-0001" },
   { key: "quote_validity", label: "Validité", placeholder: "ex. 30 jours" },
-  { key: "quote_conditions", label: "Conditions (bas de devis)", multiline: true },
 ];
+
+/** Frais ajoutés automatiquement sur les devis (seuils sur le total HT des produits). */
+const feeFields: Field[] = [
+  { key: FEE_SETTINGS.billing.threshold[0], label: "Minimum de facturation (€ HT)", placeholder: FEE_SETTINGS.billing.threshold[1] },
+  { key: FEE_SETTINGS.billing.amount[0], label: "Frais de facturation (€ HT)", placeholder: FEE_SETTINGS.billing.amount[1] },
+  { key: FEE_SETTINGS.shipping.threshold[0], label: "Franco de port (€ HT)", placeholder: FEE_SETTINGS.shipping.threshold[1] },
+  { key: FEE_SETTINGS.shipping.amount[0], label: "Frais de port (€ HT)", placeholder: "vide : pas de frais de port automatiques" },
+];
+
+// Interface : thème (mémorisé sur ce poste).
+const theme = ref<ThemeMode>(getTheme());
+const themeOptions = [
+  { value: "auto", label: "Automatique", icon: "pi pi-desktop" },
+  { value: "light", label: "Clair", icon: "pi pi-sun" },
+  { value: "dark", label: "Sombre", icon: "pi pi-moon" },
+];
+watch(theme, (mode) => setTheme(mode));
+
+/** CGV complètes : PDF ajouté en dernière page des devis. */
+async function chooseCgv() {
+  const path = await open({ multiple: false, directory: false, title: "PDF des conditions générales de vente", filters: [{ name: "PDF", extensions: ["pdf"] }] });
+  if (typeof path === "string") settings.value[CGV_PDF_KEY] = path;
+}
 
 /** Documentation : choix du dossier indexé (sous-dossiers compris). */
 async function chooseDocsFolder() {
@@ -150,7 +178,9 @@ async function saveSettings() {
   saving.value = true;
   try {
     // Seulement les champs du PDF : les favoris sont enregistrés à part, dès leur choix.
-    const keys = [...companyFields, ...quoteFields].map((f) => f.key).concat("company_logo");
+    const keys = [...companyFields, ...quoteFields, ...feeFields]
+      .map((f) => f.key)
+      .concat("company_logo", CONDITIONS_KEY, CGV_PDF_KEY);
     await api.saveSettings(Object.fromEntries(keys.map((k) => [k, settings.value[k] ?? ""])));
     toast.add({ severity: "success", summary: "Réglages enregistrés", life: 2000 });
   } catch (e) {
@@ -163,6 +193,8 @@ async function saveSettings() {
 onMounted(async () => {
   try {
     [settings.value, allPriceLists.value] = await Promise.all([api.getSettings(), api.listPriceLists(), loadStats()]);
+    // Conditions jamais renseignées : on part du texte actuel des conditions de vente.
+    if (!(CONDITIONS_KEY in settings.value)) settings.value[CONDITIONS_KEY] = DEFAULT_CONDITIONS;
   } catch (e) {
     toast.add({ severity: "error", summary: "Chargement des réglages", detail: errorMessage(e) });
   }
@@ -305,6 +337,18 @@ onMounted(async () => {
         </section>
       </template>
 
+      <!-- Interface -->
+      <section v-else-if="current.key === 'interface'" class="card">
+        <h2>Thème</h2>
+        <p class="muted">« Automatique » suit le réglage clair / sombre du système.</p>
+        <SelectButton v-model="theme" :options="themeOptions" option-label="label" option-value="value" :allow-empty="false">
+          <template #option="{ option }">
+            <i :class="option.icon" />
+            <span>{{ option.label }}</span>
+          </template>
+        </SelectButton>
+      </section>
+
       <!-- Favoris -->
       <section v-else-if="current.key === 'favoris'" class="card">
         <h2>Listes de prix favorites</h2>
@@ -390,6 +434,49 @@ onMounted(async () => {
               <label :for="f.key">{{ f.label }}</label>
               <Textarea v-if="f.multiline" :id="f.key" v-model="settings[f.key]" rows="3" auto-resize />
               <InputText v-else :id="f.key" v-model="settings[f.key]" :placeholder="f.placeholder" />
+            </template>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Conditions de vente</h2>
+          <div class="form-grid">
+            <label for="conditions">Conditions (bas du devis)</label>
+            <div>
+              <Textarea id="conditions" v-model="settings[CONDITIONS_KEY]" rows="9" auto-resize fluid />
+              <small class="muted">
+                Mise en forme : ligne commençant par <code># </code> = titre · <code>**gras**</code> ·
+                <code>__souligné__</code>
+              </small>
+            </div>
+            <label>CGV complètes (PDF)</label>
+            <div class="dir-row">
+              <code class="dir">{{ settings[CGV_PDF_KEY] || "Aucun fichier : pas de CGV en dernière page" }}</code>
+              <Button label="Choisir…" icon="pi pi-file-pdf" severity="secondary" @click="chooseCgv" />
+              <Button
+                v-if="settings[CGV_PDF_KEY]"
+                v-tooltip.bottom="'Retirer'"
+                icon="pi pi-times"
+                text
+                rounded
+                severity="secondary"
+                @click="settings[CGV_PDF_KEY] = ''"
+              />
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Frais automatiques</h2>
+          <p class="muted">
+            Sur un devis, une ligne de frais est ajoutée d'elle-même quand le total HT des produits est sous le seuil,
+            et retirée quand il repasse au-dessus. Modifiée ou retirée à la main, elle n'est plus touchée.
+            Champ vide : valeur indiquée en gris ; 0 : désactivé.
+          </p>
+          <div class="form-grid">
+            <template v-for="f in feeFields" :key="f.key">
+              <label :for="f.key">{{ f.label }}</label>
+              <InputText :id="f.key" v-model="settings[f.key]" :placeholder="f.placeholder" inputmode="decimal" />
             </template>
           </div>
         </section>

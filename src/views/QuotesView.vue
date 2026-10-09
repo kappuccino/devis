@@ -69,8 +69,11 @@ function remove(q: QuoteSummary) {
 
 async function pdf(q: QuoteSummary) {
   try {
-    const path = await exportQuotePdf(await api.getQuote(q.id));
-    if (path) toast.add({ severity: "success", summary: "PDF enregistré", detail: path, life: 4000 });
+    const result = await exportQuotePdf(await api.getQuote(q.id));
+    if (result) {
+      toast.add({ severity: "success", summary: "PDF enregistré", detail: result.path, life: 4000 });
+      if (result.warning) toast.add({ severity: "warn", summary: "Conditions générales", detail: result.warning });
+    }
   } catch (e) {
     toast.add({ severity: "error", summary: "Génération du PDF", detail: errorMessage(e) });
   }

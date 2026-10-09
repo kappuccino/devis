@@ -23,7 +23,11 @@ CREATE TABLE IF NOT EXISTS quote_lines (
     line_total   REAL NOT NULL DEFAULT 0,
     -- Copies au moment du devis (affichage seulement, le prix seuil n'est jamais imprimé).
     public_price    REAL,
-    threshold_price REAL
+    threshold_price REAL,
+    -- Affichage seulement : prix public remisé (CFA / CFO) et prix de la liste de prix (LPN).
+    discounted_price REAL,
+    lpn_price        REAL,
+    lpn_list         TEXT
 );"#;
 
 const SCHEMA: &str = r#"
@@ -91,6 +95,11 @@ CREATE TABLE IF NOT EXISTS quotes (
     total_net    REAL NOT NULL DEFAULT 0,
     -- Liste de prix forcée (choisie parmi les favorites), prioritaire ; vide si aucune.
     forced_price_list TEXT NOT NULL DEFAULT '',
+    -- Contact chez le client et commercial (repris du client, modifiables) : imprimés sur le PDF.
+    contact_name  TEXT NOT NULL DEFAULT '',
+    contact_email TEXT NOT NULL DEFAULT '',
+    contact_phone TEXT NOT NULL DEFAULT '',
+    sales_rep     TEXT NOT NULL DEFAULT '',
     date        TEXT NOT NULL,
     notes       TEXT,
     total_ht    REAL NOT NULL DEFAULT 0,
@@ -159,6 +168,14 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // Lignes en option et liste de prix forcée.
     add_column(conn, "quote_lines", "is_option", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "quotes", "forced_price_list", "TEXT NOT NULL DEFAULT ''")?;
+    // Prix remisé et prix LPN mémorisés sur les lignes.
+    add_column(conn, "quote_lines", "discounted_price", "REAL")?;
+    add_column(conn, "quote_lines", "lpn_price", "REAL")?;
+    add_column(conn, "quote_lines", "lpn_list", "TEXT")?;
+    // Contact et commercial du devis.
+    for column in ["contact_name", "contact_email", "contact_phone", "sales_rep"] {
+        add_column(conn, "quotes", column, "TEXT NOT NULL DEFAULT ''")?;
+    }
     // Total remisé enregistré (avant : calculé sur le total HT, sans frais).
     if add_column(conn, "quotes", "total_net", "REAL NOT NULL DEFAULT 0")? {
         conn.execute_batch("UPDATE quotes SET total_net = round(total_ht * (1 - discount_pct / 100.0), 2)")?;

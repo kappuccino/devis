@@ -3,12 +3,13 @@ import { round2 } from "./format";
 /**
  * Lignes d'un devis :
  * - `item` : un article (réf, quantité, prix) ;
+ * - `title` : un titre de paragraphe (dans `designation`) ;
  * - `text` : une ligne de texte libre (dans `designation`) ;
  * - `subtotal` : sous-total des articles depuis le sous-total précédent (ou le début du devis) ;
  * - `shipping` / `billing` : frais de port / de facturation, toujours en bas, montant HT dans
  *   `unit_price`, compris dans le total HT mais jamais remisés.
  */
-export type LineKind = "item" | "text" | "subtotal" | "shipping" | "billing";
+export type LineKind = "item" | "title" | "text" | "subtotal" | "shipping" | "billing";
 
 export const FEE_KINDS = ["shipping", "billing"] as const;
 export type FeeKind = (typeof FEE_KINDS)[number];

@@ -1,4 +1,4 @@
-# Devis Cahors
+# Devis Groupe Cahors
 
 Application de bureau (Tauri 2 + Vue 3 + SQLite) pour créer des devis à partir du classeur « LPN finale.xlsx ».
 
@@ -83,5 +83,5 @@ du dépôt : `APPLE_CERTIFICATE` (.p12 en base64), `APPLE_CERTIFICATE_PASSWORD`,
 
 ```sh
 npm run tauri build                     # installeurs de la machine courante
-npm run tauri build -- --bundles app    # seulement « Devis Cahors.app » (plus rapide)
+npm run tauri build -- --bundles app    # seulement « Devis Groupe Cahors.app » (plus rapide)
 ```

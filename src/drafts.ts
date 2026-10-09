@@ -1,11 +1,13 @@
-import type { PricingContext, QuoteLine } from "./api";
+import type { PricingContext, QuoteContact, QuoteLine } from "./api";
 
 /**
  * Brouillon d'un devis en cours d'édition, gardé dans le stockage local de l'appli
  * pour ne rien perdre (fermeture de la fenêtre, changement d'onglet…).
  * Clé : `nouveau` pour un devis pas encore enregistré, sinon l'id du devis.
  */
-export interface QuoteDraft extends Partial<PricingContext> {
+export interface QuoteDraft extends Partial<PricingContext>, Partial<QuoteContact> {
+  /** Numéro du devis enregistré (null pour un nouveau devis) : un brouillon d'un autre devis est ignoré. */
+  number?: string | null;
   /** null : client ponctuel, ou pas encore de client. */
   client_code: string | null;
   client_name: string;

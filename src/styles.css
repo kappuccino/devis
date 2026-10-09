@@ -19,17 +19,18 @@
   background: var(--app-bg);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --app-bg: #121417;
-    --app-surface: #1b1e22;
-    --app-border: #2c3036;
-    --app-text: #e6e8eb;
-    --app-muted: #9aa1ab;
-    --app-accent: #ff3b40;
-    --app-warn: #fbbf24;
-    --app-warn-bg: #3b2f12;
-  }
+/* Thème sombre : classe posée par src/theme.ts (Réglages → Interface). */
+html.app-dark {
+  /* Contrôles natifs (barres de défilement, sélecteur de date) en sombre aussi. */
+  color-scheme: dark;
+  --app-bg: #121417;
+  --app-surface: #1b1e22;
+  --app-border: #2c3036;
+  --app-text: #e6e8eb;
+  --app-muted: #9aa1ab;
+  --app-accent: #ff3b40;
+  --app-warn: #fbbf24;
+  --app-warn-bg: #3b2f12;
 }
 
 * {

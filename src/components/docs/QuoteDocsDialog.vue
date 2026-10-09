@@ -9,7 +9,7 @@ import Message from "primevue/message";
 import ProgressSpinner from "primevue/progressspinner";
 import { useToast } from "primevue/usetoast";
 import { api, type Quote } from "../../api";
-import { askQuotePdfPath, quotePdfBytes, writeAndOpenPdf } from "../../composables/usePdf";
+import { appendCgv, askQuotePdfPath, quotePdfBytes, writeAndOpenPdf } from "../../composables/usePdf";
 import {
   assembleQuoteWithDocs,
   buildProposals,
@@ -134,15 +134,18 @@ async function generate() {
     await api.saveQuoteAttachments(quote.id, toAttachments(groups.value, externals.value));
     const path = await askQuotePdfPath(quote, " + docs");
     if (!path) return;
-    const { bytes, warnings } = await assembleQuoteWithDocs(
+    const assembled = await assembleQuoteWithDocs(
       await quotePdfBytes(quote),
       includedParts(groups.value, externals.value),
       rasterizer,
     );
+    // CGV complètes en toute dernière page, après la documentation.
+    const { bytes, warning } = await appendCgv(assembled.bytes);
+    const warnings = warning ? [...assembled.warnings, warning] : assembled.warnings;
     await writeAndOpenPdf(path, bytes);
     toast.add({ severity: "success", summary: "PDF enregistré", detail: path, life: 4000 });
     if (warnings.length) {
-      toast.add({ severity: "warn", summary: "Documents ignorés (illisibles)", detail: warnings.join("\n") });
+      toast.add({ severity: "warn", summary: "Documents non ajoutés", detail: warnings.join("\n") });
     }
     visible.value = false;
   } catch (e) {

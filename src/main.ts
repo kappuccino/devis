@@ -9,6 +9,9 @@ import "primeicons/primeicons.css";
 import "./styles.css";
 import App from "./App.vue";
 import { router } from "./router";
+import { applyTheme } from "./theme";
+
+applyTheme();
 
 // Couleur principale : le rouge du logo Cahors (#E60005).
 const Cahors = definePreset(Aura, {
@@ -31,7 +34,7 @@ const Cahors = definePreset(Aura, {
 
 createApp(App)
   .use(router)
-  .use(PrimeVue, { theme: { preset: Cahors, options: { darkModeSelector: "system" } }, locale: { emptyMessage: "Aucun résultat" } })
+  .use(PrimeVue, { theme: { preset: Cahors, options: { darkModeSelector: ".app-dark" } }, locale: { emptyMessage: "Aucun résultat" } })
   .use(ToastService)
   .use(ConfirmationService)
   .directive("tooltip", Tooltip)

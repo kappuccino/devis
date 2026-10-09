@@ -359,6 +359,13 @@ pub struct QuoteLine {
     /// Ligne en option : comptée dans « Total options », pas dans le total HT ni les sous-totaux.
     #[serde(default)]
     pub is_option: bool,
+    /// Affichage seulement (jamais sur le PDF) : prix public remisé et prix LPN au moment du devis.
+    #[serde(default)]
+    pub discounted_price: Option<f64>,
+    #[serde(default)]
+    pub lpn_price: Option<f64>,
+    #[serde(default)]
+    pub lpn_list: Option<String>,
     pub price_source: Option<String>,
     #[serde(default)]
     pub public_price: Option<f64>,
@@ -377,6 +384,9 @@ pub struct Quote {
     /// Remises et listes de prix du devis (copiées du client, modifiables).
     #[serde(flatten)]
     pub pricing: PricingContext,
+    /// Contact chez le client et commercial.
+    #[serde(flatten)]
+    pub contact: QuoteContact,
     pub date: String,
     pub notes: Option<String>,
     /// Somme des lignes (remises de ligne comprises).
@@ -391,6 +401,16 @@ pub struct Quote {
     #[serde(default)]
     pub total_options: f64,
     pub lines: Vec<QuoteLine>,
+}
+
+/// Contact chez le client et commercial du devis (imprimés sur le PDF).
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct QuoteContact {
+    pub contact_name: String,
+    pub contact_email: String,
+    pub contact_phone: String,
+    pub sales_rep: String,
 }
 
 #[tauri::command]
@@ -408,7 +428,7 @@ fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
     let mut quote = conn
         .query_row(
             "SELECT id, number, client_code, client_name, date, notes, total_ht, discount_cfa, discount_cfo, price_lists,
-                    discount_pct, forced_price_list
+                    discount_pct, forced_price_list, contact_name, contact_email, contact_phone, sales_rep
              FROM quotes WHERE id = ?1",
             [id],
             |r| {
@@ -430,6 +450,12 @@ fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
                         price_lists: lists.split(',').filter(|l| !l.is_empty()).map(str::to_string).collect(),
                         forced_price_list: code_or_none(r.get(11)?),
                     },
+                    contact: QuoteContact {
+                        contact_name: r.get(12)?,
+                        contact_email: r.get(13)?,
+                        contact_phone: r.get(14)?,
+                        sales_rep: r.get(15)?,
+                    },
                     lines: Vec::new(),
                 })
             },
@@ -438,7 +464,7 @@ fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
     quote.lines = query_all(
         conn,
         "SELECT kind, product_ref, designation, quantity, unit_price, price_source, public_price, threshold_price,
-                discount, is_option, enedis_code
+                discount, is_option, enedis_code, discounted_price, lpn_price, lpn_list
          FROM quote_lines WHERE quote_id = ?1 ORDER BY position",
         [id],
         |r| {
@@ -454,6 +480,9 @@ fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
                 discount: r.get(8)?,
                 is_option: r.get(9)?,
                 enedis_code: r.get(10)?,
+                discounted_price: r.get(11)?,
+                lpn_price: r.get(12)?,
+                lpn_list: r.get(13)?,
             })
         },
     )?;
@@ -463,7 +492,8 @@ fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
     Ok(quote)
 }
 
-/// Numéro suivant au format `<préfixe>-<année>-<n° sur 4 chiffres>`.
+/// Numéro suivant au format `<année sur 2 chiffres>-<préfixe>-<n° sur 4 chiffres>` (ex. `26-JMOS-0001`).
+/// Le compteur repart à 1 chaque année.
 fn next_number(conn: &Connection, date: &str) -> CmdResult<String> {
     let prefix: String = conn
         .query_row("SELECT value FROM settings WHERE key = 'quote_prefix'", [], |r| r.get(0))
@@ -471,8 +501,8 @@ fn next_number(conn: &Connection, date: &str) -> CmdResult<String> {
         .map_err(err)?
         .filter(|p: &String| !p.trim().is_empty())
         .unwrap_or_else(|| "DEV".to_string());
-    let year = date.get(0..4).unwrap_or("0000");
-    let stem = format!("{}-{year}-", prefix.trim());
+    let year = date.get(2..4).unwrap_or("00");
+    let stem = format!("{year}-{}-", prefix.trim());
     let last: Option<String> = conn
         .query_row(
             "SELECT number FROM quotes WHERE number LIKE ?1 || '%' ORDER BY number DESC LIMIT 1",
@@ -569,12 +599,19 @@ pub fn save_quote(state: State<AppState>, mut quote: Quote) -> CmdResult<Quote> 
         }
     };
 
+    let c = &quote.contact;
+    tx.execute(
+        "UPDATE quotes SET contact_name = ?2, contact_email = ?3, contact_phone = ?4, sales_rep = ?5 WHERE id = ?1",
+        params![id, c.contact_name.trim(), c.contact_email.trim(), c.contact_phone.trim(), c.sales_rep.trim()],
+    )
+    .map_err(err)?;
+
     for (i, l) in quote.lines.iter().enumerate() {
         tx.execute(
             "INSERT INTO quote_lines
              (quote_id, position, kind, product_ref, designation, quantity, unit_price, price_source, line_total,
-              public_price, threshold_price, discount, is_option, enedis_code)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+              public_price, threshold_price, discount, is_option, enedis_code, discounted_price, lpn_price, lpn_list)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
                 id,
                 i as i64,
@@ -589,7 +626,10 @@ pub fn save_quote(state: State<AppState>, mut quote: Quote) -> CmdResult<Quote> 
                 l.threshold_price,
                 l.discount,
                 l.is_option,
-                l.enedis_code
+                l.enedis_code,
+                l.discounted_price.map(round2),
+                l.lpn_price.map(round2),
+                l.lpn_list
             ],
         )
         .map_err(err)?;
@@ -761,7 +801,22 @@ mod tests {
             price_source: None,
             public_price: None,
             threshold_price: None,
+            discounted_price: None,
+            lpn_price: None,
+            lpn_list: None,
         }
+    }
+
+    #[test]
+    fn quote_numbers_are_year_prefix_counter() {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::init(&conn).unwrap();
+        conn.execute("INSERT INTO settings (key, value) VALUES ('quote_prefix', 'JMOS')", []).unwrap();
+        assert_eq!(next_number(&conn, "2026-10-09").unwrap(), "26-JMOS-0001");
+        conn.execute("INSERT INTO quotes (number, client_code, date) VALUES ('26-JMOS-0007', '', '2026-10-09')", []).unwrap();
+        assert_eq!(next_number(&conn, "2026-12-31").unwrap(), "26-JMOS-0008");
+        // Nouvelle année : le compteur repart à 1.
+        assert_eq!(next_number(&conn, "2027-01-02").unwrap(), "27-JMOS-0001");
     }
 
     #[test]

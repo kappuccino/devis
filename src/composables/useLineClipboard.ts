@@ -32,7 +32,7 @@ export function useLineClipboard() {
     const text = linesToText(lines);
     clipboard.value = {
       lines: lines.map(
-        ({ kind, product_ref, enedis_code, designation, quantity, unit_price, discount, is_option, price_source, public_price, threshold_price }) => ({
+        ({ kind, product_ref, enedis_code, designation, quantity, unit_price, discount, is_option, price_source, public_price, threshold_price, discounted_price, lpn_price, lpn_list }) => ({
           kind,
           product_ref,
           enedis_code,
@@ -44,6 +44,9 @@ export function useLineClipboard() {
           price_source,
           public_price,
           threshold_price,
+          discounted_price,
+          lpn_price,
+          lpn_list,
         }),
       ),
       pricingKey,

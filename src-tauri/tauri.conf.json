@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Devis Cahors",
+  "productName": "Devis Groupe Cahors",
   "version": "0.1.0",
   "identifier": "fr.devis.app",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Devis Cahors",
+        "title": "Devis Groupe Cahors",
         "width": 1280,
         "height": 820,
         "minWidth": 1024,
