@@ -16,6 +16,8 @@
         }
       ]
     },
-    "dialog:default"
+    "dialog:default",
+    "opener:allow-reveal-item-in-dir",
+    "drag:default"
   ]
 }

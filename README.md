@@ -25,6 +25,17 @@ Au premier lancement, aller dans **Réglages → Importer un fichier LPN…**.
 
 Un réimport remplace produits, clients et listes (y compris les modifications faites dans l'appli). Les devis ne sont pas touchés.
 
+## Documentation technique
+
+L'écran **Documentation** (ex-application PDF Finder) recherche une référence produit dans les PDF
+(texte de chaque page) et les images (nom du fichier) d'un dossier choisi dans
+**Réglages → Documentation**. L'index (`docs-index.db`, à côté de `devis.db`) est un simple cache :
+il est mis à jour en tâche de fond à chaque démarrage, seuls les fichiers nouveaux ou modifiés sont relus.
+
+- Cœur (indexation, recherche, export de pages) : `src/docs/core/` (JS, repris de PDF Finder, avec ses tests).
+- pdfjs (build legacy + worker) : `src/docs/pdfjs.ts` ; ses ressources sont copiées dans `public/pdfjs/`
+  par `scripts/copy-pdfjs-assets.js` (lancé automatiquement avant `dev` et `build`).
+
 ## Règle de prix
 
 Pour un client et une référence :

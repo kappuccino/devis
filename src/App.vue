@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { indexing, startDocs } from "./docs/store";
 import Toast from "primevue/toast";
 import ConfirmDialog from "primevue/confirmdialog";
 import { useRoute } from "vue-router";
@@ -13,6 +14,8 @@ const nav = [
   { to: "/produits", label: "Produits", icon: "pi pi-box" },
   { to: "/clients", label: "Clients", icon: "pi pi-users" },
   { to: "/listes", label: "Listes de prix", icon: "pi pi-list" },
+  // Documentation technique (ex-PDF Finder) : à part, un peu plus bas.
+  { to: "/documentation", label: "Documentation", icon: "pi pi-book", separated: true },
 ];
 
 // Barre latérale repliable (icônes seules), état mémorisé d'une session à l'autre.
@@ -39,7 +42,11 @@ function onKeydown(e: KeyboardEvent) {
     toggle();
   }
 }
-onMounted(() => window.addEventListener("keydown", onKeydown));
+onMounted(() => {
+  window.addEventListener("keydown", onKeydown);
+  // Index de la documentation mis à jour en tâche de fond, sans bloquer l'appli.
+  startDocs();
+});
 onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 </script>
 
@@ -77,10 +84,15 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
         v-tooltip.right="tip(item.label)"
         :to="item.to"
         class="nav-link"
-        :class="{ active: isActive(item.to) }"
+        :class="{ active: isActive(item.to), separated: item.separated }"
       >
         <i :class="item.icon" />
         <span class="label">{{ item.label }}</span>
+        <i
+          v-if="item.to === '/documentation' && indexing"
+          v-tooltip.right="'Indexation de la documentation en cours'"
+          class="pi pi-spin pi-spinner busy"
+        />
       </RouterLink>
 
       <span class="spacer" />
@@ -213,6 +225,21 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
   color: #fff;
   font-weight: 600;
   box-shadow: inset 3px 0 0 var(--app-accent);
+}
+
+.nav-link.separated {
+  margin-top: 1rem;
+}
+
+/* Indexation de la documentation en cours. */
+.nav-link .busy {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--app-sidebar-muted);
+}
+
+.collapsed .nav-link .busy {
+  display: none;
 }
 
 .new-quote {

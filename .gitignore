@@ -32,3 +32,6 @@ tauri-icons/
 
 # Builds
 src-tauri/target/
+
+# Ressources pdfjs copiées depuis node_modules (scripts/copy-pdfjs-assets.js)
+public/pdfjs/

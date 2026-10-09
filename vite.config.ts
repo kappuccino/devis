@@ -7,8 +7,10 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(() => ({
   plugins: [vue()],
-  // pdfmake embarque ses polices (~1,8 Mo) : sans importance pour une appli de bureau.
-  build: { chunkSizeWarningLimit: 2500 },
+  // pdfmake et pdfjs embarquent leurs ressources (~ 2 Mo chacun) : sans importance pour une appli de bureau.
+  // Worker pdfjs en module ES, cible es2022 (pdfjs 6).
+  build: { chunkSizeWarningLimit: 2500, target: "es2022" },
+  worker: { format: "es" },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

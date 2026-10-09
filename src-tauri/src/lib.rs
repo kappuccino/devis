@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod docs;
 mod import;
 mod pricing;
 
@@ -26,6 +27,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         // Mémorise taille, position et état (plein écran…) de la fenêtre d'un lancement à l'autre.
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        // Glisser une page ou un fichier de la documentation vers une autre application.
+        .plugin(tauri_plugin_drag::init())
         .setup(|app| {
             // ~/Library/Application Support/fr.devis.app/devis.db sur macOS
             let dir = app.path().app_data_dir()?;
@@ -33,9 +36,20 @@ pub fn run() {
             let db_path = dir.join("devis.db");
             let conn = db::open(&db_path)?;
             app.manage(AppState { db: Arc::new(Mutex::new(conn)), db_path });
+            // Index de la documentation technique (base séparée, reconstructible).
+            app.manage(docs::open(app.handle())?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            docs::docs_db_exec,
+            docs::docs_db_run,
+            docs::docs_db_all,
+            docs::docs_index_path,
+            docs::docs_list_files,
+            docs::docs_legacy_folder,
+            docs::read_file,
+            docs::copy_file,
+            docs::write_drag_file,
             commands::list_products,
             commands::search_products,
             commands::list_clients,

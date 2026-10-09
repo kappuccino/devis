@@ -12,6 +12,8 @@ import Column from "primevue/column";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { api, type DbStats, type ImportReport, type PriceList, type Settings } from "../api";
+import Checkbox from "primevue/checkbox";
+import { docs, indexing, reindex, setFolder, setIndexOnStartup } from "../docs/store";
 import { FAVORITE_LISTS_KEY, favoriteLists } from "../favorites";
 import { errorMessage, formatNumber } from "../format";
 
@@ -22,6 +24,8 @@ const sections = [
   { key: "import", label: "Import de données", hint: "Fichier LPN, statistiques", icon: "pi pi-upload" },
   { key: "favoris", label: "Favoris", hint: "Listes de prix favorites", icon: "pi pi-star" },
   { key: "pdf", label: "Config PDF", hint: "Société, numérotation", icon: "pi pi-file-pdf" },
+  // Fonctions de documentation (ex-PDF Finder) : à part, en fin de liste.
+  { key: "documentation", label: "Documentation", hint: "Dossier indexé, statistiques", icon: "pi pi-book", separated: true },
 ];
 const current = computed(() => sections.find((s) => s.key === props.section) ?? sections[0]);
 
@@ -85,6 +89,17 @@ const quoteFields: Field[] = [
   { key: "quote_validity", label: "Validité", placeholder: "ex. 30 jours" },
   { key: "quote_conditions", label: "Conditions (bas de devis)", multiline: true },
 ];
+
+/** Documentation : choix du dossier indexé (sous-dossiers compris). */
+async function chooseDocsFolder() {
+  const dir = await open({
+    directory: true,
+    recursive: true,
+    defaultPath: docs.folder ?? undefined,
+    title: "Dossier contenant la documentation (PDF et images)",
+  });
+  if (typeof dir === "string") setFolder(dir);
+}
 
 async function loadStats() {
   stats.value = await api.dbStats();
@@ -164,7 +179,7 @@ onMounted(async () => {
         :key="sec.key"
         :to="`/reglages/${sec.key}`"
         class="subnav-link"
-        :class="{ active: current.key === sec.key }"
+        :class="{ active: current.key === sec.key, separated: sec.separated }"
       >
         <i :class="sec.icon" />
         <span>
@@ -216,6 +231,77 @@ onMounted(async () => {
             </Message>
             <Message v-for="w in report.warnings" :key="w" severity="warn" :closable="false">{{ w }}</Message>
           </div>
+        </section>
+      </template>
+
+      <!-- Documentation -->
+      <template v-else-if="current.key === 'documentation'">
+        <section class="card">
+          <h2>Dossier indexé</h2>
+          <p class="muted">
+            Les PDF (texte de chaque page) et les images jpg / png (nom du fichier) de ce dossier et de ses
+            sous-dossiers sont indexés pour la recherche par référence.
+          </p>
+          <div class="dir-row">
+            <code class="dir">{{ docs.folder ?? "Aucun dossier choisi" }}</code>
+            <Button label="Choisir…" icon="pi pi-folder-open" :disabled="indexing" @click="chooseDocsFolder" />
+          </div>
+          <div class="check">
+            <Checkbox
+              :model-value="docs.indexOnStartup"
+              input-id="docs-startup"
+              binary
+              @update:model-value="(v: boolean) => setIndexOnStartup(v)"
+            />
+            <label for="docs-startup">
+              Mettre à jour l'index au démarrage (en tâche de fond ; seuls les fichiers nouveaux ou modifiés sont relus)
+            </label>
+          </div>
+          <Button
+            label="Mettre à jour l'index maintenant"
+            icon="pi pi-refresh"
+            severity="secondary"
+            :loading="indexing"
+            :disabled="indexing || !docs.folder"
+            @click="reindex()"
+          />
+          <template v-if="indexing && docs.progress">
+            <ProgressBar
+              :value="docs.progress.total ? Math.round((100 * docs.progress.index) / docs.progress.total) : 0"
+              :show-value="false"
+              style="height: 6px; margin-top: 0.75rem"
+            />
+            <p class="muted">
+              {{ docs.progress.index + 1 }}/{{ docs.progress.total || "…" }} · {{ docs.progress.file.split(/[\\/]/).pop() }}
+            </p>
+          </template>
+          <Message v-else-if="docs.notice" severity="secondary" :closable="false" class="notice">{{ docs.notice }}</Message>
+        </section>
+
+        <section v-if="docs.errors.length" class="card">
+          <h2>Fichiers non indexés lors de la dernière mise à jour ({{ docs.errors.length }})</h2>
+          <ul class="index-errors">
+            <li v-for="e in docs.errors" :key="e.file">
+              <code>{{ e.file }}</code>
+              <span class="muted">{{ e.message }}</span>
+            </li>
+          </ul>
+        </section>
+
+        <section class="card">
+          <h2>Index</h2>
+          <div class="stats">
+            <div><strong>{{ formatNumber(docs.stats.docs) }}</strong><span class="muted">PDF</span></div>
+            <div><strong>{{ formatNumber(docs.stats.pages) }}</strong><span class="muted">pages</span></div>
+            <div><strong>{{ formatNumber(docs.stats.images) }}</strong><span class="muted">images (nom seul)</span></div>
+          </div>
+          <p class="muted">
+            SQLite {{ docs.info?.sqliteVersion }} · FTS5 {{ docs.info?.fts5 ? "OK" : "absent" }} · trigram
+            {{ docs.info?.trigram ? "OK" : "absent (repli LIKE)" }}
+          </p>
+          <p class="muted">
+            Index : <span class="mono">{{ docs.indexPath }}</span>
+          </p>
         </section>
       </template>
 
@@ -353,6 +439,11 @@ onMounted(async () => {
   color: var(--app-muted);
 }
 
+/* Rubrique à part (documentation) : un peu d'espace au-dessus. */
+.subnav-link.separated {
+  margin-top: 1.25rem;
+}
+
 .subnav-link:hover {
   background: var(--app-bg);
 }
@@ -401,6 +492,49 @@ onMounted(async () => {
 
 .form-grid {
   max-width: 760px;
+}
+
+.dir-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.dir {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-bg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.check {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.notice {
+  margin-top: 1rem;
+}
+
+.index-errors {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.index-errors li {
+  display: flex;
+  flex-direction: column;
 }
 
 .favorites {
