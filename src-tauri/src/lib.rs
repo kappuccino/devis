@@ -24,6 +24,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // Mémorise taille, position et état (plein écran…) de la fenêtre d'un lancement à l'autre.
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             // ~/Library/Application Support/fr.devis.app/devis.db sur macOS
             let dir = app.path().app_data_dir()?;

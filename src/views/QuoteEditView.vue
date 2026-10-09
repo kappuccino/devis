@@ -1479,44 +1479,50 @@ onMounted(async () => {
           </tr>
         </tbody>
         <tfoot>
+          <!-- Ajout de lignes : texte, sous-total, frais de port, frais de facturation. -->
           <tr>
-            <td colspan="3"></td>
-            <td colspan="2" class="add-lines">
-              <Button
-                v-tooltip.bottom="'Ajoutée en fin de devis, à déplacer avec la poignée'"
-                label="Texte"
-                icon="pi pi-align-left"
-                text
-                size="small"
-                @click="insertSpecialLine('text')"
-              />
-              <Button
-                v-tooltip.bottom="'Additionne les articles depuis le sous-total précédent'"
-                label="Sous-total"
-                icon="pi pi-calculator"
-                text
-                size="small"
-                @click="insertSpecialLine('subtotal')"
-              />
-              <Button
-                v-tooltip.bottom="'Toujours en bas du devis, non remisés'"
-                label="Frais de port"
-                icon="pi pi-truck"
-                text
-                size="small"
-                :disabled="hasFee('shipping')"
-                @click="addFee('shipping')"
-              />
-              <Button
-                v-tooltip.bottom="'Toujours en bas du devis, non remisés'"
-                label="Frais de facturation"
-                icon="pi pi-receipt"
-                text
-                size="small"
-                :disabled="hasFee('billing')"
-                @click="addFee('billing')"
-              />
+            <td colspan="2"></td>
+            <td colspan="11">
+              <div class="add-lines">
+                <Button
+                  v-tooltip.bottom="'Ajoutée en fin de devis, à déplacer avec la poignée'"
+                  label="Texte"
+                  icon="pi pi-align-left"
+                  text
+                  size="small"
+                  @click="insertSpecialLine('text')"
+                />
+                <Button
+                  v-tooltip.bottom="'Additionne les articles depuis le sous-total précédent'"
+                  label="Sous-total"
+                  icon="pi pi-calculator"
+                  text
+                  size="small"
+                  @click="insertSpecialLine('subtotal')"
+                />
+                <Button
+                  v-tooltip.bottom="'Toujours en bas du devis, non remisés'"
+                  label="Frais de port"
+                  icon="pi pi-truck"
+                  text
+                  size="small"
+                  :disabled="hasFee('shipping')"
+                  @click="addFee('shipping')"
+                />
+                <Button
+                  v-tooltip.bottom="'Toujours en bas du devis, non remisés'"
+                  label="Frais de facturation"
+                  icon="pi pi-receipt"
+                  text
+                  size="small"
+                  :disabled="hasFee('billing')"
+                  @click="addFee('billing')"
+                />
+              </div>
             </td>
+          </tr>
+          <tr>
+            <td colspan="5"></td>
             <td colspan="4" class="num total-label">Total HT</td>
             <td class="num total">{{ formatEuro(total) }}</td>
             <td colspan="3"></td>
@@ -1779,9 +1785,9 @@ tr:hover .drag-handle i {
 }
 
 .add-lines {
-  flex-wrap: wrap;
   display: flex;
   gap: 0.25rem;
+  white-space: nowrap;
 }
 
 .seuil {
