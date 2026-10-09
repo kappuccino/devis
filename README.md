@@ -65,25 +65,20 @@ LPN_XLSX="../documents-source/LPN finale .xlsx" cargo test -- --ignored --nocapt
 Le workflow GitHub Actions (`.github/workflows/build.yml`) :
 
 1. lance les tests (types, vitest, `cargo test`) ;
-2. construit les installeurs **macOS universel** (`.dmg`) et **Windows** (`.exe` NSIS et `.msi`) ;
+2. construit les installeurs **Windows** (`.exe` NSIS et `.msi`), avec le fichier de mise à jour signé.
+   La version **Mac** est construite en local (voir « Build local ») ;
 3. publie une **release GitHub** :
    - à chaque push sur `main` : release `build-N` (N = numéro du run) ;
    - à chaque tag `v*` (ex. `git tag v0.2.0 && git push --tags`) : release officielle.
 
 Penser à monter la version dans `src-tauri/tauri.conf.json` (et `package.json`) avant un tag.
 
-### Signature macOS
-
-Sans secret, l'app est signée « ad-hoc » : au premier lancement, macOS demande de l'ouvrir via
-clic droit → Ouvrir. Pour une signature Developer ID et la notarisation, ajouter dans les secrets
-du dépôt : `APPLE_CERTIFICATE` (.p12 en base64), `APPLE_CERTIFICATE_PASSWORD`,
-`APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` (mot de passe d'app), `APPLE_TEAM_ID`.
-
 ### Mises à jour automatiques
 
-L'application installée cherche une nouvelle version à chaque démarrage (et dans
+Sous **Windows**, l'application installée cherche une nouvelle version à chaque démarrage (et dans
 Réglages → À propos) : elle lit `latest.json` de la **dernière release officielle** du dépôt,
-télécharge l'installeur signé, l'installe et redémarre.
+télécharge l'installeur signé, l'installe et redémarre. La version Mac, construite en local,
+ne se met pas à jour toute seule.
 
 - Les mises à jour sont signées avec la clé `~/.tauri/devis-groupe-cahors.key` (à sauvegarder :
   perdue, les applications installées ne peuvent plus être mises à jour). Sa clé publique est dans
@@ -98,15 +93,13 @@ télécharge l'installeur signé, l'installe et redémarre.
 3. la CI construit, signe et publie la release `v0.2.0` avec `latest.json` (elle échoue si le tag
    ne correspond pas à la version).
 
-### Build local
-
-Les installeurs incluent les fichiers de mise à jour signés : il faut la clé de signature.
+### Build local (Mac)
 
 ```sh
-export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/devis-groupe-cahors.key)"
-export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="…"
-npm run tauri build                     # installeurs de la machine courante
-npm run tauri build -- --bundles app    # seulement « Devis Groupe Cahors.app » (plus rapide)
+npm run tauri build                     # « Devis Groupe Cahors.app » + .dmg
+npm run tauri build -- --bundles app    # seulement l'app (plus rapide)
 ```
 
-Sans la clé (simple essai) : `npm run tauri build -- --config '{"bundle":{"createUpdaterArtifacts":false}}'`.
+L'app est signée « ad-hoc » : au premier lancement, macOS demande de l'ouvrir via clic droit → Ouvrir.
+Les fichiers de mise à jour signés ne sont produits que par la CI
+(`--config src-tauri/tauri.updater.conf.json`, avec la clé de signature).

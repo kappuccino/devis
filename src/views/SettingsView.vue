@@ -18,7 +18,7 @@ import { CONDITIONS_KEY, DEFAULT_CONDITIONS } from "../conditions";
 import SelectButton from "primevue/selectbutton";
 import { getTheme, setTheme, type ThemeMode } from "../theme";
 import { getVersion } from "@tauri-apps/api/app";
-import { checkForUpdate, installUpdate, updater } from "../updater";
+import { checkForUpdate, installUpdate, updater, updatesSupported } from "../updater";
 import { FEE_SETTINGS } from "../fees";
 import { CGV_PDF_KEY } from "../composables/usePdf";
 import { FAVORITE_LISTS_KEY, favoriteLists } from "../favorites";
@@ -360,10 +360,13 @@ onMounted(async () => {
       <section v-else-if="current.key === 'about'" class="card">
         <h2>Devis Groupe Cahors</h2>
         <p>Version installée : <strong>{{ appVersion || "…" }}</strong></p>
-        <p class="muted">
+        <p v-if="!updatesSupported" class="muted">
+          Version Mac construite en local : pas de mise à jour automatique (elles sont publiées pour Windows).
+        </p>
+        <p v-else class="muted">
           Les mises à jour sont publiées sur GitHub ; l'application les cherche à chaque démarrage.
         </p>
-        <div class="update-row">
+        <div v-if="updatesSupported" class="update-row">
           <Button
             label="Vérifier les mises à jour"
             icon="pi pi-refresh"

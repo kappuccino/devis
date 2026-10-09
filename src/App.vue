@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { indexing, startDocs } from "./docs/store";
 import UpdateDialog from "./components/UpdateDialog.vue";
-import { checkForUpdate } from "./updater";
+import { checkForUpdate, updatesSupported } from "./updater";
 import Toast from "primevue/toast";
 import ConfirmDialog from "primevue/confirmdialog";
 import { useRoute } from "vue-router";
@@ -48,8 +48,9 @@ onMounted(() => {
   window.addEventListener("keydown", onKeydown);
   // Index de la documentation mis à jour en tâche de fond, sans bloquer l'appli.
   startDocs();
-  // Nouvelle version ? Vérifié discrètement quelques secondes après le lancement (application installée seulement).
-  if (import.meta.env.PROD) setTimeout(() => checkForUpdate(true), 5000);
+  // Nouvelle version ? Vérifié discrètement quelques secondes après le lancement
+  // (application installée sous Windows ; la version Mac est construite en local, sans mise à jour).
+  if (import.meta.env.PROD && updatesSupported) setTimeout(() => checkForUpdate(true), 5000);
 });
 onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 </script>

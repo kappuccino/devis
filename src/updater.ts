@@ -3,6 +3,9 @@ import { reactive } from "vue";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 
+/** Mises à jour publiées pour Windows seulement (la version Mac est construite en local). */
+export const updatesSupported = !navigator.userAgent.includes("Mac");
+
 export const updater = reactive({
   /** Mise à jour disponible (null : à jour ou pas encore vérifié). */
   available: null as Update | null,

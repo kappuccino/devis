@@ -39,24 +39,13 @@ jobs:
         working-directory: src-tauri
         run: cargo test
 
+  # Installeurs Windows seulement : la version Mac est construite en local (voir README).
   build:
-    name: App ${{ matrix.name }}
+    name: App Windows
     needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: macOS (universel)
-            os: macos-latest
-            args: --target universal-apple-darwin
-            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
-            bundle-dir: src-tauri/target/universal-apple-darwin/release/bundle
-          - name: Windows
-            os: windows-latest
-            args: ''
-            rust-targets: ''
-            bundle-dir: src-tauri/target/release/bundle
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
+    env:
+      BUNDLE_DIR: src-tauri/target/release/bundle
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -64,34 +53,10 @@ jobs:
           node-version: 25
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.rust-targets }}
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
       - run: npm ci
-
-      # Signature macOS : n'est activée que si les secrets existent, sinon signature ad-hoc
-      # (tauri.conf.json). Secrets attendus : APPLE_CERTIFICATE (.p12 en base64),
-      # APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, et pour la notarisation
-      # APPLE_ID, APPLE_PASSWORD (mot de passe d'app), APPLE_TEAM_ID.
-      - name: Configurer la signature macOS
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-            if [ -n "${!v}" ]; then
-              { echo "$v<<__EOF__"; echo "${!v}"; echo "__EOF__"; } >> "$GITHUB_ENV"
-            fi
-          done
-          if [ -n "$APPLE_SIGNING_IDENTITY" ]; then echo "Signature Developer ID"; else echo "Signature ad-hoc (aucun secret)"; fi
 
       # Clé de signature des mises à jour (secrets du dépôt) : sans elle, l'appli installée
       # ne peut pas vérifier les mises à jour. On échoue clairement plutôt qu'au milieu du build.
@@ -113,32 +78,30 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run tauri -- build ${{ matrix.args }}
+        # Fichiers de mise à jour signés : seulement ici (le build Mac local n'en a pas besoin).
+        run: npm run tauri -- build --config src-tauri/tauri.updater.conf.json
 
       - name: Taille des installeurs
         shell: bash
         run: |
           {
-            echo "### Installeurs — ${{ matrix.name }}"
+            echo "### Installeurs Windows"
             echo '| Fichier | Taille |'
             echo '|---|---|'
-            find "${{ matrix.bundle-dir }}" -maxdepth 2 -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.msi' \) | while read -r f; do
+            find "$BUNDLE_DIR" -maxdepth 2 -type f \( -name '*.exe' -o -name '*.msi' \) | while read -r f; do
               echo "| $(basename "$f") | $(du -h "$f" | cut -f1) |"
             done
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: devis-${{ runner.os }}
+          name: devis-windows
           if-no-files-found: error
-          # Installeurs + fichiers de mise à jour signés (.app.tar.gz pour macOS, installeur NSIS pour Windows).
+          # Installeurs + fichier de mise à jour signé (installeur NSIS et sa signature).
           path: |
-            ${{ matrix.bundle-dir }}/dmg/*.dmg
-            ${{ matrix.bundle-dir }}/macos/*.app.tar.gz
-            ${{ matrix.bundle-dir }}/macos/*.app.tar.gz.sig
-            ${{ matrix.bundle-dir }}/nsis/*.exe
-            ${{ matrix.bundle-dir }}/nsis/*.exe.sig
-            ${{ matrix.bundle-dir }}/msi/*.msi
+            ${{ env.BUNDLE_DIR }}/nsis/*.exe
+            ${{ env.BUNDLE_DIR }}/nsis/*.exe.sig
+            ${{ env.BUNDLE_DIR }}/msi/*.msi
 
   release:
     # Une pré-version par commit poussé sur main (tag build-N), jamais proposée en mise à jour ;
@@ -161,12 +124,12 @@ jobs:
       - name: Installeurs à publier
         shell: bash
         run: |
-          # Les fichiers arrivent dans des sous-dossiers (dmg/, macos/, nsis/, msi/) : on les met à plat,
+          # Les fichiers arrivent dans des sous-dossiers (nsis/, msi/) : on les met à plat,
           # sans espaces dans les noms (GitHub les remplacerait, et latest.json doit donner l'URL exacte).
           mkdir -p out
           find dist -type f | while read -r f; do cp "$f" "out/$(basename "$f" | tr ' ' '-')"; done
           ls -la out
-          ls out | grep -qE '\.(dmg|exe|msi)$'
+          ls out | grep -qE '\.(exe|msi)$'
       - name: Nom de la release
         id: meta
         shell: bash
@@ -204,13 +167,12 @@ jobs:
                   sys.exit(f"::error::Fichier de mise à jour introuvable ou ambigu : {pattern} → {files}")
               f = files[0]
               return {"signature": open(f + ".sig").read().strip(), "url": base + os.path.basename(f)}
-          mac = entry("*.app.tar.gz")
           json.dump({
               "version": version,
               "notes": os.environ.get("MESSAGE", ""),
               "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-              # Application macOS universelle : la même archive pour Apple Silicon et Intel.
-              "platforms": {"darwin-aarch64": mac, "darwin-x86_64": mac, "windows-x86_64": entry("*-setup.exe")},
+              # Windows seulement : la version Mac est construite en local, sans mise à jour automatique.
+              "platforms": {"windows-x86_64": entry("*-setup.exe")},
           }, open("out/latest.json", "w"), indent=2)
           print(open("out/latest.json").read())
           PY
