@@ -1493,12 +1493,6 @@ onMounted(async () => {
               <td>
                 <InputText v-model="line.designation" fluid size="small" />
                 <small v-if="line.error" class="warn">{{ line.error }}</small>
-                <small v-else-if="line.price_source" class="muted">
-                  Prix : {{ line.price_source }}
-                  <span v-if="isBelowThreshold(line)" class="warn">
-                    · <i class="pi pi-exclamation-triangle" /> sous le prix seuil
-                  </span>
-                </small>
               </td>
               <td>
                 <InputText
@@ -1528,7 +1522,14 @@ onMounted(async () => {
               >
                 {{ formatUnitPrice(line.lpn_price) }}
               </td>
-              <td>
+              <!-- Source du prix en infobulle (sur une 2e ligne, elle doublait la hauteur des lignes). -->
+              <td
+                v-tooltip.top="
+                  line.price_source
+                    ? `Prix : ${line.price_source}${isBelowThreshold(line) ? ' · sous le prix seuil' : ''}`
+                    : ''
+                "
+              >
                 <InputText
                   :model-value="line.priceText"
                   inputmode="decimal"
@@ -1579,39 +1580,6 @@ onMounted(async () => {
               </td>
             </tr>
           </template>
-          <!-- Frais de port / de facturation : toujours en bas, montant HT dans la colonne Total. -->
-          <tr v-for="fee in feeLines" :key="fee.key" class="fee-row">
-            <td colspan="2"></td>
-            <td colspan="9">
-              <InputText v-model="fee.designation" fluid size="small" class="fee-label" />
-            </td>
-            <td>
-              <InputText
-                :id="`fee-${fee.key}`"
-                :model-value="fee.priceText"
-                inputmode="decimal"
-                autocomplete="off"
-                placeholder="0,00"
-                fluid
-                size="small"
-                class="num"
-                @update:model-value="(v: string | undefined) => { fee.auto = false; onPriceInput(fee, v ?? ''); }"
-                @blur="onPriceBlur(fee)"
-              />
-            </td>
-            <td colspan="2" class="muted fee-hint">non remisé</td>
-            <td>
-              <Button
-                v-tooltip.left="`Retirer les ${fee.designation.toLowerCase() || 'frais'}`"
-                icon="pi pi-times"
-                text
-                rounded
-                size="small"
-                severity="secondary"
-                @click="removeFee(fee)"
-              />
-            </td>
-          </tr>
         </tbody>
         <tfoot>
           <!-- Ajout de lignes : texte, sous-total, frais de port, frais de facturation. -->
@@ -1664,10 +1632,11 @@ onMounted(async () => {
               </div>
             </td>
           </tr>
+          <!-- Totaux dans l'ordre du calcul : produits, remise (produits seulement), frais, total. -->
           <tr>
             <td colspan="7"></td>
-            <td colspan="4" class="num total-label">Total HT</td>
-            <td class="num total">{{ formatEuro(total) }}</td>
+            <td colspan="4" class="num total-label">Total produits HT</td>
+            <td class="num total">{{ formatEuro(totals.products) }}</td>
             <td colspan="3"></td>
           </tr>
           <tr class="global-discount">
@@ -1688,12 +1657,51 @@ onMounted(async () => {
                 input-class="num"
               />
             </td>
-            <td class="num">{{ globalDiscount ? `− ${formatEuro(round2(total - netTotal))}` : "" }}</td>
+            <td class="num">{{ globalDiscount ? `− ${formatEuro(totals.discount)}` : "" }}</td>
             <td colspan="3"></td>
           </tr>
-          <tr>
+          <tr v-if="globalDiscount">
             <td colspan="7"></td>
-            <td colspan="4" class="num total-label">Total HT remisé</td>
+            <td colspan="4" class="num total-label">Total produits remisé HT</td>
+            <td class="num total">{{ formatEuro(round2(totals.products - totals.discount)) }}</td>
+            <td colspan="3"></td>
+          </tr>
+          <!-- Frais de port / de facturation : après la remise (jamais remisés), montant HT dans la colonne Total. -->
+          <tr v-for="fee in feeLines" :key="fee.key" class="fee-row">
+            <td colspan="7"></td>
+            <td colspan="4">
+              <InputText v-model="fee.designation" fluid size="small" class="fee-label" />
+            </td>
+            <td>
+              <InputText
+                :id="`fee-${fee.key}`"
+                :model-value="fee.priceText"
+                inputmode="decimal"
+                autocomplete="off"
+                placeholder="0,00"
+                fluid
+                size="small"
+                class="num"
+                @update:model-value="(v: string | undefined) => { fee.auto = false; onPriceInput(fee, v ?? ''); }"
+                @blur="onPriceBlur(fee)"
+              />
+            </td>
+            <td colspan="2" class="muted fee-hint">non remisé</td>
+            <td>
+              <Button
+                v-tooltip.left="`Retirer les ${fee.designation.toLowerCase() || 'frais'}`"
+                icon="pi pi-times"
+                text
+                rounded
+                size="small"
+                severity="secondary"
+                @click="removeFee(fee)"
+              />
+            </td>
+          </tr>
+          <tr class="grand-total">
+            <td colspan="7"></td>
+            <td colspan="4" class="num total-label">Total HT</td>
             <td class="num total">{{ formatEuro(netTotal) }}</td>
             <td colspan="3"></td>
           </tr>
@@ -1826,14 +1834,26 @@ onMounted(async () => {
   text-align: right;
 }
 
+/* Lignes serrées : une vingtaine d'articles visibles d'un coup dans la fenêtre. */
 .lines td {
-  padding: 5px 6px;
+  padding: 1px 4px;
   vertical-align: top;
   border-bottom: 1px solid var(--app-border);
+  font-size: 0.8125rem;
 }
 
 .lines td.num {
-  padding-top: 11px;
+  padding-top: 5px;
+}
+
+.lines tbody :deep(.p-inputtext) {
+  padding: 2px 6px;
+  font-size: 0.8125rem;
+}
+
+.lines tbody :deep(.p-button.p-button-icon-only) {
+  width: 1.6rem;
+  height: 1.6rem;
 }
 
 .drag-cell {
@@ -1841,7 +1861,7 @@ onMounted(async () => {
 }
 
 .lines td.drag-cell {
-  padding-top: 12px;
+  padding-top: 5px;
 }
 
 /* Toute la cellule sert de poignée (l'icône seule était trop petite à attraper). */
@@ -1921,7 +1941,7 @@ tr:hover .drag-handle i {
 }
 
 /* Titre : gras, rouge, plus grand (taille 12 sur le PDF). */
-.title-row :deep(.title-line) {
+.lines .title-row :deep(.title-line) {
   font-weight: 700;
   font-size: 1.1rem;
   color: var(--app-accent);
@@ -1955,7 +1975,7 @@ tr:hover .drag-handle i {
   font-size: 1rem;
 }
 
-.fee-row td {
+.fee-row td:not(:first-child) {
   background: color-mix(in srgb, var(--app-muted) 6%, transparent);
 }
 
@@ -1966,7 +1986,7 @@ tr:hover .drag-handle i {
 }
 
 .lines td.fee-hint {
-  padding-top: 11px;
+  padding-top: 5px;
   font-size: 0.85em;
 }
 
@@ -2008,7 +2028,11 @@ th.seuil {
 }
 
 .lines td.select-cell {
-  padding-top: 12px;
+  padding-top: 3px;
+}
+
+.select-cell input {
+  margin: 0;
 }
 
 .select-cell input {
@@ -2040,5 +2064,12 @@ th.seuil {
 
 .total {
   font-weight: 700;
+}
+
+/* Total HT final (remise et frais compris) : en rouge, filet au-dessus. */
+.lines tfoot tr.grand-total td.total-label,
+.lines tfoot tr.grand-total td.total {
+  border-top: 2px solid var(--app-accent);
+  color: var(--app-accent);
 }
 </style>

@@ -20,7 +20,7 @@ import { getTheme, setTheme, type ThemeMode } from "../theme";
 import { getVersion } from "@tauri-apps/api/app";
 import { checkForUpdate, installUpdate, updater, updatesSupported } from "../updater";
 import { FEE_SETTINGS } from "../fees";
-import { CGV_PDF_KEY } from "../composables/usePdf";
+import { AGENCY_KEY, agencyContact, CGV_PDF_KEY, HEAD_OFFICE } from "../composables/usePdf";
 import { FAVORITE_LISTS_KEY, favoriteLists } from "../favorites";
 import { errorMessage, formatNumber } from "../format";
 
@@ -87,13 +87,7 @@ const favorites = computed({
 
 type Field = { key: string; label: string; multiline?: boolean; placeholder?: string };
 /** Champs imprimés sur le PDF : en-tête société, puis informations du devis. */
-const companyFields: Field[] = [
-  { key: "company_name", label: "Raison sociale" },
-  { key: "company_address", label: "Adresse", multiline: true },
-  { key: "company_phone", label: "Téléphone" },
-  { key: "company_email", label: "Email" },
-  { key: "company_siret", label: "SIRET" },
-];
+const companyFields: Field[] = [{ key: "company_name", label: "Raison sociale" }];
 const quoteFields: Field[] = [
   { key: "quote_prefix", label: "Préfixe des n° de devis", placeholder: "JMOS → 26-JMOS-0001" },
   { key: "quote_validity", label: "Validité", placeholder: "ex. 30 jours" },
@@ -188,7 +182,7 @@ async function saveSettings() {
     // Seulement les champs du PDF : les favoris sont enregistrés à part, dès leur choix.
     const keys = [...companyFields, ...quoteFields, ...feeFields]
       .map((f) => f.key)
-      .concat("company_logo", CONDITIONS_KEY, CGV_PDF_KEY);
+      .concat("company_logo", AGENCY_KEY, CONDITIONS_KEY, CGV_PDF_KEY);
     await api.saveSettings(Object.fromEntries(keys.map((k) => [k, settings.value[k] ?? ""])));
     toast.add({ severity: "success", summary: "Réglages enregistrés", life: 2000 });
   } catch (e) {
@@ -203,6 +197,7 @@ onMounted(async () => {
     [settings.value, allPriceLists.value] = await Promise.all([api.getSettings(), api.listPriceLists(), loadStats()]);
     // Conditions jamais renseignées : on part du texte actuel des conditions de vente.
     if (!(CONDITIONS_KEY in settings.value)) settings.value[CONDITIONS_KEY] = DEFAULT_CONDITIONS;
+    settings.value[AGENCY_KEY] = agencyContact(settings.value);
   } catch (e) {
     toast.add({ severity: "error", summary: "Chargement des réglages", detail: errorMessage(e) });
   }
@@ -452,6 +447,19 @@ onMounted(async () => {
               <Textarea v-if="f.multiline" :id="f.key" v-model="settings[f.key]" rows="3" auto-resize />
               <InputText v-else :id="f.key" v-model="settings[f.key]" :placeholder="f.placeholder" />
             </template>
+            <span class="muted">Siège</span>
+            <div class="head-office muted">
+              <div v-for="l in HEAD_OFFICE" :key="l">{{ l }}</div>
+              <small>Toujours imprimé, non modifiable.</small>
+            </div>
+            <label :for="AGENCY_KEY">Agence / contact</label>
+            <Textarea
+              :id="AGENCY_KEY"
+              v-model="settings[AGENCY_KEY]"
+              rows="4"
+              auto-resize
+              placeholder="Nom, adresse, téléphone, email… (imprimé tel quel sous le siège)"
+            />
             <label for="logo">Logo</label>
             <div class="logo">
               <img v-if="settings.company_logo" :src="settings.company_logo" alt="Logo" />
@@ -679,6 +687,10 @@ onMounted(async () => {
 
 .add-favorite {
   width: 100%;
+}
+
+.head-office {
+  line-height: 1.5;
 }
 
 .logo {

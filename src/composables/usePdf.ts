@@ -5,7 +5,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { api, type Client, type Quote, type Settings } from "../api";
 import { formatDate, formatEuro, formatNumber, formatUnitPrice, round2 } from "../format";
-import { isFee, lineTotal, subtotals } from "../quoteLines";
+import { isFee, lineTotal, quoteTotals, subtotals } from "../quoteLines";
 import { conditionsText, parseConditions } from "../conditions";
 import { PDFDocument } from "pdf-lib";
 import { readFile } from "../docs/files";
@@ -16,13 +16,33 @@ pdfMake.addVirtualFileSystem(pdfFonts);
 const ACCENT = "#e60005";
 const ACCENT_TINT = "#fdeced";
 
+/** Siège : imprimé tel quel sur tous les devis, sous le nom de la société. */
+export const HEAD_OFFICE = [
+  "CAHORS – 372 av Pierre Bourrieres – 46003 CAHORS – Tél. 05 65 35 72 11",
+  "ENVOI DES COMMANDES à maec-commande@groupe-cahors.com",
+];
+
+/** Réglage : coordonnées de l'agence (texte libre, imprimé sous le siège). */
+export const AGENCY_KEY = "agency_contact";
+
+/**
+ * Coordonnées de l'agence. Tant qu'elles n'ont pas été saisies, reprises des anciens champs
+ * séparés (adresse, téléphone, email, SIRET).
+ */
+export function agencyContact(s: Settings): string {
+  if (AGENCY_KEY in s) return s[AGENCY_KEY];
+  return [s.company_address, s.company_phone && `Tél. ${s.company_phone}`, s.company_email, s.company_siret && `SIRET ${s.company_siret}`]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function buildDocument(quote: Quote, client: Client | null, s: Settings): TDocumentDefinitions {
+  const agency = agencyContact(s).trim();
   const company: Content[] = [
     { text: s.company_name || "Ma société", style: "companyName" },
-    ...(s.company_address ? [{ text: s.company_address }] : []),
-    ...[s.company_phone && `Tél. ${s.company_phone}`, s.company_email, s.company_siret && `SIRET ${s.company_siret}`]
-      .filter(Boolean)
-      .map((t) => ({ text: t as string, color: "#555" })),
+    { text: HEAD_OFFICE[0], color: "#555" },
+    { text: HEAD_OFFICE[1], bold: true },
+    ...(agency ? [{ text: agency, margin: [0, 6, 0, 0] as [number, number, number, number] }] : []),
   ];
 
   const header: Content = {
@@ -90,7 +110,6 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     ],
   ];
   const subtotalRows = new Set<number>();
-  const feeRows = new Set<number>();
   const amounts = subtotals(quote.lines);
   for (const l of quote.lines) {
     if (l.kind === "title") {
@@ -98,13 +117,8 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     } else if (l.kind === "text") {
       body.push([{ text: l.designation, colSpan: cols, style: "textLine" }, ...empties(cols - 1)]);
     } else if (isFee(l.kind)) {
-      // Frais de port / de facturation (toujours en bas du devis).
-      feeRows.add(body.length);
-      body.push([
-        { text: l.designation, colSpan: cols - 1, alignment: "right" },
-        ...empties(cols - 2),
-        { text: formatEuro(lineTotal(l)), alignment: "right" },
-      ]);
+      // Frais de port / de facturation : dans le bloc des totaux, après la remise.
+      continue;
     } else if (l.kind === "subtotal") {
       subtotalRows.add(body.length);
       body.push([
@@ -142,9 +156,7 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
       dontBreakRows: true,
     },
     layout: {
-      // Trait plein au-dessus du bloc des frais (première ligne de frais).
-      hLineWidth: (i, node) =>
-        i === 0 || i === 1 || i === node.table.body.length || (feeRows.has(i) && !feeRows.has(i - 1)) ? 1 : 0.5,
+      hLineWidth: (i, node) => (i === 0 || i === 1 || i === node.table.body.length ? 1 : 0.5),
       vLineWidth: () => 0,
       hLineColor: (i) => (i <= 1 ? ACCENT : "#ddd"),
       paddingTop: () => 5,
@@ -153,28 +165,34 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     },
   };
 
-  // TOTAL HT, puis remise globale et TOTAL HT remisé s'il y en a une.
-  const totalRows: TableCell[][] = [
-    [{ text: "TOTAL HT", bold: true }, { text: formatEuro(quote.total_ht), bold: true, alignment: "right" }],
+  // Totaux, dans l'ordre du calcul : produits, remise globale (sur les produits seulement),
+  // frais (jamais remisés), puis TOTAL HT. Les frais au-dessus de la remise laissaient croire
+  // qu'elle portait aussi sur eux.
+  const fees = quote.lines.filter((l) => isFee(l.kind));
+  const totals = quoteTotals(quote.lines, quote.discount_pct);
+  const amountRow = (label: string, amount: string, bold = false): TableCell[] => [
+    { text: label, bold },
+    { text: amount, bold, alignment: "right" },
   ];
+  const totalRows: TableCell[][] = [];
+  if (quote.discount_pct > 0 || fees.length) totalRows.push(amountRow("Total produits HT", formatEuro(totals.products)));
   if (quote.discount_pct > 0) {
     totalRows.push(
-      [
-        { text: `Remise ${formatNumber(quote.discount_pct)} % sur les produits` },
-        { text: `− ${formatEuro(round2(quote.total_ht - quote.total_net))}`, alignment: "right" },
-      ],
-      [
-        { text: "TOTAL HT REMISÉ", bold: true, color: ACCENT },
-        { text: formatEuro(quote.total_net), bold: true, color: ACCENT, alignment: "right" },
-      ],
+      amountRow(`Remise ${formatNumber(quote.discount_pct)} % sur les produits`, `− ${formatEuro(totals.discount)}`),
+      amountRow("Total produits remisé HT", formatEuro(round2(totals.products - totals.discount)), true),
     );
   }
+  for (const f of fees) totalRows.push(amountRow(f.designation, formatEuro(lineTotal(f))));
+  totalRows.push([
+    { text: "TOTAL HT", bold: true, color: ACCENT },
+    { text: formatEuro(totals.net), bold: true, color: ACCENT, alignment: "right" },
+  ]);
   const total: Content = {
     margin: [0, 12, 0, 0],
     columns: [
       { width: "*", text: "" },
       {
-        width: 220,
+        width: 240,
         table: { widths: ["*", "auto"], body: totalRows },
         layout: { hLineColor: () => ACCENT, vLineColor: () => ACCENT, paddingTop: () => 6, paddingBottom: () => 6 },
       },
@@ -189,7 +207,7 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
           columns: [
             { width: "*", text: "" },
             {
-              width: 220,
+              width: 240,
               table: {
                 widths: ["*", "auto"],
                 body: [
