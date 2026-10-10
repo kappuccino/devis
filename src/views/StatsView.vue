@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Statistiques des devis : chiffres clés, devis par mois, meilleurs clients, commerciaux et
 // produits, pour une année ou toute la base. Montants HT après remise globale, frais compris ;
-// options exclues. Ce sont des montants devisés (l'appli ne sait pas si un devis est accepté).
+// options exclues. Ce sont des montants devisés ; les affaires obtenues (coche de la liste des devis)
+// sont comptées à part : taux de transformation et montant obtenu.
 import { computed, onMounted, ref } from "vue";
 import Select from "primevue/select";
 import DataTable from "primevue/datatable";
@@ -31,6 +32,9 @@ async function load(y: string | null) {
     loading.value = false;
   }
 }
+
+/** Taux de transformation : part des devis devenus affaires obtenues. */
+const rate = (won: number, count: number) => (count ? `${Math.round((won / count) * 100)} %` : "–");
 
 const average = computed(() => (stats.value?.count ? stats.value.total / stats.value.count : 0));
 
@@ -72,7 +76,11 @@ const months = computed(() => {
       sub: !year.value && (mo === 1 || k === keys[0]) ? String(y) : "",
       count: m?.count ?? 0,
       total: m?.total ?? 0,
+      wonCount: m?.won_count ?? 0,
+      wonTotal: m?.won_total ?? 0,
       height: ((m?.total ?? 0) / max) * 100,
+      // Part obtenue, en % de la barre.
+      wonHeight: m?.total ? (m.won_total / m.total) * 100 : 0,
     };
   });
 });
@@ -134,21 +142,45 @@ onMounted(async () => {
           <span class="kpi-label">Clients</span>
           <span class="kpi-value">{{ formatNumber(stats.clients) }}</span>
         </div>
+        <div class="card kpi">
+          <span class="kpi-label">Affaires obtenues</span>
+          <span class="kpi-value">
+            {{ formatNumber(stats.won_count) }}
+            <span class="kpi-sub">{{ rate(stats.won_count, stats.count) }} des devis</span>
+          </span>
+        </div>
+        <div class="card kpi">
+          <span class="kpi-label">Montant obtenu HT</span>
+          <span class="kpi-value won">
+            {{ euros(stats.won_total) }}
+            <span class="kpi-sub">{{ rate(stats.won_total, stats.total) }} du montant</span>
+          </span>
+        </div>
       </div>
 
       <!-- Devis par mois -->
       <section class="card">
-        <h2>Devis par mois</h2>
+        <div class="chart-head">
+          <h2>Devis par mois</h2>
+          <span class="legend"><i class="sw quoted" /> devisé <i class="sw won" /> dont obtenu</span>
+        </div>
         <div class="chart" :class="{ dense: months.length > 18 }">
           <div
             v-for="m in months"
             :key="m.key"
-            v-tooltip.top="m.count ? `${m.count} devis · ${euros(m.total)}` : 'Aucun devis'"
+            v-tooltip.top="
+              m.count
+                ? `${m.count} devis · ${euros(m.total)}` +
+                  (m.wonCount ? ` · obtenus : ${m.wonCount} · ${euros(m.wonTotal)}` : '')
+                : 'Aucun devis'
+            "
             class="bar-col"
           >
             <span class="bar-value">{{ m.total ? euros(m.total) : "" }}</span>
             <div class="bar-track">
-              <div class="bar" :style="{ height: `${m.height}%` }" />
+              <div class="bar" :style="{ height: `${m.height}%` }">
+                <div class="bar-won" :style="{ height: `${m.wonHeight}%` }" />
+              </div>
             </div>
             <span class="bar-label">{{ m.label }}</span>
             <span class="bar-count">{{ m.count ? `${m.count} devis` : "–" }}</span>
@@ -172,6 +204,12 @@ onMounted(async () => {
               </template>
             </Column>
             <Column field="count" header="Devis" class="num" style="width: 70px" />
+            <Column header="Obtenues" class="num" style="width: 90px">
+              <template #body="{ data }">
+                <span v-if="data.won_count" v-tooltip.top="euros(data.won_total)">{{ data.won_count }}</span>
+                <span v-else class="muted">–</span>
+              </template>
+            </Column>
             <Column header="Montant HT" class="num" style="width: 130px">
               <template #body="{ data }">{{ euros(data.total) }}</template>
             </Column>
@@ -190,6 +228,12 @@ onMounted(async () => {
               </template>
             </Column>
             <Column field="count" header="Devis" class="num" style="width: 70px" />
+            <Column header="Obtenues" class="num" style="width: 90px">
+              <template #body="{ data }">
+                <span v-if="data.won_count" v-tooltip.top="euros(data.won_total)">{{ data.won_count }}</span>
+                <span v-else class="muted">–</span>
+              </template>
+            </Column>
             <Column header="Montant HT" class="num" style="width: 130px">
               <template #body="{ data }">{{ euros(data.total) }}</template>
             </Column>
@@ -238,7 +282,7 @@ onMounted(async () => {
 
 .kpis {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 1rem;
 }
 
@@ -257,6 +301,18 @@ onMounted(async () => {
   font-size: 1.6rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.kpi-sub {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--app-muted);
+}
+
+.kpi-value.won {
+  color: var(--app-success);
 }
 
 .kpi-value.accent {
@@ -304,7 +360,42 @@ h2 {
   border-bottom: 1px solid var(--app-border);
 }
 
+.chart-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--app-muted);
+}
+
+.sw {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-left: 0.5rem;
+}
+
+.sw.quoted {
+  background: color-mix(in srgb, var(--app-accent) 75%, transparent);
+}
+
+.sw.won,
+.bar-won {
+  background: var(--app-success);
+}
+
 .bar {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
   width: 70%;
   margin: 0 auto;
   min-height: 0;

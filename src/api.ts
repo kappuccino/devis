@@ -58,17 +58,33 @@ export interface PriceListItem {
   family: Family | null;
 }
 
+/** Nombre et montant des devis, dont affaires obtenues. */
+export interface StatCounts {
+  count: number;
+  total: number;
+  won_count: number;
+  won_total: number;
+}
+
+export interface StatGroup extends StatCounts {
+  label: string;
+  code: string;
+}
+
 /** Statistiques des devis (montants HT après remise globale, frais compris ; options exclues). */
 export interface QuoteStats {
   years: string[];
   count: number;
   total: number;
   clients: number;
+  /** Affaires obtenues (coche de la liste des devis). */
+  won_count: number;
+  won_total: number;
   /** month : « AAAA-MM ». */
-  by_month: { month: string; count: number; total: number }[];
+  by_month: ({ month: string } & StatCounts)[];
   /** code vide : client ponctuel (ou commercial). */
-  top_clients: { label: string; code: string; count: number; total: number }[];
-  by_sales_rep: { label: string; code: string; count: number; total: number }[];
+  top_clients: StatGroup[];
+  by_sales_rep: StatGroup[];
   top_products: { product_ref: string; designation: string; quantity: number; total: number; quotes: number }[];
 }
 
@@ -155,6 +171,8 @@ export interface QuoteSummary {
   /** Total après la remise globale. */
   total_net: number;
   line_count: number;
+  /** Affaire obtenue : date du marquage (AAAA-MM-JJ), null sinon. */
+  won_at: string | null;
 }
 
 /**
@@ -284,6 +302,8 @@ export const api = {
   saveQuote: (quote: Quote) => invoke<Quote>("save_quote", { quote }),
   deleteQuote: (id: number) => invoke<void>("delete_quote", { id }),
   duplicateQuote: (id: number, date: string) => invoke<Quote>("duplicate_quote", { id, date }),
+  /** Renvoie la date du marquage (null : affaire remise en attente). */
+  setQuoteWon: (id: number, won: boolean) => invoke<string | null>("set_quote_won", { id, won }),
 
   getQuoteAttachments: (quoteId: number) => invoke<QuoteAttachment[]>("get_quote_attachments", { quoteId }),
   saveQuoteAttachments: (quoteId: number, attachments: QuoteAttachment[]) =>

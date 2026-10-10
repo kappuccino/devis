@@ -442,6 +442,8 @@ pub struct QuoteSummary {
     /// Total après la remise globale.
     pub total_net: f64,
     pub line_count: i64,
+    /// Affaire obtenue : date du marquage (AAAA-MM-JJ), None sinon.
+    pub won_at: Option<String>,
 }
 
 #[tauri::command]
@@ -450,7 +452,7 @@ pub fn list_quotes(state: State<AppState>) -> CmdResult<Vec<QuoteSummary>> {
     query_all(
         &conn,
         "SELECT q.id, q.number, q.client_code, q.client_name, q.date, q.total_ht, q.total_net,
-                (SELECT COUNT(*) FROM quote_lines WHERE quote_id = q.id AND kind = 'item')
+                (SELECT COUNT(*) FROM quote_lines WHERE quote_id = q.id AND kind = 'item'), q.won_at
          FROM quotes q ORDER BY q.date DESC, q.id DESC",
         [],
         |r| {
@@ -463,6 +465,7 @@ pub fn list_quotes(state: State<AppState>) -> CmdResult<Vec<QuoteSummary>> {
                 total_ht: r.get(5)?,
                 total_net: r.get(6)?,
                 line_count: r.get(7)?,
+                won_at: r.get(8)?,
             })
         },
     )
@@ -782,6 +785,18 @@ pub fn store_quote(conn: &mut Connection, mut quote: Quote) -> CmdResult<Quote> 
 #[tauri::command]
 pub fn delete_quote(state: State<AppState>, id: i64) -> CmdResult<()> {
     state.conn().execute("DELETE FROM quotes WHERE id = ?1", [id]).map(|_| ()).map_err(err)
+}
+
+/// Suivi : marque l'affaire obtenue (date du jour) ou la remet en attente.
+#[tauri::command]
+pub fn set_quote_won(state: State<AppState>, id: i64, won: bool) -> CmdResult<Option<String>> {
+    let conn = state.conn();
+    conn.execute(
+        "UPDATE quotes SET won_at = CASE WHEN ?2 THEN COALESCE(won_at, date('now', 'localtime')) END WHERE id = ?1",
+        params![id, won],
+    )
+    .map_err(err)?;
+    conn.query_row("SELECT won_at FROM quotes WHERE id = ?1", [id], |r| r.get(0)).map_err(err)
 }
 
 /// Copie un devis (nouveau numéro, date du jour fournie par le front).

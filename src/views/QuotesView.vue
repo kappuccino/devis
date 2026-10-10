@@ -5,6 +5,8 @@ import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import InputText from "primevue/inputtext";
 import Button from "primevue/button";
+import Checkbox from "primevue/checkbox";
+import Select from "primevue/select";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { api, type QuoteSummary } from "../api";
@@ -18,15 +20,30 @@ const confirm = useConfirm();
 const quotes = ref<QuoteSummary[]>([]);
 const loading = ref(true);
 const search = ref("");
+/** Suivi : tous les devis, affaires obtenues ou en attente. */
+const status = ref<"all" | "won" | "open">("all");
+const statusOptions = [
+  { label: "Tous les devis", value: "all" },
+  { label: "Affaires obtenues", value: "won" },
+  { label: "En attente", value: "open" },
+];
 
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase();
-  return q
-    ? quotes.value.filter((d) =>
-        [d.number, d.client_name, d.client_code ?? ""].some((v) => v.toLowerCase().includes(q)),
-      )
-    : quotes.value;
+  return quotes.value.filter(
+    (d) =>
+      (status.value === "all" || (status.value === "won") === !!d.won_at) &&
+      (!q || [d.number, d.client_name, d.client_code ?? ""].some((v) => v.toLowerCase().includes(q))),
+  );
 });
+
+async function setWon(q: QuoteSummary, won: boolean) {
+  try {
+    q.won_at = await api.setQuoteWon(q.id, won);
+  } catch (e) {
+    toast.add({ severity: "error", summary: "Affaire obtenue", detail: errorMessage(e) });
+  }
+}
 
 async function load() {
   loading.value = true;
@@ -88,6 +105,7 @@ onMounted(load);
       <h1>Devis</h1>
       <span class="muted">{{ quotes.length }}</span>
       <span class="spacer" />
+      <Select v-model="status" :options="statusOptions" option-label="label" option-value="value" aria-label="Suivi" />
       <InputText v-model="search" placeholder="N°, client…" style="width: 240px" />
       <Button label="Nouveau devis" icon="pi pi-plus" @click="router.push('/devis/nouveau')" />
     </div>
@@ -125,11 +143,29 @@ onMounted(load);
           </span>
         </template>
       </Column>
+      <Column field="won_at" header="Obtenue" sortable style="width: 90px">
+        <template #body="{ data }">
+          <Checkbox
+            v-tooltip.top="data.won_at ? `Affaire obtenue (cochée le ${formatDate(data.won_at)})` : 'Marquer l\'affaire obtenue'"
+            :model-value="!!data.won_at"
+            binary
+            :aria-label="`Affaire obtenue : ${data.number}`"
+            @update:model-value="setWon(data, $event)"
+          />
+        </template>
+      </Column>
       <Column header="" style="width: 150px">
         <template #body="{ data }">
           <div class="row-actions">
             <Button v-tooltip.top="'PDF'" icon="pi pi-file-pdf" text rounded size="small" @click="pdf(data)" />
-            <Button v-tooltip.top="'Dupliquer'" icon="pi pi-copy" text rounded size="small" @click="duplicate(data)" />
+            <Button
+              v-tooltip.top="'Dupliquer (nouveau devis, nouveau numéro)'"
+              icon="pi pi-copy"
+              text
+              rounded
+              size="small"
+              @click="duplicate(data)"
+            />
             <Button
               v-tooltip.top="'Supprimer'"
               icon="pi pi-trash"

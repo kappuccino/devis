@@ -3,7 +3,8 @@
 //!
 //! Montants : total HT après remise globale, frais compris (`quotes.total_net`) ; pour les
 //! produits, total des lignes (remise de ligne comprise, avant remise globale). Les lignes en
-//! option ne sont pas comptées. Ce sont des montants devisés, pas commandés.
+//! option ne sont pas comptées. Ce sont des montants devisés ; les affaires obtenues (coche de la
+//! liste des devis) sont comptées à part (`won_count`, `won_total`).
 
 use rusqlite::{params, Connection};
 use serde::Serialize;
@@ -20,6 +21,8 @@ pub struct Month {
     pub month: String,
     pub count: i64,
     pub total: f64,
+    pub won_count: i64,
+    pub won_total: f64,
 }
 
 /// Regroupement (client ou commercial) : nombre de devis et montant.
@@ -30,6 +33,8 @@ pub struct Group {
     pub code: String,
     pub count: i64,
     pub total: f64,
+    pub won_count: i64,
+    pub won_total: f64,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -49,6 +54,9 @@ pub struct Stats {
     pub count: i64,
     pub total: f64,
     pub clients: i64,
+    /// Affaires obtenues : nombre et montant.
+    pub won_count: i64,
+    pub won_total: f64,
     pub by_month: Vec<Month>,
     pub top_clients: Vec<Group>,
     pub by_sales_rep: Vec<Group>,
@@ -65,44 +73,70 @@ pub fn quote_stats(conn: &Connection, year: Option<&str>) -> Result<Stats> {
     // Client ponctuel (sans code) : regroupé par son nom.
     const CLIENT_KEY: &str = "CASE WHEN q.client_code <> '' THEN q.client_code ELSE 'nom:' || q.client_name END";
 
+    // Nombre et montant des affaires obtenues (à la suite d'un COUNT et d'une SUM).
+    const WON: &str = "COUNT(q.won_at), COALESCE(SUM(CASE WHEN q.won_at IS NOT NULL THEN q.total_net END), 0)";
+
     let years = all(conn, "SELECT DISTINCT substr(date, 1, 4) FROM quotes ORDER BY 1 DESC", params![], |r| r.get(0))?;
 
-    let (count, total, clients) = conn
+    let (count, total, clients, won_count, won_total) = conn
         .query_row(
-            &format!("SELECT COUNT(*), COALESCE(SUM(q.total_net), 0), COUNT(DISTINCT {CLIENT_KEY}) FROM quotes q WHERE {IN_YEAR}"),
+            &format!(
+                "SELECT COUNT(*), COALESCE(SUM(q.total_net), 0), COUNT(DISTINCT {CLIENT_KEY}), {WON}
+                 FROM quotes q WHERE {IN_YEAR}"
+            ),
             [year],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
         )
         .map_err(err)?;
 
     let by_month = all(
         conn,
         &format!(
-            "SELECT substr(q.date, 1, 7), COUNT(*), COALESCE(SUM(q.total_net), 0) FROM quotes q
+            "SELECT substr(q.date, 1, 7), COUNT(*), COALESCE(SUM(q.total_net), 0), {WON} FROM quotes q
              WHERE {IN_YEAR} GROUP BY 1 ORDER BY 1"
         ),
         params![year],
-        |r| Ok(Month { month: r.get(0)?, count: r.get(1)?, total: r.get(2)? }),
+        |r| {
+            Ok(Month { month: r.get(0)?, count: r.get(1)?, total: r.get(2)?, won_count: r.get(3)?, won_total: r.get(4)? })
+        },
     )?;
 
     let top_clients = all(
         conn,
         &format!(
-            "SELECT MAX(q.client_name), q.client_code, COUNT(*), COALESCE(SUM(q.total_net), 0) FROM quotes q
+            "SELECT MAX(q.client_name), q.client_code, COUNT(*), COALESCE(SUM(q.total_net), 0), {WON} FROM quotes q
              WHERE {IN_YEAR} GROUP BY {CLIENT_KEY} ORDER BY 4 DESC, 3 DESC LIMIT ?2"
         ),
         params![year, TOP],
-        |r| Ok(Group { label: r.get(0)?, code: r.get(1)?, count: r.get(2)?, total: r.get(3)? }),
+        |r| {
+            Ok(Group {
+                label: r.get(0)?,
+                code: r.get(1)?,
+                count: r.get(2)?,
+                total: r.get(3)?,
+                won_count: r.get(4)?,
+                won_total: r.get(5)?,
+            })
+        },
     )?;
 
     let by_sales_rep = all(
         conn,
         &format!(
-            "SELECT trim(q.sales_rep), COUNT(*), COALESCE(SUM(q.total_net), 0) FROM quotes q
+            "SELECT trim(q.sales_rep), COUNT(*), COALESCE(SUM(q.total_net), 0), {WON} FROM quotes q
              WHERE {IN_YEAR} GROUP BY trim(q.sales_rep) ORDER BY 3 DESC"
         ),
         params![year],
-        |r| Ok(Group { label: r.get(0)?, code: String::new(), count: r.get(1)?, total: r.get(2)? }),
+        |r| {
+            Ok(Group {
+                label: r.get(0)?,
+                code: String::new(),
+                count: r.get(1)?,
+                total: r.get(2)?,
+                won_count: r.get(3)?,
+                won_total: r.get(4)?,
+            })
+        },
     )?;
 
     let top_products = all(
@@ -125,7 +159,7 @@ pub fn quote_stats(conn: &Connection, year: Option<&str>) -> Result<Stats> {
         },
     )?;
 
-    Ok(Stats { years, count, total, clients, by_month, top_clients, by_sales_rep, top_products })
+    Ok(Stats { years, count, total, clients, won_count, won_total, by_month, top_clients, by_sales_rep, top_products })
 }
 
 // ---------- Évolution du chiffrage d'une référence ----------
@@ -297,6 +331,7 @@ mod tests {
         quote(&conn, 2, "2026-03-20", ("C1", "ALPHA"), "Julie", 300.0);
         quote(&conn, 3, "2026-05-02", ("", "Ponctuel SARL"), "", 50.0);
         quote(&conn, 4, "2025-12-01", ("C2", "BRAVO"), "Jacques", 1000.0);
+        conn.execute("UPDATE quotes SET won_at = '2026-04-01' WHERE id IN (2, 4)", []).unwrap();
         line(&conn, 1, "P1", 2.0, 80.0, false);
         line(&conn, 2, "P1", 1.0, 40.0, false);
         line(&conn, 2, "P2", 5.0, 250.0, false);
@@ -305,14 +340,18 @@ mod tests {
         let s = quote_stats(&conn, Some("2026")).unwrap();
         assert_eq!(s.years, ["2026", "2025"]);
         assert_eq!((s.count, s.total, s.clients), (3, 450.0, 2));
+        assert_eq!((s.won_count, s.won_total), (1, 300.0));
         assert_eq!(
             s.by_month,
             [
-                Month { month: "2026-03".into(), count: 2, total: 400.0 },
-                Month { month: "2026-05".into(), count: 1, total: 50.0 },
+                Month { month: "2026-03".into(), count: 2, total: 400.0, won_count: 1, won_total: 300.0 },
+                Month { month: "2026-05".into(), count: 1, total: 50.0, won_count: 0, won_total: 0.0 },
             ]
         );
-        assert_eq!(s.top_clients[0], Group { label: "ALPHA".into(), code: "C1".into(), count: 2, total: 400.0 });
+        assert_eq!(
+            s.top_clients[0],
+            Group { label: "ALPHA".into(), code: "C1".into(), count: 2, total: 400.0, won_count: 1, won_total: 300.0 }
+        );
         assert_eq!(s.top_clients[1].label, "Ponctuel SARL");
         assert_eq!(s.by_sales_rep.iter().map(|g| (g.label.as_str(), g.total)).collect::<Vec<_>>(), [("Julie", 400.0), ("", 50.0)]);
         assert_eq!(
@@ -326,6 +365,7 @@ mod tests {
         // Toutes les années.
         let all = quote_stats(&conn, None).unwrap();
         assert_eq!((all.count, all.total, all.clients), (4, 1450.0, 3));
+        assert_eq!((all.won_count, all.won_total), (2, 1300.0));
         assert_eq!(all.top_clients[0].label, "BRAVO");
     }
 }

@@ -104,7 +104,9 @@ CREATE TABLE IF NOT EXISTS quotes (
     notes       TEXT,
     total_ht    REAL NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    -- Suivi : date à laquelle l'affaire a été marquée obtenue (devis devenu commande) ; NULL sinon.
+    won_at      TEXT
 );
 
 {QUOTE_LINES}
@@ -187,6 +189,8 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
              WHERE kind = 'item'",
         )?;
     }
+    // Suivi « Affaire obtenue ».
+    add_column(conn, "quotes", "won_at", "TEXT")?;
     Ok(())
 }
 

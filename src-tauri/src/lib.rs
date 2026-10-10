@@ -91,6 +91,7 @@ pub fn run() {
             commands::save_quote,
             commands::delete_quote,
             commands::duplicate_quote,
+            commands::set_quote_won,
             commands::get_settings,
             commands::save_settings,
             commands::db_stats,
