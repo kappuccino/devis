@@ -136,6 +136,13 @@ function addSalesRep() {
 }
 
 /** CGV complètes : PDF ajouté en dernière page des devis. */
+/** Export Excel des listes de prix : gabarit .xlsx (logo, titre, bloc client). */
+const PRICE_LIST_TEMPLATE_KEY = "price_list_template";
+async function choosePriceListTemplate() {
+  const path = await open({ multiple: false, directory: false, title: "Gabarit Excel des listes de prix", filters: [{ name: "Excel", extensions: ["xlsx"] }] });
+  if (typeof path === "string") settings.value[PRICE_LIST_TEMPLATE_KEY] = path;
+}
+
 async function chooseCgv() {
   const path = await open({ multiple: false, directory: false, title: "PDF des conditions générales de vente", filters: [{ name: "PDF", extensions: ["pdf"] }] });
   if (typeof path === "string") settings.value[CGV_PDF_KEY] = path;
@@ -203,7 +210,7 @@ async function saveSettings() {
     // Seulement les champs du PDF : les favoris sont enregistrés à part, dès leur choix.
     const keys = [...companyFields, ...quoteFields, ...feeFields]
       .map((f) => f.key)
-      .concat("company_logo", AGENCY_KEY, CONDITIONS_KEY, CGV_PDF_KEY, SALES_REPS_KEY, LAST_NUMBER_KEY);
+      .concat("company_logo", AGENCY_KEY, CONDITIONS_KEY, CGV_PDF_KEY, SALES_REPS_KEY, LAST_NUMBER_KEY, PRICE_LIST_TEMPLATE_KEY);
     settings.value[SALES_REPS_KEY] = salesRepSetting(salesReps.value);
     await api.saveSettings(Object.fromEntries(keys.map((k) => [k, settings.value[k] ?? ""])));
     toast.add({ severity: "success", summary: "Réglages enregistrés", life: 2000 });
@@ -568,6 +575,32 @@ onMounted(async () => {
                 rounded
                 severity="secondary"
                 @click="settings[CGV_PDF_KEY] = ''"
+              />
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Export Excel</h2>
+          <p class="muted">
+            Export des prix d'un client (écran Clients, bouton <i class="pi pi-file-excel" />). Le gabarit fournit le haut
+            de la feuille (logo, titre, bloc client) ; les marqueurs <code>_NOM_CLIENT_</code>, <code>_EMAIL_</code>,
+            <code>_NOM_</code>, <code>_PRENOM_</code>, <code>_CODE_</code> sont remplacés. Les produits sont écrits sous la
+            ligne « Désignation » du gabarit (ou à la suite, s'il n'en a pas).
+          </p>
+          <div class="form-grid">
+            <label>Gabarit (.xlsx)</label>
+            <div class="dir-row">
+              <code class="dir">{{ settings[PRICE_LIST_TEMPLATE_KEY] || "Aucun gabarit : export impossible" }}</code>
+              <Button label="Choisir…" icon="pi pi-file-excel" severity="secondary" @click="choosePriceListTemplate" />
+              <Button
+                v-if="settings[PRICE_LIST_TEMPLATE_KEY]"
+                v-tooltip.bottom="'Retirer'"
+                icon="pi pi-times"
+                text
+                rounded
+                severity="secondary"
+                @click="settings[PRICE_LIST_TEMPLATE_KEY] = ''"
               />
             </div>
           </div>

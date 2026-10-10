@@ -3,6 +3,7 @@ mod db;
 mod docs;
 mod import;
 mod pricing;
+mod xlsx_export;
 
 use rusqlite::Connection;
 use std::path::PathBuf;
@@ -62,6 +63,7 @@ pub fn run() {
             commands::get_client,
             commands::update_client,
             commands::set_client_price_list,
+            commands::export_price_list,
             commands::list_price_lists,
             commands::get_price_list_items,
             commands::get_price_list_clients,

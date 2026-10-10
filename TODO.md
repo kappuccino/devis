@@ -98,4 +98,10 @@
 
 - [ ] Listes de prix : éditeur et export
   - Modifier une liste de prix dans l'appli (produits, prix).
-  - Export d'une liste de prix vers Excel (XLS).
+  - [x] Export d'une liste de prix vers Excel (écran Clients, gabarit choisi dans les Réglages).
+
+- [ ] Écran « Statistiques »
+  - À préciser : par exemple nombre et montant des devis par période, par client, par commercial.
+
+- [ ] Barre latérale : icône pour la replier / déployer comme sur claude.ai
+  - Remplacer le chevron actuel ; deux états (ouverte / fermée) à voir ensemble.

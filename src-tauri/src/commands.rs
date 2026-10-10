@@ -290,6 +290,68 @@ pub fn get_price_list_items(state: State<AppState>, code: String) -> CmdResult<V
     )
 }
 
+/// Contact imprimé dans le haut de l'export Excel (saisi au moment de l'export).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportContact {
+    pub last_name: String,
+    pub first_name: String,
+    pub email: String,
+}
+
+/// Exporte une liste de prix d'un client vers Excel (`path`), à partir du gabarit des réglages.
+#[tauri::command]
+pub fn export_price_list(
+    state: State<AppState>,
+    path: String,
+    client_code: String,
+    price_list_code: String,
+    contact: ExportContact,
+) -> CmdResult<()> {
+    let conn = state.conn();
+    let template = setting(&conn, "price_list_template")?
+        .filter(|p| !p.trim().is_empty())
+        .ok_or("Choisissez d'abord le gabarit Excel dans Réglages → Config PDF → Export Excel.")?;
+    let template = std::fs::read(&template).map_err(|e| format!("Gabarit « {template} » : {e}"))?;
+    let client_name: String = conn
+        .query_row("SELECT name FROM clients WHERE code = ?1", [&client_code], |r| r.get(0))
+        .optional()
+        .map_err(err)?
+        .ok_or_else(|| format!("Client {client_code} introuvable"))?;
+    let rows = price_list_export_rows(&conn, &price_list_code)?;
+    let header = crate::xlsx_export::Header {
+        client_name,
+        client_code,
+        email: contact.email,
+        last_name: contact.last_name,
+        first_name: contact.first_name,
+    };
+    let bytes = crate::xlsx_export::fill_template(&template, &header, &rows)?;
+    std::fs::write(&path, bytes).map_err(|e| format!("Enregistrement de « {path} » : {e}"))
+}
+
+/// Lignes de l'export : une par référence (prix le plus bas si la liste en a plusieurs).
+fn price_list_export_rows(conn: &Connection, code: &str) -> CmdResult<Vec<crate::xlsx_export::Row>> {
+    query_all(
+        conn,
+        "SELECT pli.product_ref, COALESCE(p.designation, MAX(pli.designation), ''), COALESCE(p.enedis_code, ''),
+                MIN(pli.price)
+         FROM price_list_items pli LEFT JOIN products p ON p.ref = pli.product_ref
+         WHERE pli.price_list_code = ?1
+         GROUP BY pli.product_ref
+         ORDER BY pli.product_ref",
+        [code],
+        |r| {
+            Ok(crate::xlsx_export::Row {
+                product_ref: r.get(0)?,
+                designation: r.get(1)?,
+                enedis_code: r.get(2)?,
+                price: r.get(3)?,
+            })
+        },
+    )
+}
+
 #[derive(Serialize)]
 pub struct ClientRef {
     pub code: String,

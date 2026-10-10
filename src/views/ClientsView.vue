@@ -7,7 +7,9 @@ import Tag from "primevue/tag";
 import { useToast } from "primevue/usetoast";
 import { api, type Client } from "../api";
 import { errorMessage, formatPct } from "../format";
+import Button from "primevue/button";
 import ClientFormDialog from "../components/ClientFormDialog.vue";
+import PriceListExportDialog from "../components/PriceListExportDialog.vue";
 
 const toast = useToast();
 const clients = ref<Client[]>([]);
@@ -39,6 +41,14 @@ async function load() {
 function openClient(client: Client) {
   editing.value = client;
   dialogVisible.value = true;
+}
+
+/** Export Excel des prix du client. */
+const exportVisible = ref(false);
+const exporting = ref<Client | null>(null);
+function openExport(client: Client) {
+  exporting.value = client;
+  exportVisible.value = true;
 }
 
 function onSaved(saved: Client) {
@@ -91,12 +101,28 @@ onMounted(load);
           </div>
         </template>
       </Column>
+      <Column style="width: 52px">
+        <template #body="{ data }">
+          <Button
+            v-tooltip.left="data.price_lists.length ? 'Exporter ses prix (Excel)' : 'Aucune liste de prix'"
+            icon="pi pi-file-excel"
+            text
+            rounded
+            size="small"
+            severity="secondary"
+            :disabled="!data.price_lists.length"
+            aria-label="Exporter ses prix (Excel)"
+            @click.stop="openExport(data)"
+          />
+        </template>
+      </Column>
       <template #empty>
         <span class="muted">Aucun client. Importez le fichier LPN depuis les Réglages.</span>
       </template>
     </DataTable>
 
     <ClientFormDialog v-model:visible="dialogVisible" :client="editing" @saved="onSaved" />
+    <PriceListExportDialog v-model:visible="exportVisible" :client="exporting" />
   </div>
 </template>
 

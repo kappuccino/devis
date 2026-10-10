@@ -192,6 +192,13 @@ export const api = {
 
   setClientPriceList: (clientCode: string, priceListCode: string, attached: boolean) =>
     invoke<void>("set_client_price_list", { clientCode, priceListCode, attached }),
+  /** Export Excel d'une liste de prix d'un client (gabarit des réglages). */
+  exportPriceList: (
+    path: string,
+    clientCode: string,
+    priceListCode: string,
+    contact: { lastName: string; firstName: string; email: string },
+  ) => invoke<void>("export_price_list", { path, clientCode, priceListCode, contact }),
   listPriceLists: () => invoke<PriceList[]>("list_price_lists"),
   getPriceListItems: (code: string) => invoke<PriceListItem[]>("get_price_list_items", { code }),
   getPriceListClients: (code: string) => invoke<ClientRef[]>("get_price_list_clients", { code }),
