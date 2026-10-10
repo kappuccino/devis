@@ -128,6 +128,107 @@ pub fn quote_stats(conn: &Connection, year: Option<&str>) -> Result<Stats> {
     Ok(Stats { years, count, total, clients, by_month, top_clients, by_sales_rep, top_products })
 }
 
+// ---------- Évolution du chiffrage d'une référence ----------
+
+/// Produit du catalogue (en-tête de l'écran).
+#[derive(Serialize, Debug)]
+pub struct ProductInfo {
+    pub product_ref: String,
+    pub designation: String,
+    pub enedis_code: Option<String>,
+    pub public_price: f64,
+    pub threshold_price: Option<f64>,
+    pub family: Option<String>,
+}
+
+/// La référence dans un devis.
+#[derive(Serialize, Debug, PartialEq)]
+pub struct HistoryLine {
+    pub quote_id: i64,
+    pub number: String,
+    pub date: String,
+    pub client_code: String,
+    pub client_name: String,
+    pub sales_rep: String,
+    pub quantity: f64,
+    /// Prix unitaire HT saisi sur la ligne.
+    pub unit_price: f64,
+    /// Remise supplémentaire de la ligne et remise globale du devis (en %).
+    pub discount: f64,
+    pub quote_discount: f64,
+    /// Prix unitaire réellement devisé : remise de ligne, puis remise globale (sauf option).
+    pub net_unit_price: f64,
+    /// Prix public et prix de liste au moment du devis.
+    pub public_price: Option<f64>,
+    pub lpn_price: Option<f64>,
+    pub is_option: bool,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ProductHistory {
+    /// None : référence absente du catalogue actuel (encore présente dans d'anciens devis).
+    pub product: Option<ProductInfo>,
+    /// Du plus ancien au plus récent.
+    pub lines: Vec<HistoryLine>,
+}
+
+/// Toutes les lignes de devis de la référence `product_ref`.
+pub fn product_history(conn: &Connection, product_ref: &str) -> Result<ProductHistory> {
+    let product = conn
+        .query_row(
+            "SELECT ref, designation, enedis_code, public_price, threshold_price, family FROM products WHERE ref = ?1",
+            [product_ref],
+            |r| {
+                Ok(ProductInfo {
+                    product_ref: r.get(0)?,
+                    designation: r.get(1)?,
+                    enedis_code: r.get(2)?,
+                    public_price: r.get(3)?,
+                    threshold_price: r.get(4)?,
+                    family: r.get(5)?,
+                })
+            },
+        )
+        .map(Some)
+        .or_else(|e| if e == rusqlite::Error::QueryReturnedNoRows { Ok(None) } else { Err(e) })
+        .map_err(err)?;
+
+    let lines = all(
+        conn,
+        "SELECT q.id, q.number, q.date, q.client_code, q.client_name, q.sales_rep, l.quantity, l.unit_price,
+                l.discount, q.discount_pct, l.public_price, l.lpn_price, l.is_option
+         FROM quote_lines l JOIN quotes q ON q.id = l.quote_id
+         WHERE l.kind = 'item' AND l.product_ref = ?1
+         ORDER BY q.date, q.number, l.position",
+        params![product_ref],
+        |r| {
+            let (unit_price, discount, quote_discount, is_option): (f64, f64, f64, bool) =
+                (r.get(7)?, r.get(8)?, r.get(9)?, r.get(12)?);
+            let line_net = crate::pricing::net_unit_price(unit_price, discount);
+            // Les options ne sont pas concernées par la remise globale (hors total).
+            let net_unit_price =
+                if is_option { line_net } else { crate::pricing::round2(line_net * (1.0 - quote_discount / 100.0)) };
+            Ok(HistoryLine {
+                quote_id: r.get(0)?,
+                number: r.get(1)?,
+                date: r.get(2)?,
+                client_code: r.get(3)?,
+                client_name: r.get(4)?,
+                sales_rep: r.get(5)?,
+                quantity: r.get(6)?,
+                unit_price,
+                discount,
+                quote_discount,
+                net_unit_price,
+                public_price: r.get(10)?,
+                lpn_price: r.get(11)?,
+                is_option,
+            })
+        },
+    )?;
+    Ok(ProductHistory { product, lines })
+}
+
 fn all<T>(
     conn: &Connection,
     sql: &str,
@@ -158,6 +259,34 @@ mod tests {
             params![quote, product, qty, total, option],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn product_history_net_prices_in_date_order() {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::init(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO products (ref, designation, public_price, family) VALUES ('P1', 'Coffret', 339.29, 'CFO')",
+            [],
+        )
+        .unwrap();
+        quote(&conn, 1, "2026-05-01", ("C1", "ALPHA"), "Julie", 0.0);
+        quote(&conn, 2, "2026-02-01", ("", "Ponctuel"), "", 0.0);
+        conn.execute("UPDATE quotes SET discount_pct = 10 WHERE id = 1", []).unwrap();
+        for (quote_id, price, discount, option) in [(1, 100.0, 5.0, false), (2, 120.0, 0.0, false), (1, 80.0, 0.0, true)] {
+            conn.execute(
+                "INSERT INTO quote_lines (quote_id, position, kind, product_ref, quantity, unit_price, discount, is_option)
+                 VALUES (?1, 0, 'item', 'P1', 2, ?2, ?3, ?4)",
+                params![quote_id, price, discount, option],
+            )
+            .unwrap();
+        }
+        let h = product_history(&conn, "P1").unwrap();
+        assert_eq!(h.product.unwrap().designation, "Coffret");
+        // Ordre chronologique ; prix net = remise de ligne puis remise globale (pas pour une option).
+        let nets: Vec<(&str, f64, bool)> = h.lines.iter().map(|l| (l.date.as_str(), l.net_unit_price, l.is_option)).collect();
+        assert_eq!(nets, [("2026-02-01", 120.0, false), ("2026-05-01", 85.5, false), ("2026-05-01", 80.0, true)]);
+        assert!(product_history(&conn, "INCONNU").unwrap().product.is_none());
     }
 
     #[test]

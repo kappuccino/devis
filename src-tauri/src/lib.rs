@@ -78,6 +78,7 @@ pub fn run() {
             commands::set_client_price_list,
             commands::export_price_list,
             commands::quote_stats,
+            commands::product_price_history,
             commands::backup_info,
             commands::backup_now,
             commands::restore_backup,

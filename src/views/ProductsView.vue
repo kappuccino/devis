@@ -5,11 +5,14 @@ import Column from "primevue/column";
 import InputText from "primevue/inputtext";
 import SelectButton from "primevue/selectbutton";
 import Tag from "primevue/tag";
+import Button from "primevue/button";
+import { useRouter } from "vue-router";
 import { useToast } from "primevue/usetoast";
 import { api, type Product } from "../api";
 import { errorMessage, formatUnitPrice } from "../format";
 
 const toast = useToast();
+const router = useRouter();
 const products = ref<Product[]>([]);
 const loading = ref(true);
 const search = ref("");
@@ -73,6 +76,21 @@ onMounted(async () => {
       </Column>
       <Column field="eco_tax" header="Éco-taxe" class="num">
         <template #body="{ data }">{{ formatUnitPrice(data.eco_tax) }}</template>
+      </Column>
+      <!-- Évolution du chiffrage de la référence dans les devis : écran à part. -->
+      <Column style="width: 52px">
+        <template #body="{ data }">
+          <Button
+            v-tooltip.left="'Évolution du chiffrage dans les devis'"
+            icon="pi pi-chart-line"
+            text
+            rounded
+            size="small"
+            severity="secondary"
+            aria-label="Évolution du chiffrage"
+            @click="router.push(`/produits/${encodeURIComponent(data.ref)}/chiffrage`)"
+          />
+        </template>
       </Column>
       <template #empty>
         <span class="muted">Aucun produit. Importez le fichier LPN depuis les Réglages.</span>

@@ -298,6 +298,12 @@ pub fn quote_stats(state: State<AppState>, year: Option<String>) -> CmdResult<cr
     crate::stats::quote_stats(&state.conn(), year.as_deref())
 }
 
+/// Lignes de devis d'une référence (écran « Évolution du chiffrage »).
+#[tauri::command]
+pub fn product_price_history(state: State<AppState>, product_ref: String) -> CmdResult<crate::stats::ProductHistory> {
+    crate::stats::product_history(&state.conn(), &product_ref)
+}
+
 // ---------- Sauvegarde ----------
 
 #[derive(Serialize)]

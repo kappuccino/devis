@@ -72,6 +72,40 @@ export interface QuoteStats {
   top_products: { product_ref: string; designation: string; quantity: number; total: number; quotes: number }[];
 }
 
+/** Une référence dans un devis (écran « Évolution du chiffrage »). */
+export interface HistoryLine {
+  quote_id: number;
+  number: string;
+  date: string;
+  client_code: string;
+  client_name: string;
+  sales_rep: string;
+  quantity: number;
+  unit_price: number;
+  /** Remise de la ligne et remise globale du devis (%). */
+  discount: number;
+  quote_discount: number;
+  /** Prix réellement devisé : remise de ligne puis remise globale (sauf option). */
+  net_unit_price: number;
+  public_price: number | null;
+  lpn_price: number | null;
+  is_option: boolean;
+}
+
+export interface ProductHistory {
+  /** null : référence absente du catalogue actuel. */
+  product: {
+    product_ref: string;
+    designation: string;
+    enedis_code: string | null;
+    public_price: number;
+    threshold_price: number | null;
+    family: Family | null;
+  } | null;
+  /** Du plus ancien au plus récent. */
+  lines: HistoryLine[];
+}
+
 /** Copie de la base des devis (dossier de sauvegarde). */
 export interface BackupFile {
   path: string;
@@ -223,6 +257,8 @@ export const api = {
 
   setClientPriceList: (clientCode: string, priceListCode: string, attached: boolean) =>
     invoke<void>("set_client_price_list", { clientCode, priceListCode, attached }),
+  /** Lignes de devis d'une référence, pour l'écran « Évolution du chiffrage ». */
+  productPriceHistory: (productRef: string) => invoke<ProductHistory>("product_price_history", { productRef }),
   /** Statistiques d'une année (« 2026 ») ou de toute la base (null). */
   quoteStats: (year: string | null) => invoke<QuoteStats>("quote_stats", { year }),
   backupInfo: () => invoke<BackupInfo>("backup_info"),

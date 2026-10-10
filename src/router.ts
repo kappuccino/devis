@@ -8,6 +8,7 @@ export const router = createRouter({
     { path: "/devis/nouveau", component: () => import("./views/QuoteEditView.vue") },
     { path: "/devis/:id", component: () => import("./views/QuoteEditView.vue"), props: true },
     { path: "/produits", component: () => import("./views/ProductsView.vue") },
+    { path: "/produits/:productRef/chiffrage", component: () => import("./views/ProductHistoryView.vue"), props: true },
     { path: "/clients", component: () => import("./views/ClientsView.vue") },
     { path: "/listes", component: () => import("./views/PriceListsView.vue") },
     { path: "/statistiques", component: () => import("./views/StatsView.vue") },
