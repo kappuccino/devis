@@ -74,3 +74,27 @@
   - Pouvoir indiquer dans les réglages un numéro minimum, pour que la numérotation de l'appli
     prenne la suite des devis déjà faits hors de l'appli (ex. si le dernier est 26-JMOS-0140,
     le prochain devis de l'appli est 26-JMOS-0141).
+
+- [ ] Détail d'une liste de prix dans le devis (tiroir latéral)
+  - Clic sur le code d'une liste de prix (partie Client du devis) : ouvre un tiroir sur le côté
+    avec tous les produits de la liste, et une recherche.
+  - Liste forcée (favorites) : un bouton à côté du menu ouvre le même tiroir pour cette liste.
+
+- [ ] Listes Produits et Clients : 500 éléments par page par défaut
+
+- [ ] Listes de prix : clients rattachés dans un tiroir
+  - Au-delà de 5 clients rattachés (la zone défile sans fin aujourd'hui) : bouton
+    « Afficher les X clients » qui ouvre un tiroir latéral avec la liste des clients de la
+    liste de prix, et de quoi en rattacher d'autres.
+
+- [ ] Sécurité
+  - Désactiver les outils de développement (devtools) dans la version compilée.
+  - Audit de sécurité de l'appli.
+
+- [ ] Sauvegarde des données
+  - Sauvegarde (backup) de la base des devis.
+  - Étudier une option de partage pair à pair (P2P) entre les applis des différents postes.
+
+- [ ] Listes de prix : éditeur et export
+  - Modifier une liste de prix dans l'appli (produits, prix).
+  - Export d'une liste de prix vers Excel (XLS).
