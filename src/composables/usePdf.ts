@@ -64,7 +64,7 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
   };
 
   const clientBox: Content = {
-    margin: [260, 24, 0, 24],
+    margin: [260, 16, 0, 16],
     table: {
       widths: ["*"],
       body: [
@@ -72,7 +72,7 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
           {
             stack: [
               // La raison sociale enregistrée dans le devis fait foi (client ponctuel ou nom ajusté).
-              { text: quote.client_name, bold: true, fontSize: 11 },
+              { text: quote.client_name, bold: true, fontSize: 9.5 },
               ...(quote.client_code ? [{ text: `Code client : ${quote.client_code}`, color: "#555" }] : []),
               ...(client?.siren ? [{ text: `SIREN : ${client.siren}`, color: "#555" }] : []),
               // Contact du devis ; à défaut, l'email général du client.
@@ -159,8 +159,8 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
       hLineWidth: (i, node) => (i === 0 || i === 1 || i === node.table.body.length ? 1 : 0.5),
       vLineWidth: () => 0,
       hLineColor: (i) => (i <= 1 ? ACCENT : "#ddd"),
-      paddingTop: () => 5,
-      paddingBottom: () => 5,
+      paddingTop: () => 3.5,
+      paddingBottom: () => 3.5,
       fillColor: (row) => (row === 0 || subtotalRows.has(row) ? ACCENT_TINT : null),
     },
   };
@@ -170,61 +170,54 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
   // qu'elle portait aussi sur eux.
   const fees = quote.lines.filter((l) => isFee(l.kind));
   const totals = quoteTotals(quote.lines, quote.discount_pct);
-  const amountRow = (label: string, amount: string, bold = false): TableCell[] => [
-    { text: label, bold },
-    { text: amount, bold, alignment: "right" },
+  // Comme le panneau des totaux de l'écran de saisie (sans cadre ni fond) : libellés à droite
+  // en gris, montants à droite, TOTAL HT en gras rouge (taille du corps du texte), options en
+  // italique. Le bloc ne se coupe pas entre deux pages.
+  const MUTED = "#6b7280";
+  const row = (label: string, amount: string, style: Record<string, unknown> = {}): TableCell[] => [
+    { text: label, alignment: "right", color: MUTED, ...style },
+    { text: amount, alignment: "right", noWrap: true, ...style },
   ];
-  const totalRows: TableCell[][] = [];
-  if (quote.discount_pct > 0 || fees.length) totalRows.push(amountRow("Total produits HT", formatEuro(totals.products)));
+  const strong = { bold: true, color: "#1f2328" };
+  const totalsBody: TableCell[][] = [];
+  if (quote.discount_pct > 0 || fees.length) totalsBody.push(row("Total produits HT", formatEuro(totals.products)));
   if (quote.discount_pct > 0) {
-    totalRows.push(
-      amountRow(`Remise ${formatNumber(quote.discount_pct)} % sur les produits`, `− ${formatEuro(totals.discount)}`),
-      amountRow("Total produits remisé HT", formatEuro(round2(totals.products - totals.discount)), true),
+    totalsBody.push(
+      row(`Remise ${formatNumber(quote.discount_pct)} % sur les produits`, `− ${formatEuro(totals.discount)}`),
+      row("Total produits remisé HT", formatEuro(round2(totals.products - totals.discount)), strong),
     );
   }
-  for (const f of fees) totalRows.push(amountRow(f.designation, formatEuro(lineTotal(f))));
-  totalRows.push([
-    { text: "TOTAL HT", bold: true, color: ACCENT },
-    { text: formatEuro(totals.net), bold: true, color: ACCENT, alignment: "right" },
-  ]);
+  for (const f of fees) totalsBody.push(row(f.designation, formatEuro(lineTotal(f))));
+  const grandRow = totalsBody.length;
+  totalsBody.push(row("TOTAL HT", formatEuro(totals.net), { bold: true, color: ACCENT }));
+  // Lignes en option : à part, hors total HT, dans le même cadre.
+  if (quote.total_options > 0) {
+    totalsBody.push(row("Total options HT (non compris)", formatEuro(quote.total_options), { italics: true, color: MUTED }));
+  }
   const total: Content = {
-    margin: [0, 12, 0, 0],
+    margin: [0, 10, 0, 0],
+    unbreakable: true,
     columns: [
       { width: "*", text: "" },
       {
-        width: 240,
-        table: { widths: ["*", "auto"], body: totalRows },
-        layout: { hLineColor: () => ACCENT, vLineColor: () => ACCENT, paddingTop: () => 6, paddingBottom: () => 6 },
+        width: 270,
+        table: { widths: ["*", "auto"], body: totalsBody },
+        layout: {
+          // Sans cadre ni fond ; lignes serrées, le TOTAL HT un peu détaché.
+          hLineWidth: () => 0,
+          vLineWidth: () => 0,
+          paddingLeft: () => 10,
+          // Même marge que les cellules du tableau des lignes : montants sous la colonne Total HT.
+          paddingRight: () => 4,
+          paddingTop: (i: number) => (i === grandRow && grandRow > 0 ? 4 : 1.5),
+          paddingBottom: () => 1.5,
+        },
       },
     ],
   };
 
-  // Lignes en option : leur total à part, tout en bas, hors total HT.
-  const optionsTotal: Content | null =
-    quote.total_options > 0
-      ? {
-          margin: [0, 10, 0, 0],
-          columns: [
-            { width: "*", text: "" },
-            {
-              width: 240,
-              table: {
-                widths: ["*", "auto"],
-                body: [
-                  [
-                    { text: "TOTAL OPTIONS HT", italics: true },
-                    { text: formatEuro(quote.total_options), italics: true, alignment: "right" },
-                  ],
-                ],
-              },
-              layout: { hLineColor: () => "#999", vLineColor: () => "#999", paddingTop: () => 6, paddingBottom: () => 6 },
-            },
-          ],
-        }
-      : null;
-
-  const content: Content[] = [header, clientBox, lines, total, ...(optionsTotal ? [optionsTotal] : [])];
-  if (quote.notes) content.push({ text: quote.notes, margin: [0, 24, 0, 0] });
+  const content: Content[] = [header, clientBox, lines, total];
+  if (quote.notes) content.push({ text: quote.notes, margin: [0, 16, 0, 0] });
   const conditions = conditionsText(s).trim();
   if (conditions) {
     content.push({
@@ -233,7 +226,7 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
         text: line.runs.length
           ? line.runs.map((r) => ({ text: r.text, bold: r.bold, decoration: r.underline ? ("underline" as const) : undefined }))
           : " ",
-        ...(line.title ? { bold: true, fontSize: 10, color: "#000", margin: [0, 0, 0, 3] as [number, number, number, number] } : {}),
+        ...(line.title ? { bold: true, fontSize: 9, color: "#000", margin: [0, 0, 0, 3] as [number, number, number, number] } : {}),
       })),
     });
   }
@@ -249,19 +242,19 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
         { text: `${page} / ${pages}`, alignment: "right", color: "#999" },
       ],
       margin: [40, 16, 40, 0],
-      fontSize: 8,
+      fontSize: 7,
     }),
-    defaultStyle: { fontSize: 9, lineHeight: 1.15 },
+    defaultStyle: { fontSize: 8, lineHeight: 1.15 },
     styles: {
-      companyName: { fontSize: 14, bold: true, color: ACCENT, margin: [0, 0, 0, 2] },
-      title: { fontSize: 22, bold: true, color: ACCENT, alignment: "right", margin: [0, 0, 0, 4] },
+      companyName: { fontSize: 12, bold: true, color: ACCENT, margin: [0, 0, 0, 2] },
+      title: { fontSize: 18, bold: true, color: ACCENT, alignment: "right", margin: [0, 0, 0, 4] },
       th: { bold: true, color: ACCENT },
-      // Titre : gras, rouge, taille 12 ; texte : noir, gras, taille 10,5.
-      titleLine: { bold: true, color: ACCENT, fontSize: 12, margin: [0, 6, 0, 0] },
-      textLine: { bold: true, color: "#000", fontSize: 10.5 },
-      optionTag: { color: ACCENT, fontSize: 8 },
-      mono: { fontSize: 8.5 },
-      conditions: { fontSize: 8, color: "#666", margin: [0, 24, 0, 0] },
+      // Titre : gras, rouge, taille 10 ; texte : noir, gras, taille 8,5 (corps du texte : 8).
+      titleLine: { bold: true, color: ACCENT, fontSize: 10, margin: [0, 5, 0, 0] },
+      textLine: { bold: true, color: "#000", fontSize: 8.5 },
+      optionTag: { color: ACCENT, fontSize: 7 },
+      mono: { fontSize: 7.5 },
+      conditions: { fontSize: 7, color: "#666", margin: [0, 18, 0, 0] },
     },
   };
 }
