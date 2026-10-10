@@ -104,6 +104,17 @@ h2 {
   font-variant-numeric: tabular-nums;
 }
 
+/* Colonnes de chiffres des tableaux PrimeVue (Column class="num") : le thème impose son propre
+   alignement aux cellules, d'où ces règles plus précises ; l'en-tête est une boîte flex. */
+.p-datatable .p-datatable-tbody > tr > td.num,
+.p-datatable .p-datatable-thead > tr > th.num {
+  text-align: right;
+}
+
+.p-datatable .p-datatable-thead > tr > th.num .p-datatable-column-header-content {
+  justify-content: flex-end;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: 180px 1fr;
