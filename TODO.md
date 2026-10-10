@@ -115,3 +115,8 @@
     référence dans tous les devis (date, devis, client, quantité, prix unitaire…).
   - Filtre : restreindre à un ou plusieurs clients.
   - Écran à part (pas une fenêtre modale : pas assez lisible).
+
+- [ ] Suivi « Affaire obtenue »
+  - Dans la liste des devis, une coche « Affaire obtenue » pour savoir si le devis s'est
+    transformé en commande / facture (les factures ne sont pas gérées dans l'appli : simple suivi).
+  - À exploiter ensuite dans les Statistiques (taux de transformation, montants obtenus).
