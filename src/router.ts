@@ -17,3 +17,4 @@ export const router = createRouter({
     { path: "/reglages/:section", component: () => import("./views/SettingsView.vue"), props: true },
   ],
 });
+    { path: "/aide", component: () => import("./views/HelpView.vue") },

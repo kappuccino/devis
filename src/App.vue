@@ -113,6 +113,15 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
       <RouterLink
         v-tooltip.right="tip('Réglages')"
         to="/reglages"
+      <RouterLink
+        v-tooltip.right="tip('Aide')"
+        to="/aide"
+        class="nav-link"
+        :class="{ active: isActive('/aide') }"
+      >
+        <i class="pi pi-question-circle" />
+        <span class="label">Aide</span>
+      </RouterLink>
         class="nav-link"
         :class="{ active: isActive('/reglages') }"
       >
