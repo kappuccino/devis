@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { open } from "@tauri-apps/plugin-dialog";
+import { pickFiles } from "../../dialogs";
 import { useRouter } from "vue-router";
 import Dialog from "primevue/dialog";
 import Button from "primevue/button";
@@ -101,13 +101,10 @@ function toggleApprox(ref: string) {
 }
 
 async function addExternal() {
-  const picked = await open({
-    multiple: true,
-    directory: false,
+  const paths = await pickFiles({
     title: "Documents à joindre au devis",
     filters: [{ name: "PDF ou image", extensions: ["pdf", "jpg", "jpeg", "png"] }],
   });
-  const paths = Array.isArray(picked) ? picked : picked ? [picked] : [];
   for (const path of paths) {
     if (!externals.value.some((e) => e.path === path)) externals.value.push(externalDoc(path));
   }

@@ -7,8 +7,7 @@ import Select from "primevue/select";
 import InputText from "primevue/inputtext";
 import Button from "primevue/button";
 import { useToast } from "primevue/usetoast";
-import { save } from "@tauri-apps/plugin-dialog";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { openFile, pickSavePath } from "../dialogs";
 import { api, type Client } from "../api";
 import { errorMessage } from "../format";
 
@@ -36,7 +35,7 @@ const fileName = () =>
 async function exportList() {
   const client = props.client;
   if (!client || !list.value) return;
-  const path = await save({
+  const path = await pickSavePath({
     title: "Enregistrer la liste de prix",
     defaultPath: fileName(),
     filters: [{ name: "Excel", extensions: ["xlsx"] }],
@@ -47,7 +46,7 @@ async function exportList() {
     await api.exportPriceList(path, client.code, list.value, contact.value);
     visible.value = false;
     toast.add({ severity: "success", summary: "Liste de prix exportée", detail: path, life: 4000 });
-    await openPath(path).catch(() => {});
+    await openFile(path).catch(() => {});
   } catch (e) {
     toast.add({ severity: "error", summary: "Export Excel", detail: errorMessage(e) });
   } finally {

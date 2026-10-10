@@ -2,6 +2,7 @@ mod backup;
 mod commands;
 mod db;
 mod docs;
+mod files;
 mod import;
 mod pricing;
 mod stats;
@@ -53,6 +54,8 @@ pub fn run() {
                 });
             }
             app.manage(AppState { db, db_path });
+            // Chemins choisis par l'utilisateur pendant la session (seuls accessibles depuis la page).
+            app.manage(files::FileAccess::default());
             // Index de la documentation technique (base séparée, reconstructible).
             app.manage(docs::open(app.handle())?);
             Ok(())
@@ -70,6 +73,9 @@ pub fn run() {
             commands::get_quote_attachments,
             commands::save_quote_attachments,
             docs::write_drag_file,
+            files::pick_open,
+            files::pick_save,
+            files::open_file,
             commands::list_products,
             commands::search_products,
             commands::list_clients,

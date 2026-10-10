@@ -3,8 +3,8 @@
 // démarrage, sauvegarde immédiate et restauration. Les réglages sont enregistrés dès leur
 // modification (pas de bouton « Enregistrer » dans cette rubrique).
 import { onMounted, ref } from "vue";
-import { open } from "@tauri-apps/plugin-dialog";
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openFile, pickFolder } from "../dialogs";
 import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";
 import InputNumber from "primevue/inputnumber";
@@ -53,8 +53,8 @@ async function saveSetting(key: string, value: string) {
 }
 
 async function chooseDir() {
-  const dir = await open({ directory: true, multiple: false, title: "Dossier des sauvegardes" });
-  if (typeof dir === "string") await saveSetting(DIR_KEY, dir);
+  const dir = await pickFolder({ title: "Dossier des sauvegardes" });
+  if (dir) await saveSetting(DIR_KEY, dir);
 }
 
 async function backupNow() {
@@ -121,7 +121,7 @@ onMounted(refresh);
           rounded
           severity="secondary"
           aria-label="Ouvrir le dossier"
-          @click="openPath(info.dir).catch(() => {})"
+          @click="openFile(info.dir).catch(() => {})"
         />
         <Button
           v-if="customDir"

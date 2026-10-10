@@ -90,15 +90,25 @@
 - [ ] Sécurité
   - [x] Désactiver les outils de développement (devtools) dans la version compilée
     (fait : absents par défaut, la CI échoue si la fonction « devtools » de Tauri est activée).
-  - Audit de sécurité de l'appli.
+  - [x] Audit de sécurité de l'appli (2026-10-10).
+  - [x] CSP (politique de sécurité du contenu) dans tauri.conf.json.
+  - [x] Fichiers : boîtes de dialogue côté Rust, lecture / écriture / ouverture limitées aux
+    chemins choisis par l'utilisateur ou enregistrés dans les réglages ; pas d'ATTACH / VACUUM
+    sur l'index de la documentation.
+  - [ ] CI : signer les mises à jour dans une étape à part (tags seulement), actions épinglées par
+    SHA, `permissions: contents: read` par défaut, Node LTS.
+  - [ ] Points faibles : base restaurée vérifiée (integrity_check, pas de trigger), gabarit Excel
+    malformé sans plantage, taille maximale des fichiers lus.
 
-- [ ] Sauvegarde des données
+- [x] Sauvegarde des données
   - [x] Sauvegarde (backup) de la base des devis (Réglages → Sauvegarde : copies datées,
     automatiques au démarrage, N gardées, restauration).
-  - Étudier une option de partage pair à pair (P2P) entre les applis des différents postes.
+  - ~~Partage pair à pair (P2P) d'une liste de prix entre postes~~ : abandonné (2026-10-10),
+    les listes viennent de la LPN nationale.
 
-- [ ] Listes de prix : éditeur et export
-  - Modifier une liste de prix dans l'appli (produits, prix).
+- [x] Listes de prix : éditeur et export
+  - ~~Modifier une liste de prix dans l'appli (produits, prix)~~ : abandonné (2026-10-10),
+    les listes viennent de la LPN nationale (un réimport écraserait les retouches).
   - [x] Export d'une liste de prix vers Excel (écran Clients, gabarit choisi dans les Réglages).
 
 - [x] Écran « Statistiques » (par année : chiffres clés, devis par mois, meilleurs clients,

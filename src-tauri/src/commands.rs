@@ -336,7 +336,14 @@ pub fn backup_now(state: State<AppState>) -> CmdResult<String> {
 #[tauri::command]
 pub fn restore_backup(state: State<AppState>, path: String) -> CmdResult<String> {
     let mut conn = state.conn();
-    crate::backup::restore(&mut conn, &state.db_path, std::path::Path::new(&path))
+    // Seulement une copie du dossier des sauvegardes (celles que l'écran propose).
+    let dir = crate::files::normalize(&crate::backup::dir(&conn, &state.db_path)?);
+    let file = crate::files::normalize(std::path::Path::new(&path));
+    let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    if file.parent() != Some(dir.as_path()) || !name.starts_with("devis-") || !name.ends_with(".db") {
+        return Err(format!("Restauration refusée : « {path} » n'est pas une copie du dossier des sauvegardes."));
+    }
+    crate::backup::restore(&mut conn, &state.db_path, &file)
         .map(|p| p.to_string_lossy().into_owned())
 }
 
@@ -353,11 +360,13 @@ pub struct ExportContact {
 #[tauri::command]
 pub fn export_price_list(
     state: State<AppState>,
+    files: State<crate::files::FileAccess>,
     path: String,
     client_code: String,
     price_list_code: String,
     contact: ExportContact,
 ) -> CmdResult<()> {
+    let target = files.check_save_target(&path)?;
     let conn = state.conn();
     let template = setting(&conn, "price_list_template")?
         .filter(|p| !p.trim().is_empty())
@@ -377,7 +386,9 @@ pub fn export_price_list(
         first_name: contact.first_name,
     };
     let bytes = crate::xlsx_export::fill_template(&template, &header, &rows)?;
-    std::fs::write(&path, bytes).map_err(|e| format!("Enregistrement de « {path} » : {e}"))
+    std::fs::write(&target, bytes).map_err(|e| format!("Enregistrement de « {path} » : {e}"))?;
+    files.mark_written(&target);
+    Ok(())
 }
 
 /// Lignes de l'export : une par référence (prix le plus bas si la liste en a plusieurs).
@@ -968,8 +979,18 @@ pub fn get_quote_attachments(state: State<AppState>, quote_id: i64) -> CmdResult
 
 /// Enregistre les choix de documents d'un devis (remplace les précédents).
 #[tauri::command]
-pub fn save_quote_attachments(state: State<AppState>, quote_id: i64, attachments: Vec<QuoteAttachment>) -> CmdResult<()> {
-    store_attachments(&mut state.conn(), quote_id, &attachments)
+pub fn save_quote_attachments(
+    state: State<AppState>,
+    files: State<crate::files::FileAccess>,
+    quote_id: i64,
+    attachments: Vec<QuoteAttachment>,
+) -> CmdResult<()> {
+    let mut conn = state.conn();
+    // Fichier ajouté à la main : choisi dans « Ouvrir » (ou déjà joint à un devis).
+    for a in attachments.iter().filter(|a| a.source == "external") {
+        files.check_attachment(&conn, &a.path)?;
+    }
+    store_attachments(&mut conn, quote_id, &attachments)
 }
 
 // ---------- Réglages / import ----------
@@ -984,8 +1005,16 @@ pub fn get_settings(state: State<AppState>) -> CmdResult<HashMap<String, String>
 }
 
 #[tauri::command]
-pub fn save_settings(state: State<AppState>, settings: HashMap<String, String>) -> CmdResult<()> {
+pub fn save_settings(
+    state: State<AppState>,
+    files: State<crate::files::FileAccess>,
+    settings: HashMap<String, String>,
+) -> CmdResult<()> {
     let mut conn = state.conn();
+    // Chemins (dossier de la documentation, des sauvegardes, gabarit…) : choisis dans une boîte de dialogue.
+    for (k, v) in &settings {
+        files.check_setting(&conn, k, v)?;
+    }
     let tx = conn.transaction().map_err(err)?;
     for (k, v) in settings {
         tx.execute(
@@ -1026,7 +1055,12 @@ pub fn db_stats(state: State<AppState>) -> CmdResult<DbStats> {
 
 /// L'import lit un gros classeur : on le fait hors du thread principal pour ne pas figer l'interface.
 #[tauri::command]
-pub async fn import_lpn(state: State<'_, AppState>, path: String) -> CmdResult<ImportReport> {
+pub async fn import_lpn(
+    state: State<'_, AppState>,
+    files: State<'_, crate::files::FileAccess>,
+    path: String,
+) -> CmdResult<ImportReport> {
+    files.check_opened(&path)?;
     let db = state.db.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mut conn = db.lock().map_err(err)?;
@@ -1037,8 +1071,11 @@ pub async fn import_lpn(state: State<'_, AppState>, path: String) -> CmdResult<I
 }
 
 #[tauri::command]
-pub fn save_file(path: String, contents: Vec<u8>) -> CmdResult<()> {
-    std::fs::write(path, contents).map_err(err)
+pub fn save_file(files: State<crate::files::FileAccess>, path: String, contents: Vec<u8>) -> CmdResult<()> {
+    let target = files.check_save_target(&path)?;
+    std::fs::write(&target, contents).map_err(err)?;
+    files.mark_written(&target);
+    Ok(())
 }
 
 #[cfg(test)]

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import Button from "primevue/button";
 import { api } from "../../api";
 import { exportFileName } from "../../docs/core/index.js";
 import type { SearchResult } from "../../docs/search";
 import { dragOnMove, prepareDrag } from "../../docs/drag";
+import { pickSavePath } from "../../dialogs";
 import { copyFile, dirName, fileManager, fileName, formatFileDate } from "../../docs/files";
 import { imageUrl, pageBytes, renderPage } from "../../docs/pages";
 
@@ -54,13 +54,13 @@ async function exportCurrent() {
     if (r.pageNum == null) {
       // Image ou PDF trouvé par son nom : copie du fichier d'origine.
       const ext = r.docPath.split(".").pop() ?? "";
-      const target = await save({ defaultPath: fileName(r.docPath), filters: [{ name: ext.toUpperCase(), extensions: [ext] }] });
+      const target = await pickSavePath({ defaultPath: fileName(r.docPath), filters: [{ name: ext.toUpperCase(), extensions: [ext] }] });
       if (!target) return;
       await copyFile(r.docPath, target);
       emit("notify", `Fichier exporté : ${target}`);
       return;
     }
-    const target = await save({
+    const target = await pickSavePath({
       defaultPath: exportFileName(r.docPath, r.pageNum, props.query),
       filters: [{ name: "PDF", extensions: ["pdf"] }],
     });

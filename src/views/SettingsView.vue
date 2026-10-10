@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { open } from "@tauri-apps/plugin-dialog";
+import { pickFile, pickFolder } from "../dialogs";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import Textarea from "primevue/textarea";
@@ -141,24 +141,22 @@ function addSalesRep() {
 /** Export Excel des listes de prix : gabarit .xlsx (logo, titre, bloc client). */
 const PRICE_LIST_TEMPLATE_KEY = "price_list_template";
 async function choosePriceListTemplate() {
-  const path = await open({ multiple: false, directory: false, title: "Gabarit Excel des listes de prix", filters: [{ name: "Excel", extensions: ["xlsx"] }] });
-  if (typeof path === "string") settings.value[PRICE_LIST_TEMPLATE_KEY] = path;
+  const path = await pickFile({ title: "Gabarit Excel des listes de prix", filters: [{ name: "Excel", extensions: ["xlsx"] }] });
+  if (path) settings.value[PRICE_LIST_TEMPLATE_KEY] = path;
 }
 
 async function chooseCgv() {
-  const path = await open({ multiple: false, directory: false, title: "PDF des conditions générales de vente", filters: [{ name: "PDF", extensions: ["pdf"] }] });
-  if (typeof path === "string") settings.value[CGV_PDF_KEY] = path;
+  const path = await pickFile({ title: "PDF des conditions générales de vente", filters: [{ name: "PDF", extensions: ["pdf"] }] });
+  if (path) settings.value[CGV_PDF_KEY] = path;
 }
 
 /** Documentation : choix du dossier indexé (sous-dossiers compris). */
 async function chooseDocsFolder() {
-  const dir = await open({
-    directory: true,
-    recursive: true,
+  const dir = await pickFolder({
     defaultPath: docs.folder ?? undefined,
     title: "Dossier contenant la documentation (PDF et images)",
   });
-  if (typeof dir === "string") setFolder(dir);
+  if (dir) setFolder(dir);
 }
 
 async function loadStats() {
@@ -166,11 +164,7 @@ async function loadStats() {
 }
 
 async function pickAndImport() {
-  const path = await open({
-    multiple: false,
-    directory: false,
-    filters: [{ name: "Excel", extensions: ["xlsx", "xlsm"] }],
-  });
+  const path = await pickFile({ title: "Fichier LPN", filters: [{ name: "Excel", extensions: ["xlsx", "xlsm"] }] });
   if (!path) return;
   confirm.require({
     header: "Remplacer les données",

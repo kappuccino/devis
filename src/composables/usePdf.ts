@@ -1,8 +1,7 @@
 import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
 import type { Content, TableCell, TDocumentDefinitions } from "pdfmake/interfaces";
-import { save } from "@tauri-apps/plugin-dialog";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { openFile, pickSavePath } from "../dialogs";
 import { api, type Client, type Quote, type Settings } from "../api";
 import { formatDate, formatEuro, formatNumber, formatUnitPrice, round2 } from "../format";
 import { isFee, lineTotal, quoteTotals, subtotals } from "../quoteLines";
@@ -381,7 +380,7 @@ export async function appendCgv(bytes: Uint8Array): Promise<{ bytes: Uint8Array;
 /** Demande où enregistrer le PDF d'un devis ; null si annulé. */
 export function askQuotePdfPath(quote: Quote, suffix = "") {
   const safeName = (quote.client_name || quote.client_code || "client").replace(/[\\/:*?"<>|]/g, "-");
-  return save({
+  return pickSavePath({
     defaultPath: `${quote.number ?? "Devis"} - ${safeName}${suffix}.pdf`,
     filters: [{ name: "PDF", extensions: ["pdf"] }],
   });
@@ -390,7 +389,7 @@ export function askQuotePdfPath(quote: Quote, suffix = "") {
 /** Enregistre le PDF puis l'ouvre. */
 export async function writeAndOpenPdf(path: string, bytes: Uint8Array) {
   await api.saveFile(path, bytes);
-  await openPath(path).catch(() => {});
+  await openFile(path).catch(() => {});
 }
 
 /**

@@ -16,6 +16,9 @@ use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 use tauri::{ipc::Response, AppHandle, Manager, State};
 
+use crate::files::FileAccess;
+use crate::AppState;
+
 pub struct DocsState {
     pub db: Arc<Mutex<Connection>>,
     pub db_path: PathBuf,
@@ -35,6 +38,8 @@ pub fn open(app: &AppHandle) -> Result<DocsState, Box<dyn std::error::Error>> {
     let db_path = data.join("docs-index.db");
     let conn = Connection::open(&db_path)?;
     conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+    // Le SQL vient de la page : pas d'autre base attachée (ex. la base des devis).
+    conn.set_limit(rusqlite::limits::Limit::SQLITE_LIMIT_ATTACHED, 0)?;
 
     let drag_dir = app.path().app_cache_dir()?.join("drag");
     let _ = std::fs::remove_dir_all(&drag_dir);
@@ -43,11 +48,26 @@ pub fn open(app: &AppHandle) -> Result<DocsState, Box<dyn std::error::Error>> {
     Ok(DocsState { db: Arc::new(Mutex::new(conn)), db_path, drag_dir })
 }
 
+/// Instructions refusées dans le SQL envoyé par la page : attacher une autre base, ou écrire une
+/// copie de l'index ailleurs (`VACUUM INTO`).
+fn check_sql(sql: &str) -> CmdResult<()> {
+    let lower = sql.to_lowercase();
+    let forbidden = lower
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .find(|w| ["attach", "detach", "vacuum", "load_extension"].contains(w));
+    match forbidden {
+        Some(w) => Err(format!("Instruction SQL refusée sur l'index de la documentation : {w}")),
+        None => Ok(()),
+    }
+}
+
 /// Exécute une requête SQL sur l'index, hors du thread principal.
 async fn with_db<T: Send + 'static>(
     state: &State<'_, DocsState>,
+    sql: &str,
     f: impl FnOnce(&Connection) -> rusqlite::Result<T> + Send + 'static,
 ) -> CmdResult<T> {
+    check_sql(sql)?;
     let db = state.db.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conn = db.lock().unwrap_or_else(|p| p.into_inner());
@@ -84,7 +104,7 @@ fn to_json(v: ValueRef) -> Json {
 
 #[tauri::command]
 pub async fn docs_db_exec(state: State<'_, DocsState>, sql: String) -> CmdResult<()> {
-    with_db(&state, move |c| c.execute_batch(&sql)).await
+    with_db(&state, &sql.clone(), move |c| c.execute_batch(&sql)).await
 }
 
 #[derive(Serialize)]
@@ -96,7 +116,7 @@ pub struct RunResult {
 
 #[tauri::command]
 pub async fn docs_db_run(state: State<'_, DocsState>, sql: String, params: Vec<Json>) -> CmdResult<RunResult> {
-    with_db(&state, move |c| {
+    with_db(&state, &sql.clone(), move |c| {
         let changes = c.prepare_cached(&sql)?.execute(params_from_iter(params.into_iter().map(to_sql)))?;
         Ok(RunResult { last_insert_id: c.last_insert_rowid(), changes })
     })
@@ -105,7 +125,7 @@ pub async fn docs_db_run(state: State<'_, DocsState>, sql: String, params: Vec<J
 
 #[tauri::command]
 pub async fn docs_db_all(state: State<'_, DocsState>, sql: String, params: Vec<Json>) -> CmdResult<Vec<Map<String, Json>>> {
-    with_db(&state, move |c| query_rows(c, &sql, params)).await
+    with_db(&state, &sql.clone(), move |c| query_rows(c, &sql, params)).await
 }
 
 fn query_rows(c: &Connection, sql: &str, params: Vec<Json>) -> rusqlite::Result<Vec<Map<String, Json>>> {
@@ -142,7 +162,12 @@ const EXTENSIONS: [&str; 4] = ["pdf", "jpg", "jpeg", "png"];
 
 /// PDF et images (jpg/png) du dossier, sous-dossiers compris, triés par nom ; fichiers cachés ignorés.
 #[tauri::command]
-pub async fn docs_list_files(dir: String) -> CmdResult<Vec<DocFile>> {
+pub async fn docs_list_files(
+    state: State<'_, AppState>,
+    files: State<'_, FileAccess>,
+    dir: String,
+) -> CmdResult<Vec<DocFile>> {
+    files.check_folder(&state.conn(), &dir)?;
     tauri::async_runtime::spawn_blocking(move || {
         let mut out = Vec::new();
         walk(Path::new(&dir), &mut out).map_err(|e| format!("Lecture du dossier « {dir} » : {e}"))?;
@@ -181,7 +206,13 @@ fn walk(dir: &Path, out: &mut Vec<DocFile>) -> std::io::Result<()> {
 
 /// Contenu brut d'un fichier (renvoyé en binaire, sans passer par du JSON).
 #[tauri::command]
-pub async fn read_file(path: String) -> CmdResult<Response> {
+pub async fn read_file(
+    state: State<'_, AppState>,
+    files: State<'_, FileAccess>,
+    docs: State<'_, DocsState>,
+    path: String,
+) -> CmdResult<Response> {
+    files.check_read(&state.conn(), &path, &docs.drag_dir)?;
     tauri::async_runtime::spawn_blocking(move || {
         std::fs::read(&path).map(Response::new).map_err(|e| format!("Lecture de « {path} » : {e}"))
     })
@@ -196,10 +227,21 @@ pub fn files_exist(paths: Vec<String>) -> Vec<bool> {
 }
 
 #[tauri::command]
-pub async fn copy_file(from: String, to: String) -> CmdResult<()> {
-    tauri::async_runtime::spawn_blocking(move || std::fs::copy(&from, &to).map(|_| ()).map_err(err))
+pub async fn copy_file(
+    state: State<'_, AppState>,
+    files: State<'_, FileAccess>,
+    docs: State<'_, DocsState>,
+    from: String,
+    to: String,
+) -> CmdResult<()> {
+    files.check_read(&state.conn(), &from, &docs.drag_dir)?;
+    let target = files.check_save_target(&to)?;
+    let t = target.clone();
+    tauri::async_runtime::spawn_blocking(move || std::fs::copy(&from, &t).map(|_| ()).map_err(err))
         .await
-        .map_err(err)?
+        .map_err(err)??;
+    files.mark_written(&target);
+    Ok(())
 }
 
 /// Écrit un fichier temporaire pour le glisser-déposer et renvoie son chemin.
@@ -214,11 +256,13 @@ pub fn write_drag_file(state: State<'_, DocsState>, name: String, contents: Vec<
 /// Dossier choisi dans l'ancienne application PDF Finder, s'il existe sur ce poste
 /// (repris au premier lancement de la documentation).
 #[tauri::command]
-pub fn docs_legacy_folder(app: AppHandle) -> Option<String> {
+pub fn docs_legacy_folder(app: AppHandle, files: State<'_, FileAccess>) -> Option<String> {
     let settings = app.path().data_dir().ok()?.join("org.kappuccino.pdfref").join("settings.json");
     let json: Json = serde_json::from_str(&std::fs::read_to_string(settings).ok()?).ok()?;
     let dir = json.get("pdfDir")?.as_str()?.to_string();
-    Path::new(&dir).is_dir().then_some(dir)
+    // Choisi par l'utilisateur dans PDF Finder : repris comme s'il venait d'être choisi ici.
+    Path::new(&dir).is_dir().then(|| files.allow_opened(Path::new(&dir)))?;
+    Some(dir)
 }
 
 #[cfg(test)]
@@ -232,6 +276,19 @@ mod tests {
             .unwrap();
         let n: i64 = c.query_row("SELECT COUNT(*) FROM t WHERE x MATCH '\"1234\"'", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn page_sql_cannot_attach_or_copy_the_index() {
+        assert!(check_sql("SELECT * FROM docs WHERE path = ?").is_ok());
+        assert!(check_sql("ATTACH DATABASE '/x/devis.db' AS d").is_err());
+        assert!(check_sql("select 1; vacuum into '/tmp/x.db'").is_err());
+        // Un nom de table ou de colonne qui contient le mot reste permis.
+        assert!(check_sql("SELECT attachments, vacuum_at FROM t").is_ok());
+        // Garde-fou supplémentaire : aucune base attachée possible sur la connexion.
+        let c = Connection::open_in_memory().unwrap();
+        c.set_limit(rusqlite::limits::Limit::SQLITE_LIMIT_ATTACHED, 0).unwrap();
+        assert!(c.execute_batch("ATTACH ':memory:' AS autre").is_err());
     }
 
     #[test]

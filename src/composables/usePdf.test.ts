@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ save: vi.fn() }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openPath: vi.fn() }));
 
 const { agencyContact, AGENCY_KEY, buildDocument, HEAD_OFFICE } = await import("./usePdf");
 import type { Quote } from "../api";
