@@ -459,12 +459,12 @@ onMounted(async () => {
               <Textarea v-if="f.multiline" :id="f.key" v-model="settings[f.key]" rows="3" auto-resize />
               <InputText v-else :id="f.key" v-model="settings[f.key]" :placeholder="f.placeholder" />
             </template>
-            <span class="muted">Siège</span>
+            <span class="muted label-top">Siège</span>
             <div class="head-office muted">
               <div v-for="l in HEAD_OFFICE" :key="l">{{ l }}</div>
               <small>Toujours imprimé, non modifiable.</small>
             </div>
-            <label :for="AGENCY_KEY">Agence / contact</label>
+            <label :for="AGENCY_KEY" class="label-top">Agence / contact</label>
             <Textarea
               :id="AGENCY_KEY"
               v-model="settings[AGENCY_KEY]"
@@ -522,7 +522,7 @@ onMounted(async () => {
         <section class="card">
           <h2>Conditions de vente</h2>
           <div class="form-grid">
-            <label for="conditions">Conditions (bas du devis)</label>
+            <label for="conditions" class="label-top">Conditions (bas du devis)</label>
             <div>
               <Textarea id="conditions" v-model="settings[CONDITIONS_KEY]" rows="9" auto-resize fluid />
               <small class="muted">
@@ -660,6 +660,12 @@ onMounted(async () => {
 
 .form-grid {
   max-width: 760px;
+}
+
+/* Libellé d'un champ sur plusieurs lignes : en haut, aligné sur la première ligne. */
+.form-grid .label-top {
+  align-self: start;
+  padding-top: 0.45rem;
 }
 
 .dir-row {
