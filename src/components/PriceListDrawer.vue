@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Tiroir latéral : tous les produits d'une liste de prix, avec une recherche.
-// Ouvert depuis le devis (listes du client, liste forcée).
+// Ouvert depuis le devis (listes du client, liste forcée) et les Réglages (listes favorites).
 import { computed, ref, watch } from "vue";
 import Drawer from "primevue/drawer";
 import DataTable from "primevue/datatable";

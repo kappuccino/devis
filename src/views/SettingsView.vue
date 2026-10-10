@@ -25,24 +25,27 @@ import { AGENCY_KEY, agencyContact, CGV_PDF_KEY, HEAD_OFFICE } from "../composab
 import { FAVORITE_LISTS_KEY, favoriteLists } from "../favorites";
 import { errorMessage, formatNumber } from "../format";
 import BackupSettings from "../components/BackupSettings.vue";
+import PriceListDrawer from "../components/PriceListDrawer.vue";
 
 /** Rubrique affichée : import, favoris ou pdf (dans l'adresse, /reglages/<rubrique>). */
 const props = defineProps<{ section: string }>();
 
 const sections = [
-  { key: "import", label: "Import de données", hint: "Fichier LPN, statistiques", icon: "pi pi-upload" },
-  { key: "favoris", label: "Favoris", hint: "Listes de prix favorites", icon: "pi pi-star" },
-  { key: "pdf", label: "Config PDF", hint: "Société, numérotation", icon: "pi pi-file-pdf" },
-  { key: "sauvegarde", label: "Sauvegarde", hint: "Copies de la base des devis", icon: "pi pi-database" },
+  { key: "import", label: "Import de données", icon: "pi pi-upload" },
+  { key: "favoris", label: "Favoris", icon: "pi pi-star" },
+  { key: "pdf", label: "Config PDF", icon: "pi pi-file-pdf" },
+  { key: "sauvegarde", label: "Sauvegarde", icon: "pi pi-database" },
   // Fonctions de documentation (ex-PDF Finder) : à part.
-  { key: "documentation", label: "Documentation", hint: "Dossier indexé, statistiques", icon: "pi pi-book", separated: true },
+  { key: "documentation", label: "Documentation", icon: "pi pi-book", separated: true },
   // Réglages de l'application elle-même : à part, en fin de liste.
-  { key: "interface", label: "Interface", hint: "Thème clair ou sombre", icon: "pi pi-palette", separated: true },
-  { key: "about", label: "À propos", hint: "Version, mises à jour", icon: "pi pi-info-circle" },
+  { key: "interface", label: "Interface", icon: "pi pi-palette", separated: true },
+  { key: "about", label: "À propos", icon: "pi pi-info-circle" },
 ];
 const current = computed(() => sections.find((s) => s.key === props.section) ?? sections[0]);
 
 const toast = useToast();
+/** Liste favorite affichée dans le tiroir de détail ; null : fermé. */
+const drawerList = ref<string | null>(null);
 const confirm = useConfirm();
 const stats = ref<DbStats | null>(null);
 const settings = ref<Settings>({});
@@ -243,10 +246,7 @@ onMounted(async () => {
         :class="{ active: current.key === sec.key, separated: sec.separated }"
       >
         <i :class="sec.icon" />
-        <span>
-          <span class="subnav-label">{{ sec.label }}</span>
-          <span class="subnav-hint">{{ sec.hint }}</span>
-        </span>
+        <span class="subnav-label">{{ sec.label }}</span>
       </RouterLink>
     </nav>
 
@@ -435,7 +435,18 @@ onMounted(async () => {
           />
           <DataTable :value="favoriteRows" size="small" striped-rows data-key="code">
             <Column field="code" header="Liste">
-              <template #body="{ data }"><span class="mono">{{ data.code }}</span></template>
+              <template #body="{ data }">
+                <button
+                  v-if="data.item_count != null"
+                  v-tooltip.top="'Voir les produits de la liste'"
+                  type="button"
+                  class="list-link mono"
+                  @click="drawerList = data.code"
+                >
+                  {{ data.code }}
+                </button>
+                <span v-else class="mono">{{ data.code }}</span>
+              </template>
             </Column>
             <Column field="label" header="Nom">
               <template #body="{ data }">
@@ -624,14 +635,35 @@ onMounted(async () => {
         </div>
       </template>
     </div>
+    <PriceListDrawer v-model:code="drawerList" />
   </div>
 </template>
 
 <style scoped>
+/* Code d'une liste favorite : ouvre le détail de la liste. */
+.list-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--app-accent);
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.list-link:hover {
+  text-decoration: underline;
+}
+
+/* Hauteur de la fenêtre : seul le contenu de droite défile, le sous-menu reste en place. */
 .settings {
   display: grid;
   grid-template-columns: 210px 1fr;
-  min-height: 100%;
+  height: 100%;
+}
+
+.settings > .page {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* Sous-menu : colonne étroite entre la barre latérale et le contenu. */
@@ -642,6 +674,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow-y: auto;
 }
 
 .subnav h1 {
@@ -651,7 +684,7 @@ onMounted(async () => {
 
 .subnav-link {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.7rem;
   padding: 0.55rem 0.7rem;
   border-radius: 8px;
@@ -660,7 +693,6 @@ onMounted(async () => {
 }
 
 .subnav-link i {
-  margin-top: 3px;
   color: var(--app-muted);
 }
 
@@ -683,14 +715,7 @@ onMounted(async () => {
 }
 
 .subnav-label {
-  display: block;
   font-weight: 600;
-}
-
-.subnav-hint {
-  display: block;
-  font-size: 0.82em;
-  color: var(--app-muted);
 }
 
 .stats {
