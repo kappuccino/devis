@@ -16,6 +16,10 @@ export interface QuoteDraft extends Partial<PricingContext>, Partial<QuoteContac
   /** Remise globale (absente des brouillons plus anciens). */
   discount_pct?: number;
   lines: QuoteLine[];
+  /** Devis type : son nom. */
+  template_name?: string;
+  /** Nom de l'affaire. */
+  project_name?: string;
   /** Date de la dernière modification (ISO). */
   savedAt: string;
 }

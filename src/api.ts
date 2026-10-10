@@ -176,6 +176,8 @@ export interface QuoteSummary {
   /** N° de version (1 : original) ; vrai si une version plus récente existe. */
   version: number;
   superseded: boolean;
+  /** Nom de l'affaire. */
+  project_name: string;
 }
 
 /**
@@ -238,6 +240,21 @@ export interface Quote extends PricingContext, QuoteContact {
   versions?: QuoteVersion[];
   /** Affaire obtenue : date du marquage (lecture seule, voir setQuoteWon). */
   won_at?: string | null;
+  /** Devis type (modèle, sans client ni prix) et son nom. */
+  is_template?: boolean;
+  template_name?: string;
+  /** Nom de l'affaire (chantier, opération…), imprimé sur le PDF. */
+  project_name?: string;
+}
+
+/** Devis type, dans la liste de l'onglet « Devis types ». */
+export interface QuoteTemplate {
+  id: number;
+  name: string;
+  /** Nombre d'articles. */
+  line_count: number;
+  notes: string | null;
+  updated_at: string;
 }
 
 /** Une version d'un devis. */
@@ -321,6 +338,9 @@ export const api = {
   saveQuote: (quote: Quote) => invoke<Quote>("save_quote", { quote }),
   deleteQuote: (id: number) => invoke<void>("delete_quote", { id }),
   duplicateQuote: (id: number, date: string) => invoke<Quote>("duplicate_quote", { id, date }),
+  listQuoteTemplates: () => invoke<QuoteTemplate[]>("list_quote_templates"),
+  /** Enregistre un devis comme devis type (lignes et notes, sans client ni prix). */
+  saveAsTemplate: (id: number, name: string, date: string) => invoke<Quote>("save_as_template", { id, name, date }),
   /** Nouvelle version (numéro de l'original suivi de « -V2 »…), datée de `date`. */
   newQuoteVersion: (id: number, date: string) => invoke<Quote>("new_quote_version", { id, date }),
   /** Renvoie la date du marquage (null : affaire remise en attente). */

@@ -30,6 +30,13 @@ describe("PDF du devis", () => {
     expect(texts(buildDocument(quote, null, { company_name: "GROUPE CAHORS" }).content)).toContain("GROUPE CAHORS");
   });
 
+  it("imprime le nom de l'affaire, s'il y en a un", () => {
+    const all = texts(buildDocument({ ...quote, project_name: " Lotissement Les Jardins " }, null, {}).content);
+    expect(all).toContain("Lotissement Les Jardins");
+    expect(all).not.toContain("AFFAIRE");
+    expect(all).not.toContain("CLIENT");
+  });
+
   it("reprend les anciens champs tant que l'agence n'a pas été saisie", () => {
     expect(agencyContact({ company_address: "1 rue X", company_phone: "05 00", company_email: "a@b.fr" })).toBe("1 rue X\nTél. 05 00\na@b.fr");
     expect(agencyContact({ company_address: "1 rue X", [AGENCY_KEY]: "" })).toBe("");

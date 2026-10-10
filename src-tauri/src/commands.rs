@@ -458,6 +458,8 @@ pub struct QuoteSummary {
     /// N° de version (1 : original) ; vrai si une version plus récente existe.
     pub version: i64,
     pub superseded: bool,
+    /// Nom de l'affaire.
+    pub project_name: String,
 }
 
 #[tauri::command]
@@ -469,8 +471,9 @@ pub fn list_quotes(state: State<AppState>) -> CmdResult<Vec<QuoteSummary>> {
                 (SELECT COUNT(*) FROM quote_lines WHERE quote_id = q.id AND kind = 'item'), q.won_at,
                 q.version,
                 EXISTS (SELECT 1 FROM quotes v WHERE COALESCE(v.version_of, v.id) = COALESCE(q.version_of, q.id)
-                                                 AND v.version > q.version)
-         FROM quotes q ORDER BY q.date DESC, q.id DESC",
+                                                 AND v.version > q.version),
+                q.project_name
+         FROM quotes q WHERE q.is_template = 0 ORDER BY q.date DESC, q.id DESC",
         [],
         |r| {
             Ok(QuoteSummary {
@@ -485,6 +488,7 @@ pub fn list_quotes(state: State<AppState>) -> CmdResult<Vec<QuoteSummary>> {
                 won_at: r.get(8)?,
                 version: r.get(9)?,
                 superseded: r.get(10)?,
+                project_name: r.get(11)?,
             })
         },
     )
@@ -566,6 +570,14 @@ pub struct Quote {
     /// Affaire obtenue : date du marquage, None sinon (lecture seule : modifié par `set_quote_won`).
     #[serde(default, skip_deserializing)]
     pub won_at: Option<String>,
+    /// Devis type (modèle) et son nom.
+    #[serde(default)]
+    pub is_template: bool,
+    #[serde(default)]
+    pub template_name: String,
+    /// Nom de l'affaire (chantier, opération…), imprimé sur le PDF.
+    #[serde(default)]
+    pub project_name: String,
 }
 
 fn first_version() -> i64 {
@@ -608,7 +620,7 @@ fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
         .query_row(
             "SELECT id, number, client_code, client_name, date, notes, total_ht, discount_cfa, discount_cfo, price_lists,
                     discount_pct, forced_price_list, contact_name, contact_email, contact_phone, sales_rep,
-                    version, version_of, won_at
+                    version, version_of, won_at, is_template, template_name, project_name
              FROM quotes WHERE id = ?1",
             [id],
             |r| {
@@ -640,6 +652,9 @@ fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
                     version: r.get(16)?,
                     version_of: r.get(17)?,
                     won_at: r.get(18)?,
+                    is_template: r.get(19)?,
+                    template_name: r.get(20)?,
+                    project_name: r.get(21)?,
                     versions: Vec::new(),
                 })
             },
@@ -754,7 +769,8 @@ pub fn store_quote(conn: &mut Connection, mut quote: Quote) -> CmdResult<Quote> 
             tx.execute(
                 "UPDATE quotes SET client_code = ?2, client_name = ?3, date = ?4, notes = ?5, total_ht = ?6,
                         discount_cfa = ?7, discount_cfo = ?8, price_lists = ?9, discount_pct = ?10,
-                        forced_price_list = ?11, total_net = ?12, updated_at = datetime('now', 'localtime')
+                        forced_price_list = ?11, total_net = ?12, template_name = ?13,
+                        updated_at = datetime('now', 'localtime')
                  WHERE id = ?1",
                 params![
                     id,
@@ -768,7 +784,8 @@ pub fn store_quote(conn: &mut Connection, mut quote: Quote) -> CmdResult<Quote> 
                     lists,
                     discount_pct,
                     forced,
-                    total_net
+                    total_net,
+                    quote.template_name.trim()
                 ],
             )
             .map_err(err)?;
@@ -779,13 +796,17 @@ pub fn store_quote(conn: &mut Connection, mut quote: Quote) -> CmdResult<Quote> 
             // Numéro déjà fixé : nouvelle version d'un devis (« …-V2 »).
             let number = match quote.number.clone().filter(|_| quote.version_of.is_some()) {
                 Some(n) => n,
+                // Devis type : numéro technique, hors numérotation des devis.
+                None if quote.is_template => tx
+                    .query_row("SELECT 'TYPE-' || (COALESCE(MAX(id), 0) + 1) FROM quotes", [], |r| r.get(0))
+                    .map_err(err)?,
                 None => next_number(&tx, &quote.date)?,
             };
             tx.execute(
                 "INSERT INTO quotes
                  (number, client_code, client_name, date, notes, total_ht, discount_cfa, discount_cfo, price_lists,
-                  discount_pct, forced_price_list, total_net, version, version_of)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                  discount_pct, forced_price_list, total_net, version, version_of, is_template, template_name)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 params![
                     number,
                     client_code,
@@ -800,7 +821,9 @@ pub fn store_quote(conn: &mut Connection, mut quote: Quote) -> CmdResult<Quote> 
                     forced,
                     total_net,
                     quote.version,
-                    quote.version_of
+                    quote.version_of,
+                    quote.is_template,
+                    quote.template_name.trim()
                 ],
             )
             .map_err(err)?;
@@ -810,8 +833,16 @@ pub fn store_quote(conn: &mut Connection, mut quote: Quote) -> CmdResult<Quote> 
 
     let c = &quote.contact;
     tx.execute(
-        "UPDATE quotes SET contact_name = ?2, contact_email = ?3, contact_phone = ?4, sales_rep = ?5 WHERE id = ?1",
-        params![id, c.contact_name.trim(), c.contact_email.trim(), c.contact_phone.trim(), c.sales_rep.trim()],
+        "UPDATE quotes SET contact_name = ?2, contact_email = ?3, contact_phone = ?4, sales_rep = ?5, project_name = ?6
+         WHERE id = ?1",
+        params![
+            id,
+            c.contact_name.trim(),
+            c.contact_email.trim(),
+            c.contact_phone.trim(),
+            c.sales_rep.trim(),
+            quote.project_name.trim()
+        ],
     )
     .map_err(err)?;
 
@@ -906,6 +937,67 @@ fn version_base(number: &str) -> &str {
         Some((base, n)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => base,
         _ => number,
     }
+}
+
+// ---------- Devis types ----------
+
+#[derive(Serialize)]
+pub struct QuoteTemplate {
+    pub id: i64,
+    pub name: String,
+    /// Nombre d'articles.
+    pub line_count: i64,
+    pub notes: Option<String>,
+    pub updated_at: String,
+}
+
+#[tauri::command]
+pub fn list_quote_templates(state: State<AppState>) -> CmdResult<Vec<QuoteTemplate>> {
+    query_all(
+        &state.conn(),
+        "SELECT q.id, q.template_name,
+                (SELECT COUNT(*) FROM quote_lines WHERE quote_id = q.id AND kind = 'item'), q.notes, q.updated_at
+         FROM quotes q WHERE q.is_template = 1 ORDER BY q.template_name COLLATE NOCASE, q.id",
+        [],
+        |r| Ok(QuoteTemplate { id: r.get(0)?, name: r.get(1)?, line_count: r.get(2)?, notes: r.get(3)?, updated_at: r.get(4)? }),
+    )
+}
+
+/// Enregistre un devis comme devis type `name` : mêmes lignes et notes, sans client, prix, remises
+/// ni frais (recalculés à la création d'un devis pour le client choisi).
+#[tauri::command]
+pub fn save_as_template(state: State<AppState>, id: i64, name: String, date: String) -> CmdResult<Quote> {
+    let mut conn = state.conn();
+    let quote = load_quote(&conn, id)?;
+    store_quote(&mut conn, as_template(quote, name, date))
+}
+
+fn as_template(mut q: Quote, name: String, date: String) -> Quote {
+    q.id = None;
+    q.number = None;
+    q.client_code = None;
+    q.client_name = String::new();
+    q.pricing = PricingContext::default();
+    q.contact = QuoteContact::default();
+    q.discount_pct = 0.0;
+    q.version = 1;
+    q.version_of = None;
+    q.is_template = true;
+    q.template_name = name.trim().to_string();
+    q.project_name = String::new();
+    q.date = date;
+    q.lines.retain(|l| !is_fee(&l.kind));
+    for l in &mut q.lines {
+        l.unit_price = 0.0;
+        l.discount = 0.0;
+        l.price_source = None;
+        l.public_price = None;
+        l.threshold_price = None;
+        l.discounted_price = None;
+        l.lpn_price = None;
+        l.lpn_list = None;
+    }
+    q
 }
 
 /// Copie un devis (nouveau numéro, date du jour fournie par le front).
@@ -1178,6 +1270,37 @@ mod tests {
         assert_eq!(next_number(&conn, "2026-10-10").unwrap(), "26-JMOS-0013");
         assert_eq!(version_base("26-JMOS-0012-V12"), "26-JMOS-0012");
         assert_eq!(version_base("DEV-VERT"), "DEV-VERT");
+    }
+
+    #[test]
+    fn templates_have_no_client_nor_prices_and_stay_out_of_numbering() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::db::init(&conn).unwrap();
+        conn.execute("INSERT INTO settings (key, value) VALUES ('quote_prefix', 'JMOS')", []).unwrap();
+        conn.execute_batch(
+            "INSERT INTO quotes (id, number, client_code, client_name, date, discount_pct, price_lists, sales_rep)
+                 VALUES (1, '26-JMOS-0005', 'C1', 'ALPHA', '2026-10-01', 5, 'T1', 'Julie');
+             INSERT INTO quote_lines (quote_id, position, kind, product_ref, designation, quantity, unit_price, discount, lpn_price)
+                 VALUES (1, 0, 'title', '', 'Branchements', 0, 0, 0, NULL),
+                        (1, 1, 'item', 'P1', 'Coffret', 3, 120, 5, 100),
+                        (1, 2, 'shipping', '', 'Frais de port', 1, 31, 0, NULL);",
+        )
+        .unwrap();
+        let source = load_quote(&conn, 1).unwrap();
+        let t = store_quote(&mut conn, as_template(source, " Lotissement ".into(), "2026-10-10".into())).unwrap();
+        assert!(t.is_template);
+        assert_eq!(t.template_name, "Lotissement");
+        assert!(t.number.as_deref().unwrap().starts_with("TYPE-"));
+        assert_eq!((t.client_code.as_deref(), t.client_name.as_str(), t.discount_pct), (None, "", 0.0));
+        assert!(t.pricing.price_lists.is_empty() && t.contact.sales_rep.is_empty());
+        // Lignes gardées (quantités comprises), frais retirés, prix effacés.
+        let kept: Vec<(&str, f64, f64, f64)> =
+            t.lines.iter().map(|l| (l.kind.as_str(), l.quantity, l.unit_price, l.discount)).collect();
+        assert_eq!(kept, [("title", 0.0, 0.0, 0.0), ("item", 3.0, 0.0, 0.0)]);
+        assert_eq!(t.lines[1].lpn_price, None);
+        // Hors numérotation et hors statistiques.
+        assert_eq!(next_number(&conn, "2026-10-10").unwrap(), "26-JMOS-0006");
+        assert_eq!(crate::stats::quote_stats(&conn, None).unwrap().count, 1);
     }
 
     #[test]

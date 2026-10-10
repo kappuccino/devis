@@ -67,7 +67,7 @@ pub struct Stats {
 }
 
 /// Les devis comptés : une version par devis (l'obtenue, sinon la plus récente).
-const QUOTES: &str = "(SELECT * FROM quotes q0 WHERE q0.id = (
+const QUOTES: &str = "(SELECT * FROM quotes q0 WHERE q0.is_template = 0 AND q0.id = (
         SELECT q1.id FROM quotes q1 WHERE COALESCE(q1.version_of, q1.id) = COALESCE(q0.version_of, q0.id)
         ORDER BY q1.won_at IS NULL, q1.version DESC LIMIT 1))";
 
@@ -84,7 +84,7 @@ pub fn quote_stats(conn: &Connection, year: Option<&str>) -> Result<Stats> {
     // Nombre et montant des affaires obtenues (à la suite d'un COUNT et d'une SUM).
     const WON: &str = "COUNT(q.won_at), COALESCE(SUM(CASE WHEN q.won_at IS NOT NULL THEN q.total_net END), 0)";
 
-    let years = all(conn, "SELECT DISTINCT substr(date, 1, 4) FROM quotes ORDER BY 1 DESC", params![], |r| r.get(0))?;
+    let years = all(conn, "SELECT DISTINCT substr(date, 1, 4) FROM quotes WHERE is_template = 0 ORDER BY 1 DESC", params![], |r| r.get(0))?;
 
     let (count, total, clients, won_count, won_total) = conn
         .query_row(
@@ -240,7 +240,7 @@ pub fn product_history(conn: &Connection, product_ref: &str) -> Result<ProductHi
         "SELECT q.id, q.number, q.date, q.client_code, q.client_name, q.sales_rep, l.quantity, l.unit_price,
                 l.discount, q.discount_pct, l.public_price, l.lpn_price, l.is_option
          FROM quote_lines l JOIN quotes q ON q.id = l.quote_id
-         WHERE l.kind = 'item' AND l.product_ref = ?1
+         WHERE l.kind = 'item' AND l.product_ref = ?1 AND q.is_template = 0
          ORDER BY q.date, q.number, l.position",
         params![product_ref],
         |r| {

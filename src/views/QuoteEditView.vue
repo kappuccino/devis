@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import AutoComplete, { type AutoCompleteCompleteEvent } from "primevue/autocomplete";
 import InputText from "primevue/inputtext";
 import Textarea from "primevue/textarea";
@@ -20,6 +20,7 @@ import {
   type Quote,
   type QuoteContact,
   type QuoteLine,
+  type QuoteTemplate,
   type QuoteVersion,
 } from "../api";
 import { errorMessage, formatDate, formatEuro, formatUnitPrice, MOD, round2, todayIso } from "../format";
@@ -30,8 +31,8 @@ import { readDraft, removeDraft, writeDraft, type QuoteDraft } from "../drafts";
 import { useConfirm } from "primevue/useconfirm";
 import { useLineClipboard } from "../composables/useLineClipboard";
 import {
-  FEE_KINDS,
   cleanLines,
+  FEE_KINDS,
   insertBlock,
   isFee,
   lineTotal,
@@ -46,8 +47,15 @@ import { lastSalesRep, rememberSalesRep, salesRepList } from "../salesReps";
 import { applyColumnTabOrder } from "../gridNav";
 import { autoFeeChanges, feeRulesFrom, type FeeRules } from "../fees";
 
-const props = defineProps<{ id?: string }>();
+/** `template` : éditeur d'un devis type (sans client, ni prix, ni totaux, ni PDF). */
+const props = defineProps<{ id?: string; template?: boolean }>();
+const isTemplate = computed(() => !!props.template);
+/** Nom du devis type. */
+const templateName = ref("");
+/** Nom de l'affaire (chantier, opération…), imprimé sur le PDF. */
+const projectName = ref("");
 const router = useRouter();
+const route = useRoute();
 const toast = useToast();
 const confirm = useConfirm();
 
@@ -238,7 +246,7 @@ const totals = computed(() => quoteTotals([...lines.value, ...feeLines.value], g
 watch(
   () => totals.value.products,
   () => {
-    if (draftReady.value) applyAutoFees();
+    if (draftReady.value && !isTemplate.value) applyAutoFees();
   },
 );
 const total = computed(() => totals.value.total);
@@ -497,7 +505,8 @@ async function resolve(line: EditLine, focusNext = false, field: "ref" | "enedis
     });
     return;
   }
-  if (!hasClient.value) {
+  // Devis type : pas de client, la réf est seulement vérifiée (prix non affichés).
+  if (!hasClient.value && !isTemplate.value) {
     line.error = "Choisissez d'abord un client";
     return;
   }
@@ -841,15 +850,6 @@ onBeforeUnmount(() => {
   document.removeEventListener("paste", onPaste);
 });
 
-function removeLine(line: EditLine) {
-  lines.value = lines.value.filter((l) => l !== line);
-  if (!lines.value.length) lines.value.push(blankLine());
-}
-
-/** Prix net de la ligne (remise supplémentaire comprise) sous le prix seuil. */
-const isBelowThreshold = (l: EditLine) =>
-  l.threshold_price != null && netUnitPrice(l.unit_price, l.discount) < l.threshold_price;
-
 // ---------- Nettoyage des lignes ----------
 
 /** Nettoyage proposé (ligne de saisie exclue) : articles sans quantité, lignes vides, orphelins. */
@@ -880,6 +880,15 @@ function cleanUpLines() {
     },
   });
 }
+
+function removeLine(line: EditLine) {
+  lines.value = lines.value.filter((l) => l !== line);
+  if (!lines.value.length) lines.value.push(blankLine());
+}
+
+/** Prix net de la ligne (remise supplémentaire comprise) sous le prix seuil. */
+const isBelowThreshold = (l: EditLine) =>
+  l.threshold_price != null && netUnitPrice(l.unit_price, l.discount) < l.threshold_price;
 
 /** Champs enregistrés d'une ligne (sans l'état d'édition). */
 const toQuoteLine = (l: EditLine): QuoteLine => ({
@@ -913,6 +922,9 @@ function toQuote(): Quote {
     discount_pct: globalDiscount.value ?? 0,
     total_net: netTotal.value,
     total_options: totals.value.options,
+    is_template: isTemplate.value,
+    template_name: templateName.value.trim(),
+    project_name: projectName.value.trim(),
     lines: [
       ...lines.value
         // Articles sans réf et lignes de texte vides : ignorés.
@@ -934,7 +946,12 @@ function toQuote(): Quote {
 }
 
 async function save(): Promise<Quote | null> {
-  if (!hasClient.value) {
+  if (isTemplate.value && !templateName.value.trim()) {
+    toast.add({ severity: "warn", summary: "Donnez un nom au devis type", life: 2500 });
+    document.getElementById("template-name")?.focus();
+    return null;
+  }
+  if (!hasClient.value && !isTemplate.value) {
     toast.add({ severity: "warn", summary: "Choisissez un client", life: 2500 });
     return null;
   }
@@ -949,10 +966,14 @@ async function save(): Promise<Quote | null> {
     quoteId.value = saved.id;
     number.value = saved.number;
     // Enregistré en base : plus besoin du brouillon.
-    if (isNew) removeDraft("nouveau");
+    if (isNew) removeDraft(newDraftKey());
     markSaved();
-    if (isNew) router.replace(`/devis/${saved.id}`);
-    toast.add({ severity: "success", summary: `Devis ${saved.number} enregistré`, life: 2000 });
+    if (isNew) router.replace(`${basePath.value}/${saved.id}`);
+    toast.add({
+      severity: "success",
+      summary: isTemplate.value ? `Devis type « ${saved.template_name} » enregistré` : `Devis ${saved.number} enregistré`,
+      life: 2000,
+    });
     return saved;
   } catch (e) {
     toast.add({ severity: "error", summary: "Enregistrement", detail: errorMessage(e) });
@@ -1048,7 +1069,11 @@ async function fillMissingReferencePrices() {
 
 // ---------- Brouillon local : le devis en cours est gardé à chaque modification ----------
 
-const draftKey = () => (quoteId.value == null ? "nouveau" : String(quoteId.value));
+/** Brouillon d'un devis (ou devis type) pas encore enregistré. */
+const newDraftKey = () => (isTemplate.value ? "type-nouveau" : "nouveau");
+const draftKey = () => (quoteId.value == null ? newDraftKey() : String(quoteId.value));
+/** Liste et éditeur : devis ou devis types. */
+const basePath = computed(() => (isTemplate.value ? "/devis-types" : "/devis"));
 /** Faux pendant un chargement : on n'écrit pas de brouillon d'un état à moitié chargé. */
 const draftReady = ref(false);
 /** État tel qu'en base (ou vierge) : tant qu'on y est, pas de brouillon. */
@@ -1059,6 +1084,8 @@ const hasDraft = ref(false);
 const snapshot = () =>
   JSON.stringify({
     client: [clientCode.value, clientName.value, pricingKey.value, contact.value],
+    templateName: templateName.value,
+    projectName: projectName.value,
     date: date.value,
     notes: notes.value,
     discount: globalDiscount.value,
@@ -1097,6 +1124,8 @@ function persistDraft() {
     notes: notes.value,
     discount_pct: globalDiscount.value,
     lines: [...lines.value.filter((l) => !isEntryLine(l)), ...feeLines.value].map(toQuoteLine),
+    template_name: templateName.value,
+    project_name: projectName.value,
     savedAt: new Date().toISOString(),
   };
   writeDraft(draftKey(), draft);
@@ -1104,7 +1133,7 @@ function persistDraft() {
 }
 
 let draftTimer: ReturnType<typeof setTimeout> | undefined;
-watch([clientCode, clientName, pricingKey, contact, date, notes, globalDiscount, lines], () => {
+watch([clientCode, clientName, pricingKey, contact, date, notes, globalDiscount, lines, templateName, projectName], () => {
   clearTimeout(draftTimer);
   draftTimer = setTimeout(persistDraft, 300);
 }, { deep: true });
@@ -1117,6 +1146,8 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", persistDraft));
 
 function applyDraft(draft: QuoteDraft) {
   date.value = draft.date;
+  templateName.value = draft.template_name ?? templateName.value;
+  projectName.value = draft.project_name ?? projectName.value;
   notes.value = draft.notes;
   globalDiscount.value = draft.discount_pct ?? 0;
   const known = draft.client_code ? clients.value.find((c) => c.code === draft.client_code) : undefined;
@@ -1157,8 +1188,8 @@ function startOver() {
       clearTimeout(draftTimer);
       draftReady.value = false;
       removeDraft(draftKey());
-      removeDraft("nouveau");
-      if (quoteId.value) router.push("/devis/nouveau");
+      removeDraft(newDraftKey());
+      if (quoteId.value) router.push(`${basePath.value}/nouveau`);
       else load(undefined);
     },
   });
@@ -1224,6 +1255,8 @@ async function loadSaved(id: string | undefined) {
       number.value = null;
       versions.value = [];
       wonAt.value = null;
+      templateName.value = "";
+      projectName.value = "";
       date.value = todayIso();
       notes.value = "";
       globalDiscount.value = 0;
@@ -1241,6 +1274,8 @@ async function loadSaved(id: string | undefined) {
       return;
     }
     const q = await api.getQuote(Number(id));
+    templateName.value = q.template_name ?? "";
+    projectName.value = q.project_name ?? "";
     quoteId.value = q.id;
     number.value = q.number;
     versions.value = q.versions ?? [];
@@ -1263,7 +1298,7 @@ async function loadSaved(id: string | undefined) {
     }));
     lines.value = [...loaded.filter((l) => !isFee(l.kind)), blankLine()];
     feeLines.value = loaded.filter((l) => isFee(l.kind));
-    fillMissingReferencePrices();
+    if (!isTemplate.value) fillMissingReferencePrices();
   } catch (e) {
     toast.add({ severity: "error", summary: "Chargement du devis", detail: errorMessage(e) });
   }
@@ -1272,11 +1307,13 @@ async function loadSaved(id: string | undefined) {
 // Le composant est réutilisé entre /devis/nouveau et /devis/:id (bouton « Nouveau devis », duplication).
 // Après la création d'un devis, l'URL passe à /devis/:id sans recharger : quoteId est déjà à jour.
 watch(
-  () => props.id,
-  (id) => {
+  () => [props.id, props.template] as const,
+  ([id], [, wasTemplate]) => {
     // Autre devis (ou nouveau) : on sort du plein écran.
     fullscreen.value = false;
-    if (id !== (quoteId.value == null ? undefined : String(quoteId.value))) load(id);
+    if (props.template !== wasTemplate || id !== (quoteId.value == null ? undefined : String(quoteId.value))) {
+      load(id).then(applyTemplateFromQuery);
+    }
   },
 );
 
@@ -1296,16 +1333,112 @@ onMounted(async () => {
     toast.add({ severity: "error", summary: "Chargement des clients", detail: errorMessage(e) });
   }
   await load(props.id);
+  await applyTemplateFromQuery();
 });
+
+// ---------- Devis types ----------
+
+/** Devis types proposés dans un nouveau devis (« Partir d'un devis type »). */
+const templates = ref<QuoteTemplate[]>([]);
+watch(
+  () => quoteId.value == null && !isTemplate.value,
+  async (isNewQuote) => {
+    if (!isNewQuote) return;
+    try {
+      templates.value = await api.listQuoteTemplates();
+    } catch {
+      templates.value = [];
+    }
+  },
+  { immediate: true },
+);
+
+/** Nouveau devis ouvert avec `?type=<id>` (onglet Devis types) : on reprend ce devis type. */
+async function applyTemplateFromQuery() {
+  const id = Number(route.query.type);
+  if (!id || quoteId.value != null || isTemplate.value) return;
+  router.replace({ query: {} });
+  askApplyTemplate(id);
+}
+
+/** Reprise d'un devis type : confirmation si le devis a déjà des lignes (elles sont gardées). */
+function askApplyTemplate(id: number) {
+  const existing = lines.value.filter((l) => !isEntryLine(l)).length;
+  if (!existing) {
+    applyTemplate(id);
+    return;
+  }
+  const name = templates.value.find((t) => t.id === id)?.name ?? "";
+  confirm.require({
+    header: "Reprendre un devis type",
+    message:
+      `Ce devis contient déjà ${existing} ligne(s). Les lignes du devis type${name ? ` « ${name} »` : ""} ` +
+      "seront ajoutées à la suite (les lignes actuelles sont gardées).",
+    icon: "pi pi-bookmark",
+    rejectProps: { label: "Annuler", severity: "secondary", text: true },
+    acceptProps: { label: "Ajouter les lignes" },
+    accept: () => applyTemplate(id),
+  });
+}
+
+/**
+ * Nouveau devis : reprend les lignes et les notes d'un devis type (sans prix), ajoutées à la suite
+ * des lignes déjà saisies ; les prix sont calculés pour le client du devis (dès qu'il est choisi).
+ */
+async function applyTemplate(id: number) {
+  try {
+    const t = await api.getQuote(id);
+    const added: EditLine[] = t.lines
+      .filter((l) => !isFee(l.kind))
+      .map((l) => ({
+        ...blankLine(),
+        ...withTexts({ ...l, quantity: l.kind === "item" && !l.quantity ? null : l.quantity, unit_price: 0 }),
+        resolvedRef: null,
+      }));
+    lines.value = [...lines.value.filter((l) => !isEntryLine(l)), ...added, blankLine()];
+    if (t.notes && !notes.value.trim()) notes.value = t.notes;
+    toast.add({
+      severity: "info",
+      summary: `Devis type « ${t.template_name} » repris`,
+      detail: hasClient.value ? undefined : "Choisissez le client : les prix seront calculés pour lui.",
+      life: 3000,
+    });
+    if (hasClient.value) await repriceLines();
+  } catch (e) {
+    toast.add({ severity: "error", summary: "Devis type", detail: errorMessage(e) });
+  }
+}
+
+/** « Enregistrer comme devis type » : nom demandé, puis ouverture du devis type créé. */
+const asTemplateVisible = ref(false);
+const asTemplateName = ref("");
+function openSaveAsTemplate() {
+  asTemplateName.value = "";
+  asTemplateVisible.value = true;
+}
+async function saveAsTemplate() {
+  const name = asTemplateName.value.trim();
+  if (!name || quoteId.value == null) return;
+  if (hasDraft.value && !(await save())) return;
+  try {
+    const t = await api.saveAsTemplate(quoteId.value, name, todayIso());
+    asTemplateVisible.value = false;
+    toast.add({ severity: "success", summary: `Devis type « ${t.template_name} » créé`, life: 2500 });
+    router.push(`/devis-types/${t.id}`);
+  } catch (e) {
+    toast.add({ severity: "error", summary: "Devis type", detail: errorMessage(e) });
+  }
+}
 </script>
 
 <template>
   <div class="page">
     <div class="page-header">
-      <Button icon="pi pi-arrow-left" text rounded @click="router.push('/devis')" />
-      <h1>{{ number ? `Devis ${number}` : "Nouveau devis" }}</h1>
+      <Button icon="pi pi-arrow-left" text rounded @click="router.push(isTemplate ? '/devis?onglet=types' : '/devis')" />
+      <h1 v-if="isTemplate">{{ quoteId != null ? `Devis type ${templateName}` : "Nouveau devis type" }}</h1>
+      <h1 v-else>{{ number ? `Devis ${number}` : "Nouveau devis" }}</h1>
       <!-- Versions du devis : liens de l'une à l'autre, la version obtenue cochée. -->
-      <nav v-if="versions.length > 1" class="versions" aria-label="Versions du devis">
+      <nav v-if="versions.length > 1 && !isTemplate" class="versions" aria-label="Versions du devis">
         <RouterLink
           v-for="v in versions"
           :key="v.id"
@@ -1318,7 +1451,7 @@ onMounted(async () => {
         </RouterLink>
       </nav>
       <label
-        v-if="quoteId != null"
+        v-if="quoteId != null && !isTemplate"
         v-tooltip.bottom="wonAt ? `Cochée le ${formatDate(wonAt)}` : 'Le devis est devenu une commande / facture'"
         class="won-toggle"
         :class="{ on: wonAt }"
@@ -1326,16 +1459,40 @@ onMounted(async () => {
         <Checkbox :model-value="!!wonAt" binary @update:model-value="setWon" />
         Affaire obtenue
       </label>
+      <!-- Modifications non enregistrées : pastille seule, explication en infobulle. -->
       <span
         v-if="hasDraft"
-        v-tooltip.bottom="'Gardé sur cet ordinateur ; restauré si vous revenez sur ce devis'"
-        class="muted draft-badge"
+        v-tooltip.bottom="'Modifications non enregistrées (gardées sur cet ordinateur ; reprises si vous revenez sur ce devis)'"
+        class="draft-badge"
+        role="status"
+        aria-label="Modifications non enregistrées"
       >
-        <i class="pi pi-circle-fill" /> Modifications non enregistrées
+        <i class="pi pi-circle-fill" />
       </span>
       <span class="spacer" />
+      <Select
+        v-if="quoteId == null && !isTemplate && templates.length"
+        :options="templates"
+        option-label="name"
+        option-value="id"
+        placeholder="Partir d'un devis type…"
+        size="small"
+        class="template-select"
+        aria-label="Partir d'un devis type"
+        @update:model-value="(id: number) => askApplyTemplate(id)"
+      />
       <Button
-        v-if="quoteId != null"
+        v-if="quoteId != null && !isTemplate"
+        v-tooltip.bottom="'Ses lignes et notes, sans client ni prix, pour démarrer d\'autres devis'"
+        icon="pi pi-bookmark"
+        severity="secondary"
+        text
+        rounded
+        aria-label="Enregistrer comme devis type"
+        @click="openSaveAsTemplate"
+      />
+      <Button
+        v-if="quoteId != null && !isTemplate"
         v-tooltip.bottom="'Copie de ce devis sous le même numéro, suffixé -V2, -V3…'"
         label="Nouvelle version"
         icon="pi pi-history"
@@ -1346,10 +1503,11 @@ onMounted(async () => {
       />
       <Button label="Repartir de zéro" icon="pi pi-refresh" severity="secondary" text @click="startOver" />
       <Button label="Enregistrer" icon="pi pi-save" severity="secondary" :loading="saving" @click="save" />
-      <Button label="Générer PDF" icon="pi pi-file-pdf" :loading="saving" @click="savePdf" />
+      <Button v-if="!isTemplate" label="PDF" icon="pi pi-file-pdf" :loading="saving" @click="savePdf" />
       <Button
+        v-if="!isTemplate"
         v-tooltip.bottom="'Devis suivi de la documentation technique des produits'"
-        label="Devis PDF + Docs"
+        label="PDF + Docs"
         icon="pi pi-book"
         :loading="saving"
         @click="savePdfWithDocs"
@@ -1357,8 +1515,29 @@ onMounted(async () => {
     </div>
     <QuoteDocsDialog v-model:visible="docsDialogVisible" :quote="docsDialogQuote" />
     <PriceListDrawer v-model:code="drawerList" />
+    <Dialog v-model:visible="asTemplateVisible" modal header="Enregistrer comme devis type" :style="{ width: '440px' }">
+      <p class="muted dialog-hint">
+        Les lignes et les notes de ce devis, sans client ni prix : les prix seront calculés pour le client de
+        chaque nouveau devis.
+      </p>
+      <form class="form-grid" @submit.prevent="saveAsTemplate">
+        <label for="as-template-name">Nom</label>
+        <InputText id="as-template-name" v-model="asTemplateName" autofocus placeholder="ex. Lotissement – 24 lots" />
+      </form>
+      <template #footer>
+        <Button label="Annuler" severity="secondary" text @click="asTemplateVisible = false" />
+        <Button label="Créer le devis type" icon="pi pi-bookmark" :disabled="!asTemplateName.trim()" @click="saveAsTemplate" />
+      </template>
+    </Dialog>
 
-    <div class="card head">
+    <!-- Devis type : un nom, pas de client. -->
+    <div v-if="isTemplate" class="card template-head">
+      <label for="template-name">Nom du devis type</label>
+      <InputText id="template-name" v-model="templateName" placeholder="ex. Lotissement – 24 lots" class="template-name" />
+      <span class="muted">Sans client ni prix : les prix sont calculés pour le client de chaque devis créé à partir de ce type.</span>
+    </div>
+
+    <div v-else class="card head">
       <div class="field client-field">
         <div class="client-picker">
           <AutoComplete
@@ -1451,6 +1630,18 @@ onMounted(async () => {
                 @click="clearClient"
               />
             </div>
+          </div>
+          <!-- Nom de l'affaire : à droite de la ligne client ; imprimé sur le PDF. -->
+          <div class="field cd-project">
+            <label for="project-name">Affaire</label>
+            <InputText
+              id="project-name"
+              v-model="projectName"
+              v-tooltip.bottom="'Nom de l\'affaire (chantier, opération…), imprimé sur le devis'"
+              placeholder="Nom de l'affaire"
+              size="small"
+              class="cd-project-input"
+            />
           </div>
         </div>
 
@@ -1623,18 +1814,20 @@ onMounted(async () => {
             <th style="width: 100px">Référence</th>
             <th>Désignation</th>
             <th style="width: 56px" class="num">Qté</th>
-            <th style="width: 76px" class="num">Prix public</th>
-            <th v-tooltip.top="'Prix public − remise CFA / CFO du devis'" style="width: 76px" class="num">Prix remisé</th>
-            <th v-tooltip.top="'Prix négocié de la liste de prix'" style="width: 76px" class="num">LPN</th>
-            <th style="width: 80px" class="num">PU HT</th>
-            <th v-tooltip.top="'Remise supplémentaire sur le prix de la ligne'" style="width: 64px" class="num">
-              Remise sup. (%)
-            </th>
-            <th ref="totalHeader" style="width: 100px" class="num">Total HT</th>
+            <template v-if="!isTemplate">
+              <th style="width: 76px" class="num">Prix public</th>
+              <th v-tooltip.top="'Prix public − remise CFA / CFO du devis'" style="width: 76px" class="num">Prix remisé</th>
+              <th v-tooltip.top="'Prix négocié de la liste de prix'" style="width: 76px" class="num">LPN</th>
+              <th style="width: 80px" class="num">PU HT</th>
+              <th v-tooltip.top="'Remise supplémentaire sur le prix de la ligne'" style="width: 64px" class="num">
+                Remise sup. (%)
+              </th>
+              <th ref="totalHeader" style="width: 100px" class="num">Total HT</th>
+            </template>
             <th v-tooltip.top="'Ligne en option : hors total HT, comptée dans « Total options »'" style="width: 48px" class="select-cell">
               Option
             </th>
-            <th v-tooltip.top="'Non imprimé sur le devis'" style="width: 70px" class="num seuil">Prix seuil</th>
+            <th v-if="!isTemplate" v-tooltip.top="'Non imprimé sur le devis'" style="width: 70px" class="num seuil">Prix seuil</th>
             <th style="width: 30px"></th>
           </tr>
         </thead>
@@ -1668,7 +1861,7 @@ onMounted(async () => {
                 />
               </td>
               <template v-if="line.kind === 'text'">
-                <td colspan="11">
+                <td :colspan="isTemplate ? 5 : 11">
                   <Textarea
                     :id="`text-${line.key}`"
                     v-model="line.designation"
@@ -1680,11 +1873,11 @@ onMounted(async () => {
                     class="text-line"
                   />
                 </td>
-                <td></td>
+                <td v-if="!isTemplate"></td>
               </template>
               <!-- Titre : sépare le devis en paragraphes (gras, rouge ; plus grand sur le PDF). -->
               <template v-else-if="line.kind === 'title'">
-                <td colspan="11">
+                <td :colspan="isTemplate ? 5 : 11">
                   <InputText
                     :id="`text-${line.key}`"
                     v-model="line.designation"
@@ -1694,15 +1887,15 @@ onMounted(async () => {
                     class="title-line"
                   />
                 </td>
-                <td></td>
+                <td v-if="!isTemplate"></td>
               </template>
               <template v-else>
-                <td colspan="9">
+                <td :colspan="isTemplate ? 4 : 9">
                   <InputText v-model="line.designation" fluid size="small" class="subtotal-label" />
                 </td>
-                <td class="num subtotal-amount">{{ formatEuro(subtotalAmounts.get(line.key)) }}</td>
+                <td v-if="!isTemplate" class="num subtotal-amount">{{ formatEuro(subtotalAmounts.get(line.key)) }}</td>
                 <td></td>
-                <td></td>
+                <td v-if="!isTemplate"></td>
               </template>
               <td>
                 <Button
@@ -1821,55 +2014,57 @@ onMounted(async () => {
                   @keydown.up="moveToQuantity(line, -1, $event)"
                 />
               </td>
-              <td class="num muted">{{ formatUnitPrice(line.public_price) }}</td>
-              <!-- En gras : le prix qui a fixé le PU HT (le plus bas des deux, ou la liste forcée). -->
-              <td class="num ref-price" :class="{ used: line.price_source?.startsWith('Public') }">
-                {{ formatUnitPrice(line.discounted_price) }}
-              </td>
-              <td
-                v-tooltip.top="line.lpn_list ? `Liste ${line.lpn_list}` : 'Aucun prix négocié'"
-                class="num ref-price"
-                :class="{ used: line.lpn_price != null && line.price_source === line.lpn_list }"
-              >
-                {{ formatUnitPrice(line.lpn_price) }}
-              </td>
-              <!-- Source du prix en infobulle (sur une 2e ligne, elle doublait la hauteur des lignes). -->
-              <td
-                v-tooltip.top="
-                  line.price_source
-                    ? `Prix : ${line.price_source}${isBelowThreshold(line) ? ' · sous le prix seuil' : ''}`
-                    : ''
-                "
-              >
-                <div class="euro-input">
+              <template v-if="!isTemplate">
+                <td class="num muted">{{ formatUnitPrice(line.public_price) }}</td>
+                <!-- En gras : le prix qui a fixé le PU HT (le plus bas des deux, ou la liste forcée). -->
+                <td class="num ref-price" :class="{ used: line.price_source?.startsWith('Public') }">
+                  {{ formatUnitPrice(line.discounted_price) }}
+                </td>
+                <td
+                  v-tooltip.top="line.lpn_list ? `Liste ${line.lpn_list}` : 'Aucun prix négocié'"
+                  class="num ref-price"
+                  :class="{ used: line.lpn_price != null && line.price_source === line.lpn_list }"
+                >
+                  {{ formatUnitPrice(line.lpn_price) }}
+                </td>
+                <!-- Source du prix en infobulle (sur une 2e ligne, elle doublait la hauteur des lignes). -->
+                <td
+                  v-tooltip.top="
+                    line.price_source
+                      ? `Prix : ${line.price_source}${isBelowThreshold(line) ? ' · sous le prix seuil' : ''}`
+                      : ''
+                  "
+                >
+                  <div class="euro-input">
+                    <InputText
+                      :model-value="line.priceText"
+                      inputmode="decimal"
+                      autocomplete="off"
+                      fluid
+                      size="small"
+                      class="num"
+                      :invalid="isBelowThreshold(line)"
+                      @update:model-value="(v: string | undefined) => onPriceInput(line, v ?? '')"
+                      @blur="onPriceBlur(line)"
+                    />
+                    <span v-if="line.product_ref">€</span>
+                  </div>
+                </td>
+                <td>
                   <InputText
-                    :model-value="line.priceText"
+                    :model-value="line.discountText"
                     inputmode="decimal"
                     autocomplete="off"
+                    placeholder="–"
                     fluid
                     size="small"
                     class="num"
-                    :invalid="isBelowThreshold(line)"
-                    @update:model-value="(v: string | undefined) => onPriceInput(line, v ?? '')"
-                    @blur="onPriceBlur(line)"
+                    @update:model-value="(v: string | undefined) => onDiscountInput(line, v ?? '')"
+                    @blur="line.discountText = line.discount ? editText(line.discount, 3) : ''"
                   />
-                  <span v-if="line.product_ref">€</span>
-                </div>
-              </td>
-              <td>
-                <InputText
-                  :model-value="line.discountText"
-                  inputmode="decimal"
-                  autocomplete="off"
-                  placeholder="–"
-                  fluid
-                  size="small"
-                  class="num"
-                  @update:model-value="(v: string | undefined) => onDiscountInput(line, v ?? '')"
-                  @blur="line.discountText = line.discount ? editText(line.discount, 3) : ''"
-                />
-              </td>
-              <td class="num">{{ line.product_ref && line.quantity != null ? formatEuro(lineTotal(line)) : "" }}</td>
+                </td>
+                <td class="num">{{ line.product_ref && line.quantity != null ? formatEuro(lineTotal(line)) : "" }}</td>
+              </template>
               <td class="select-cell">
                 <input
                   v-if="!isEntryLine(line)"
@@ -1878,7 +2073,7 @@ onMounted(async () => {
                   aria-label="Ligne en option"
                 />
               </td>
-              <td class="num seuil" :class="{ warn: isBelowThreshold(line) }">
+              <td v-if="!isTemplate" class="num seuil" :class="{ warn: isBelowThreshold(line) }">
                 {{ formatUnitPrice(line.threshold_price) }}
               </td>
               <td>
@@ -1927,6 +2122,7 @@ onMounted(async () => {
               @click="insertSpecialLine('subtotal')"
             />
             <Button
+              v-if="!isTemplate"
               v-tooltip.bottom="'Toujours en bas du devis, non remisés'"
               label="Frais de port"
               icon="pi pi-truck"
@@ -1936,6 +2132,7 @@ onMounted(async () => {
               @click="addFee('shipping')"
             />
             <Button
+              v-if="!isTemplate"
               v-tooltip.bottom="'Toujours en bas du devis, non remisés'"
               label="Frais de facturation"
               icon="pi pi-receipt"
@@ -1943,6 +2140,20 @@ onMounted(async () => {
               size="small"
               :disabled="hasFee('billing')"
               @click="addFee('billing')"
+            />
+            <Button
+              v-tooltip.bottom="
+                cleanupCount
+                  ? 'Supprime les articles sans quantité, les lignes vides, et les titres, textes et sous-totaux qui n\'accompagnent plus aucun article'
+                  : 'Rien à nettoyer'
+              "
+              :label="cleanupCount ? `Nettoyer (${cleanupCount})` : 'Nettoyer'"
+              icon="pi pi-eraser"
+              text
+              size="small"
+              severity="secondary"
+              :disabled="!cleanupCount"
+              @click="cleanUpLines"
             />
           </div>
           <div class="notes">
@@ -1952,7 +2163,7 @@ onMounted(async () => {
         </div>
 
         <!-- Ordre du calcul : produits, remise (produits seulement), frais, total. -->
-        <div ref="totalsPanel" class="totals" :style="totalsStyle">
+        <div v-if="!isTemplate" ref="totalsPanel" class="totals" :style="totalsStyle">
           <span class="t-label">Total produits HT</span>
           <span></span>
           <span class="t-amount">{{ formatEuro(totals.products) }}</span>
@@ -2033,7 +2244,29 @@ onMounted(async () => {
 
 <style scoped>
 .draft-badge {
-  font-size: 0.9em;
+  display: inline-flex;
+  padding: 4px;
+  cursor: help;
+}
+
+.template-select {
+  min-width: 200px;
+}
+
+/* Devis type : son nom à la place du client. */
+.template-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.template-head label {
+  font-weight: 600;
+}
+
+.template-name {
+  width: 360px;
 }
 
 .won-toggle {
@@ -2092,7 +2325,7 @@ onMounted(async () => {
 }
 
 .draft-badge i {
-  font-size: 0.5rem;
+  font-size: 0.6rem;
   color: var(--app-warn);
   vertical-align: middle;
 }
@@ -2141,20 +2374,6 @@ onMounted(async () => {
 }
 
 .cd-caption {
-            <Button
-              v-tooltip.bottom="
-                cleanupCount
-                  ? 'Supprime les articles sans quantité, les lignes vides, et les titres, textes et sous-totaux qui n\'accompagnent plus aucun article'
-                  : 'Rien à nettoyer'
-              "
-              :label="cleanupCount ? `Nettoyer (${cleanupCount})` : 'Nettoyer'"
-              icon="pi pi-eraser"
-              text
-              size="small"
-              severity="secondary"
-              :disabled="!cleanupCount"
-              @click="cleanUpLines"
-            />
   padding-top: 0.45rem;
   font-size: 0.75rem;
   font-weight: 700;
@@ -2184,6 +2403,16 @@ onMounted(async () => {
 
 .cd-name {
   flex: 0 1 380px;
+  font-weight: 600;
+}
+
+/* Nom de l'affaire : poussé à droite de la ligne client. */
+.cd-project {
+  margin-left: auto;
+}
+
+.cd-project-input {
+  width: 320px;
   font-weight: 600;
 }
 
@@ -2541,6 +2770,7 @@ tr:hover .drag-handle i {
 
 .add-lines {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
   white-space: nowrap;
 }
@@ -2672,4 +2902,3 @@ tr:hover .drag-handle i {
   font-style: italic;
 }
 </style>
-  flex-wrap: wrap;

@@ -35,9 +35,12 @@ watch(collapsed, (v) => {
 
 const toggle = () => (collapsed.value = !collapsed.value);
 const tip = (label: string) => (collapsed.value ? label : null);
-// /devis/12 garde « Devis » actif ; /devis/nouveau a sa propre entrée.
+// /devis/12 et /devis-types/… gardent « Devis » actif ; /devis/nouveau a sa propre entrée.
 const isActive = (to: string) =>
-  route.path === to || (route.path.startsWith(`${to}/`) && route.path !== "/devis/nouveau");
+  route.path === to ||
+  (route.path.startsWith(`${to}/`) && route.path !== "/devis/nouveau") ||
+  // Devis types : dans l'écran Devis.
+  (to === "/devis" && route.path.startsWith("/devis-types"));
 
 function onKeydown(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
@@ -111,9 +114,6 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
       <span class="spacer" />
 
       <RouterLink
-        v-tooltip.right="tip('Réglages')"
-        to="/reglages"
-      <RouterLink
         v-tooltip.right="tip('Aide')"
         to="/aide"
         class="nav-link"
@@ -122,6 +122,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
         <i class="pi pi-question-circle" />
         <span class="label">Aide</span>
       </RouterLink>
+      <RouterLink
+        v-tooltip.right="tip('Réglages')"
+        to="/reglages"
         class="nav-link"
         :class="{ active: isActive('/reglages') }"
       >

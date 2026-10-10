@@ -110,7 +110,13 @@ CREATE TABLE IF NOT EXISTS quotes (
     -- Versions d'un devis : n° de version (1 pour l'original) et id de l'original (NULL pour lui).
     -- Une nouvelle version porte le numéro de l'original suivi de « -V2 », « -V3 »…
     version     INTEGER NOT NULL DEFAULT 1,
-    version_of  INTEGER
+    version_of  INTEGER,
+    -- Devis type (modèle) : nommé, sans client ni prix ; hors liste des devis, statistiques et
+    -- numérotation (numéro technique « TYPE-… »).
+    is_template   INTEGER NOT NULL DEFAULT 0,
+    template_name TEXT NOT NULL DEFAULT '',
+    -- Nom de l'affaire (chantier, opération…), imprimé sur le PDF.
+    project_name  TEXT NOT NULL DEFAULT ''
 );
 
 {QUOTE_LINES}
@@ -199,6 +205,11 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     add_column(conn, "quotes", "version", "INTEGER NOT NULL DEFAULT 1")?;
     add_column(conn, "quotes", "version_of", "INTEGER")?;
     conn.execute_batch("CREATE INDEX IF NOT EXISTS quotes_version_of ON quotes(version_of)")?;
+    // Devis types.
+    add_column(conn, "quotes", "is_template", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column(conn, "quotes", "template_name", "TEXT NOT NULL DEFAULT ''")?;
+    // Nom de l'affaire.
+    add_column(conn, "quotes", "project_name", "TEXT NOT NULL DEFAULT ''")?;
     Ok(())
 }
 

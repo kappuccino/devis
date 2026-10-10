@@ -134,3 +134,17 @@
   - À exploiter ensuite dans les Statistiques (taux de transformation, montants obtenus).
   - Fait : coche et filtre dans la liste des devis ; Statistiques : affaires obtenues, taux,
     montant obtenu, part obtenue par mois, par client et par commercial (une version par devis).
+
+- [x] Devis type (modèle)
+  - Enregistrer un devis comme modèle (titres, lignes, quantités types) et créer un nouveau devis
+    à partir d'un modèle, les prix étant recalculés pour le client choisi.
+  - Fait : onglet « Devis types » (écran Devis), même éditeur que les devis sans client ni prix,
+    « Enregistrer comme devis type » depuis un devis, « Partir d'un devis type » dans un nouveau devis.
+
+- [x] Nettoyage des lignes d'un devis
+  - Bouton « Supprimer les lignes sans quantité ».
+  - Nettoyage intelligent si besoin : titres et sous-totaux devenus vides, lignes de texte vides,
+    sous-totaux en double.
+  - Fait : bouton « Nettoyer (n) » sous les lignes, avec confirmation détaillée.
+
+- [ ] Export / import d'un devis (fichier), pour partager un devis type entre collègues.

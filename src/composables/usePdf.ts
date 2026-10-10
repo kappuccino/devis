@@ -111,29 +111,43 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     ],
   };
 
-  // Client : à droite, sous un petit titre souligné de rouge, sans cadre.
+  // Client à droite ; nom de l'affaire à gauche, aligné sur le bas du bloc client (juste au-dessus
+  // des lignes). Sans titres ni cadre : un tableau sans bordure permet l'alignement en bas.
+  const project = quote.project_name?.trim();
   const clientBlock: Content = {
     margin: [0, 18, 0, 18],
-    columns: [
-      { width: "*", text: "" },
-      {
-        width: 250,
-        stack: [
-          sectionLabel("CLIENT", [0, 0, 0, 2]),
-          { canvas: [{ type: "line", x1: 0, y1: 0, x2: 250, y2: 0, lineWidth: 0.75, lineColor: ACCENT }], margin: [0, 0, 0, 5] },
-          // La raison sociale enregistrée dans le devis fait foi (client ponctuel ou nom ajusté).
-          { text: quote.client_name, bold: true, fontSize: 9.5 },
-          ...(quote.client_code ? [{ text: `Code client : ${quote.client_code}`, color: MUTED }] : []),
-          ...(client?.siren ? [{ text: `SIREN : ${client.siren}`, color: MUTED }] : []),
-          // Contact du devis ; à défaut, l'email général du client.
-          ...(quote.contact_name ? [{ text: `À l'attention de ${quote.contact_name}`, margin: [0, 4, 0, 0] as [number, number, number, number] }] : []),
-          ...[quote.contact_email || (!quote.contact_name && client?.email ? client.email.split(/[\s;,]+/)[0] : ""), quote.contact_phone && `Tél. ${quote.contact_phone}`]
-            .filter(Boolean)
-            .map((t) => ({ text: t as string, color: MUTED })),
+    table: {
+      widths: ["*", 250],
+      body: [
+        [
+          project
+            ? { text: project, bold: true, fontSize: 11, verticalAlignment: "bottom", margin: [0, 0, 15, 0] }
+            : { text: "" },
+          {
+            stack: [
+              // La raison sociale enregistrée dans le devis fait foi (client ponctuel ou nom ajusté).
+              { text: quote.client_name, bold: true, fontSize: 9.5 },
+              ...(quote.client_code ? [{ text: `Code client : ${quote.client_code}`, color: MUTED }] : []),
+              ...(client?.siren ? [{ text: `SIREN : ${client.siren}`, color: MUTED }] : []),
+              // Contact du devis ; à défaut, l'email général du client.
+              ...(quote.contact_name ? [{ text: `À l'attention de ${quote.contact_name}`, margin: [0, 4, 0, 0] as [number, number, number, number] }] : []),
+              ...[quote.contact_email || (!quote.contact_name && client?.email ? client.email.split(/[\s;,]+/)[0] : ""), quote.contact_phone && `Tél. ${quote.contact_phone}`]
+                .filter(Boolean)
+                .map((t) => ({ text: t as string, color: MUTED })),
+            ],
+          },
         ],
-      },
-    ],
-  };
+      ],
+    },
+    layout: {
+      hLineWidth: () => 0,
+      vLineWidth: () => 0,
+      paddingLeft: () => 0,
+      paddingRight: () => 0,
+      paddingTop: () => 0,
+      paddingBottom: () => 0,
+    },
+  } as Content;
 
   const th = (text: string, alignment: "left" | "right" = "left") => ({ text, style: "th", alignment });
   // La colonne « Remise » n'apparaît que si au moins une ligne a une remise supplémentaire.
