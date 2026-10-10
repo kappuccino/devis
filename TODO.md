@@ -93,7 +93,8 @@
   - Audit de sécurité de l'appli.
 
 - [ ] Sauvegarde des données
-  - Sauvegarde (backup) de la base des devis.
+  - [x] Sauvegarde (backup) de la base des devis (Réglages → Sauvegarde : copies datées,
+    automatiques au démarrage, N gardées, restauration).
   - Étudier une option de partage pair à pair (P2P) entre les applis des différents postes.
 
 - [ ] Listes de prix : éditeur et export

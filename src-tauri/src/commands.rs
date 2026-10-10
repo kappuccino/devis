@@ -290,6 +290,42 @@ pub fn get_price_list_items(state: State<AppState>, code: String) -> CmdResult<V
     )
 }
 
+// ---------- Sauvegarde ----------
+
+#[derive(Serialize)]
+pub struct BackupInfo {
+    /// Dossier utilisé, et dossier par défaut (à côté de la base).
+    dir: String,
+    default_dir: String,
+    files: Vec<crate::backup::BackupFile>,
+}
+
+#[tauri::command]
+pub fn backup_info(state: State<AppState>) -> CmdResult<BackupInfo> {
+    let conn = state.conn();
+    let dir = crate::backup::dir(&conn, &state.db_path)?;
+    Ok(BackupInfo {
+        files: crate::backup::list(&dir)?,
+        dir: dir.to_string_lossy().into_owned(),
+        default_dir: crate::backup::default_dir(&state.db_path).to_string_lossy().into_owned(),
+    })
+}
+
+/// Sauvegarde maintenant ; renvoie le chemin de la copie.
+#[tauri::command]
+pub fn backup_now(state: State<AppState>) -> CmdResult<String> {
+    let conn = state.conn();
+    crate::backup::backup_now(&conn, &state.db_path).map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Restaure une copie ; renvoie le chemin de la copie de sécurité de la base remplacée.
+#[tauri::command]
+pub fn restore_backup(state: State<AppState>, path: String) -> CmdResult<String> {
+    let mut conn = state.conn();
+    crate::backup::restore(&mut conn, &state.db_path, std::path::Path::new(&path))
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
 /// Contact imprimé dans le haut de l'export Excel (saisi au moment de l'export).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -22,7 +22,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.40.2", features = ["bundled"] }
+rusqlite = { version = "0.40.2", features = ["bundled", "backup"] }
 calamine = "0.36.1"
 # Même version que calamine : écriture des exports Excel (gabarit .xlsx).
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }

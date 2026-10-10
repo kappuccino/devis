@@ -24,6 +24,7 @@ import { salesRepList, salesRepSetting, SALES_REPS_KEY } from "../salesReps";
 import { AGENCY_KEY, agencyContact, CGV_PDF_KEY, HEAD_OFFICE } from "../composables/usePdf";
 import { FAVORITE_LISTS_KEY, favoriteLists } from "../favorites";
 import { errorMessage, formatNumber } from "../format";
+import BackupSettings from "../components/BackupSettings.vue";
 
 /** Rubrique affichée : import, favoris ou pdf (dans l'adresse, /reglages/<rubrique>). */
 const props = defineProps<{ section: string }>();
@@ -32,6 +33,7 @@ const sections = [
   { key: "import", label: "Import de données", hint: "Fichier LPN, statistiques", icon: "pi pi-upload" },
   { key: "favoris", label: "Favoris", hint: "Listes de prix favorites", icon: "pi pi-star" },
   { key: "pdf", label: "Config PDF", hint: "Société, numérotation", icon: "pi pi-file-pdf" },
+  { key: "sauvegarde", label: "Sauvegarde", hint: "Copies de la base des devis", icon: "pi pi-database" },
   // Fonctions de documentation (ex-PDF Finder) : à part.
   { key: "documentation", label: "Documentation", hint: "Dossier indexé, statistiques", icon: "pi pi-book", separated: true },
   // Réglages de l'application elle-même : à part, en fin de liste.
@@ -300,6 +302,8 @@ onMounted(async () => {
       </template>
 
       <!-- Documentation -->
+      <BackupSettings v-else-if="current.key === 'sauvegarde'" />
+
       <template v-else-if="current.key === 'documentation'">
         <section class="card">
           <h2>Dossier indexé</h2>

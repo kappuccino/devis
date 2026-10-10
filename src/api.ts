@@ -58,6 +58,23 @@ export interface PriceListItem {
   family: Family | null;
 }
 
+/** Copie de la base des devis (dossier de sauvegarde). */
+export interface BackupFile {
+  path: string;
+  name: string;
+  size: number;
+  /** Date de la copie (ms). */
+  modified: number | null;
+  /** Copie de sécurité faite avant une restauration (jamais supprimée automatiquement). */
+  safety: boolean;
+}
+
+export interface BackupInfo {
+  dir: string;
+  default_dir: string;
+  files: BackupFile[];
+}
+
 export interface ClientRef {
   code: string;
   name: string;
@@ -192,6 +209,10 @@ export const api = {
 
   setClientPriceList: (clientCode: string, priceListCode: string, attached: boolean) =>
     invoke<void>("set_client_price_list", { clientCode, priceListCode, attached }),
+  backupInfo: () => invoke<BackupInfo>("backup_info"),
+  backupNow: () => invoke<string>("backup_now"),
+  /** Renvoie le chemin de la copie de sécurité de la base remplacée. */
+  restoreBackup: (path: string) => invoke<string>("restore_backup", { path }),
   /** Export Excel d'une liste de prix d'un client (gabarit des réglages). */
   exportPriceList: (
     path: string,

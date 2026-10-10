@@ -1,3 +1,4 @@
+mod backup;
 mod commands;
 mod db;
 mod docs;
@@ -39,7 +40,18 @@ pub fn run() {
             std::fs::create_dir_all(&dir)?;
             let db_path = dir.join("devis.db");
             let conn = db::open(&db_path)?;
-            app.manage(AppState { db: Arc::new(Mutex::new(conn)), db_path });
+            let db = Arc::new(Mutex::new(conn));
+            // Sauvegarde automatique (au plus une par 20 h), sans retarder l'ouverture.
+            {
+                let (db, db_path) = (db.clone(), db_path.clone());
+                std::thread::spawn(move || {
+                    let conn = db.lock().unwrap_or_else(|p| p.into_inner());
+                    if let Err(e) = backup::auto_backup(&conn, &db_path) {
+                        eprintln!("Sauvegarde automatique : {e}");
+                    }
+                });
+            }
+            app.manage(AppState { db, db_path });
             // Index de la documentation technique (base séparée, reconstructible).
             app.manage(docs::open(app.handle())?);
             Ok(())
@@ -64,6 +76,9 @@ pub fn run() {
             commands::update_client,
             commands::set_client_price_list,
             commands::export_price_list,
+            commands::backup_info,
+            commands::backup_now,
+            commands::restore_backup,
             commands::list_price_lists,
             commands::get_price_list_items,
             commands::get_price_list_clients,
