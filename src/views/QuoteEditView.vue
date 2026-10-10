@@ -1437,24 +1437,14 @@ onMounted(async () => {
     </div>
 
     <div class="card">
-      <div v-if="selectedKeys.size || clipboard" class="selection-bar">
-        <template v-if="selectedKeys.size">
-          <strong>{{ selectedKeys.size }} sélectionnée(s)</strong>
-          <Button v-tooltip.bottom="`${MOD}C`" label="Copier" icon="pi pi-copy" text size="small" @click="copySelection()" />
-          <Button v-tooltip.bottom="`${MOD}X`" label="Couper" icon="pi pi-clone" text size="small" @click="cutSelection()" />
-          <Button label="Supprimer" icon="pi pi-trash" text size="small" severity="danger" @click="deleteSelection" />
-          <Button v-tooltip.bottom="'Échap'" icon="pi pi-times" text rounded size="small" severity="secondary" @click="clearSelection" />
-        </template>
-        <span class="spacer" />
-        <Button
-          v-if="clipboard"
-          v-tooltip.bottom="`${selectedKeys.size ? 'Colle après la dernière ligne sélectionnée' : 'Colle en fin de devis'} (${MOD}V)`"
-          :label="`Coller ${clipboard.lines.length} ligne(s)`"
-          icon="pi pi-clipboard"
-          size="small"
-          severity="secondary"
-          @click="pasteLines()"
-        />
+      <!-- Lignes sélectionnées : copier / couper / supprimer. Le collage se fait au clavier (Ctrl+V / ⌘V),
+           après la dernière ligne sélectionnée ou en fin de devis. -->
+      <div v-if="selectedKeys.size" class="selection-bar">
+        <strong>{{ selectedKeys.size }} sélectionnée(s)</strong>
+        <Button v-tooltip.bottom="`${MOD}C, puis ${MOD}V pour coller`" label="Copier" icon="pi pi-copy" text size="small" @click="copySelection()" />
+        <Button v-tooltip.bottom="`${MOD}X, puis ${MOD}V pour coller`" label="Couper" icon="pi pi-clone" text size="small" @click="cutSelection()" />
+        <Button label="Supprimer" icon="pi pi-trash" text size="small" severity="danger" @click="deleteSelection" />
+        <Button v-tooltip.bottom="'Échap'" icon="pi pi-times" text rounded size="small" severity="secondary" @click="clearSelection" />
       </div>
       <table ref="linesTable" class="lines">
         <thead>
