@@ -657,8 +657,12 @@ fn next_number(conn: &Connection, date: &str) -> CmdResult<String> {
 
 /// Crée ou met à jour un devis et renvoie sa version enregistrée.
 #[tauri::command]
-pub fn save_quote(state: State<AppState>, mut quote: Quote) -> CmdResult<Quote> {
-    let mut conn = state.conn();
+pub fn save_quote(state: State<AppState>, quote: Quote) -> CmdResult<Quote> {
+    store_quote(&mut state.conn(), quote)
+}
+
+/// Enregistre un devis (nouveau : numéro attribué) et renvoie sa version enregistrée.
+pub fn store_quote(conn: &mut Connection, mut quote: Quote) -> CmdResult<Quote> {
     let tx = conn.transaction().map_err(err)?;
     // Tous les prix au centime.
     for l in &mut quote.lines {
@@ -772,7 +776,7 @@ pub fn save_quote(state: State<AppState>, mut quote: Quote) -> CmdResult<Quote> 
         .map_err(err)?;
     }
     tx.commit().map_err(err)?;
-    load_quote(&conn, id)
+    load_quote(conn, id)
 }
 
 #[tauri::command]
