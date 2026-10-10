@@ -339,6 +339,35 @@ async function clearClient() {
   await repriceLines();
 }
 
+// Totaux : la colonne des montants se cale sur la colonne « Total HT » du tableau
+// (même largeur, même distance au bord droit), quelle que soit la largeur de la fenêtre.
+const linesTable = ref<HTMLTableElement | null>(null);
+const totalHeader = ref<HTMLTableCellElement | null>(null);
+const totalColumn = ref({ width: 100, tail: 150 });
+function measureTotalColumn() {
+  const table = linesTable.value?.getBoundingClientRect();
+  const th = totalHeader.value?.getBoundingClientRect();
+  if (!table || !th || !th.width) return;
+  totalColumn.value = { width: th.width, tail: table.right - th.right };
+}
+// Colonnes du panneau : libellé | saisie | montant | croix des frais. Le panneau s'arrête après la
+// croix ; une marge à droite le cale pour que le bord droit des montants tombe sous « Total HT ».
+// La colonne des montants peut déborder à gauche de « Total HT » : seul son bord droit compte.
+const TOTALS_GAP = 12;
+const TOTALS_REMOVE = 28;
+const TOTALS_PADDING = 12;
+const totalsStyle = computed(() => ({
+  gridTemplateColumns: `minmax(170px, auto) 110px ${Math.max(totalColumn.value.width - TOTALS_GAP, 130)}px ${TOTALS_REMOVE}px`,
+  marginRight: `${Math.max(totalColumn.value.tail - TOTALS_GAP - TOTALS_REMOVE - TOTALS_PADDING, 0)}px`,
+}));
+let tableObserver: ResizeObserver | null = null;
+onMounted(() => {
+  tableObserver = new ResizeObserver(measureTotalColumn);
+  if (linesTable.value) tableObserver.observe(linesTable.value);
+  measureTotalColumn();
+});
+onBeforeUnmount(() => tableObserver?.disconnect());
+
 // Commercial : choisi dans la liste des Réglages ; le dernier choisi est repris sur les nouveaux devis.
 const salesReps = ref<string[]>([]);
 const salesRepOptions = computed(() => {
@@ -1382,7 +1411,7 @@ onMounted(async () => {
           @click="pasteLines()"
         />
       </div>
-      <table class="lines">
+      <table ref="linesTable" class="lines">
         <thead>
           <tr>
             <th style="width: 26px"></th>
@@ -1406,8 +1435,8 @@ onMounted(async () => {
             <th v-tooltip.top="'Remise supplémentaire sur le prix de la ligne'" style="width: 64px" class="num">
               Remise sup. (%)
             </th>
-            <th style="width: 110px" class="num">Total HT</th>
-            <th v-tooltip.top="'Ligne en option : hors total HT, comptée dans « Total options »'" style="width: 54px" class="select-cell">
+            <th ref="totalHeader" style="width: 100px" class="num">Total HT</th>
+            <th v-tooltip.top="'Ligne en option : hors total HT, comptée dans « Total options »'" style="width: 48px" class="select-cell">
               Option
             </th>
             <th v-tooltip.top="'Non imprimé sur le devis'" style="width: 70px" class="num seuil">Prix seuil</th>
@@ -1655,144 +1684,140 @@ onMounted(async () => {
             </tr>
           </template>
         </tbody>
-        <tfoot>
-          <!-- Ajout de lignes : texte, sous-total, frais de port, frais de facturation. -->
-          <tr>
-            <td colspan="2"></td>
-            <td colspan="13">
-              <div class="add-lines">
-                <Button
-                  v-tooltip.bottom="'Titre de paragraphe, ajouté en fin de devis, à déplacer avec la poignée'"
-                  label="Titre"
-                  icon="pi pi-bars"
-                  text
-                  size="small"
-                  @click="insertSpecialLine('title')"
-                />
-                <Button
-                  v-tooltip.bottom="'Ajoutée en fin de devis, à déplacer avec la poignée'"
-                  label="Texte"
-                  icon="pi pi-align-left"
-                  text
-                  size="small"
-                  @click="insertSpecialLine('text')"
-                />
-                <Button
-                  v-tooltip.bottom="'Additionne les articles depuis le sous-total précédent'"
-                  label="Sous-total"
-                  icon="pi pi-calculator"
-                  text
-                  size="small"
-                  @click="insertSpecialLine('subtotal')"
-                />
-                <Button
-                  v-tooltip.bottom="'Toujours en bas du devis, non remisés'"
-                  label="Frais de port"
-                  icon="pi pi-truck"
-                  text
-                  size="small"
-                  :disabled="hasFee('shipping')"
-                  @click="addFee('shipping')"
-                />
-                <Button
-                  v-tooltip.bottom="'Toujours en bas du devis, non remisés'"
-                  label="Frais de facturation"
-                  icon="pi pi-receipt"
-                  text
-                  size="small"
-                  :disabled="hasFee('billing')"
-                  @click="addFee('billing')"
-                />
-              </div>
-            </td>
-          </tr>
-          <!-- Totaux dans l'ordre du calcul : produits, remise (produits seulement), frais, total. -->
-          <tr>
-            <td colspan="7"></td>
-            <td colspan="4" class="num total-label">Total produits HT</td>
-            <td class="num total">{{ formatEuro(totals.products) }}</td>
-            <td colspan="3"></td>
-          </tr>
-          <tr class="global-discount">
-            <td colspan="7"></td>
-            <td colspan="3" class="num total-label">
-              <label v-tooltip.top="'Les frais de port et de facturation ne sont pas remisés'" for="global-discount">Remise sur les produits</label>
-            </td>
-            <td>
-              <InputNumber
-                v-model="globalDiscount"
-                input-id="global-discount"
-                :min="0"
-                :max="100"
-                :max-fraction-digits="2"
-                suffix=" %"
-                size="small"
-                fluid
-                input-class="num"
-              />
-            </td>
-            <td class="num">{{ globalDiscount ? `− ${formatEuro(totals.discount)}` : "" }}</td>
-            <td colspan="3"></td>
-          </tr>
-          <tr v-if="globalDiscount">
-            <td colspan="7"></td>
-            <td colspan="4" class="num total-label">Total produits remisé HT</td>
-            <td class="num total">{{ formatEuro(round2(totals.products - totals.discount)) }}</td>
-            <td colspan="3"></td>
-          </tr>
-          <!-- Frais de port / de facturation : après la remise (jamais remisés), montant HT dans la colonne Total. -->
-          <tr v-for="fee in feeLines" :key="fee.key" class="fee-row">
-            <td colspan="7"></td>
-            <td colspan="4">
-              <InputText v-model="fee.designation" fluid size="small" class="fee-label" />
-            </td>
-            <td>
+      </table>
+      <!-- Sous le tableau : ajout de lignes à gauche, totaux à droite. Les montants sont alignés
+           sur la colonne « Total HT » (position mesurée, voir totalsStyle). -->
+      <div class="lines-footer">
+        <!-- À gauche : ajout de lignes, puis notes ; à droite : totaux. -->
+        <div class="footer-left">
+          <div class="add-lines">
+            <Button
+              v-tooltip.bottom="'Titre de paragraphe, ajouté en fin de devis, à déplacer avec la poignée'"
+              label="Titre"
+              icon="pi pi-bars"
+              text
+              size="small"
+              @click="insertSpecialLine('title')"
+            />
+            <Button
+              v-tooltip.bottom="'Ajoutée en fin de devis, à déplacer avec la poignée'"
+              label="Texte"
+              icon="pi pi-align-left"
+              text
+              size="small"
+              @click="insertSpecialLine('text')"
+            />
+            <Button
+              v-tooltip.bottom="'Additionne les articles depuis le sous-total précédent'"
+              label="Sous-total"
+              icon="pi pi-calculator"
+              text
+              size="small"
+              @click="insertSpecialLine('subtotal')"
+            />
+            <Button
+              v-tooltip.bottom="'Toujours en bas du devis, non remisés'"
+              label="Frais de port"
+              icon="pi pi-truck"
+              text
+              size="small"
+              :disabled="hasFee('shipping')"
+              @click="addFee('shipping')"
+            />
+            <Button
+              v-tooltip.bottom="'Toujours en bas du devis, non remisés'"
+              label="Frais de facturation"
+              icon="pi pi-receipt"
+              text
+              size="small"
+              :disabled="hasFee('billing')"
+              @click="addFee('billing')"
+            />
+          </div>
+          <div class="notes">
+            <label for="notes" class="muted">Notes (imprimées sur le devis)</label>
+            <Textarea id="notes" v-model="notes" rows="3" fluid auto-resize />
+          </div>
+        </div>
+
+        <!-- Ordre du calcul : produits, remise (produits seulement), frais, total. -->
+        <div ref="totalsPanel" class="totals" :style="totalsStyle">
+          <span class="t-label">Total produits HT</span>
+          <span></span>
+          <span class="t-amount">{{ formatEuro(totals.products) }}</span>
+          <span></span>
+
+          <label v-tooltip.top="'Les frais de port et de facturation ne sont pas remisés'" class="t-label" for="global-discount">
+            Remise sur les produits
+          </label>
+          <InputNumber
+            v-model="globalDiscount"
+            input-id="global-discount"
+            :min="0"
+            :max="100"
+            :max-fraction-digits="2"
+            suffix=" %"
+            size="small"
+            fluid
+            input-class="num"
+          />
+          <span class="t-amount">{{ globalDiscount ? `− ${formatEuro(totals.discount)}` : "" }}</span>
+          <span></span>
+
+          <template v-if="globalDiscount">
+            <span class="t-label strong">Total produits remisé HT</span>
+            <span></span>
+            <span class="t-amount strong">{{ formatEuro(round2(totals.products - totals.discount)) }}</span>
+            <span></span>
+          </template>
+
+          <!-- Frais de port / de facturation : après la remise (jamais remisés), montant modifiable. -->
+          <template v-for="fee in feeLines" :key="fee.key">
+            <InputText v-model="fee.designation" size="small" fluid class="fee-label" />
+            <span class="muted fee-hint">non remisé</span>
+            <div class="euro-input">
               <InputText
                 :id="`fee-${fee.key}`"
                 :model-value="fee.priceText"
                 inputmode="decimal"
                 autocomplete="off"
                 placeholder="0,00"
-                fluid
                 size="small"
+                fluid
                 class="num"
                 @update:model-value="(v: string | undefined) => { fee.auto = false; onPriceInput(fee, v ?? ''); }"
                 @blur="onPriceBlur(fee)"
               />
-            </td>
-            <td colspan="2" class="muted fee-hint">non remisé</td>
-            <td>
-              <Button
-                v-tooltip.left="`Retirer les ${fee.designation.toLowerCase() || 'frais'}`"
-                icon="pi pi-times"
-                text
-                rounded
-                size="small"
-                severity="secondary"
-                @click="removeFee(fee)"
-              />
-            </td>
-          </tr>
-          <tr class="grand-total">
-            <td colspan="7"></td>
-            <td colspan="4" class="num total-label">Total HT</td>
-            <td class="num total">{{ formatEuro(netTotal) }}</td>
-            <td colspan="3"></td>
-          </tr>
-          <!-- Lignes en option : à part, tout en bas, hors total HT. -->
-          <tr v-if="lines.some((l) => l.is_option && l.product_ref)" class="options-total">
-            <td colspan="7"></td>
-            <td colspan="4" class="num total-label">Total options HT</td>
-            <td class="num total">{{ formatEuro(totals.options) }}</td>
-            <td colspan="3"></td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
+              <span>€</span>
+            </div>
+            <Button
+              v-tooltip.left="`Retirer les ${fee.designation.toLowerCase() || 'frais'}`"
+              icon="pi pi-times"
+              text
+              rounded
+              size="small"
+              severity="secondary"
+              class="t-remove"
+              @click="removeFee(fee)"
+            />
+          </template>
 
-    <div class="card">
-      <label for="notes" class="muted">Notes (imprimées sur le devis)</label>
-      <Textarea id="notes" v-model="notes" rows="3" fluid auto-resize />
+          <hr class="t-rule" />
+          <span></span>
+          <span class="t-label grand">Total HT</span>
+          <span></span>
+          <span class="t-amount grand">{{ formatEuro(netTotal) }}</span>
+          <span></span>
+
+          <!-- Lignes en option : à part, hors total HT. -->
+          <template v-if="lines.some((l) => l.is_option && l.product_ref)">
+            <span class="t-label option">Total options HT</span>
+            <span></span>
+            <span class="t-amount option">{{ formatEuro(totals.options) }}</span>
+            <span></span>
+          </template>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -2238,23 +2263,82 @@ tr:hover .drag-handle i {
   text-align: right;
 }
 
-.total-label {
-  font-weight: 600;
+/* Sous le tableau : boutons d'ajout à gauche, panneau des totaux à droite. */
+.lines-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 2rem;
+  margin-top: 0.75rem;
 }
 
-.lines tfoot td {
-  border-bottom: none;
-  font-size: 1.1rem;
+.footer-left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
-.total {
+.notes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+/* Colonnes : libellé | saisie | montant (largeur et position de « Total HT ») | reste du tableau.
+   Pas de marge à droite : la dernière colonne fait exactement la largeur restante du tableau. */
+.totals {
+  display: grid;
+  align-items: center;
+  column-gap: 0.75rem;
+  row-gap: 0.5rem;
+  padding: 1rem 12px 1rem 1.25rem;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--app-muted) 4%, var(--app-surface));
+}
+
+.t-label {
+  text-align: right;
+  color: var(--app-muted);
+}
+
+.t-amount {
+  padding-right: 6px;
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.totals .strong {
   font-weight: 700;
+  color: var(--app-text);
 }
 
-/* Total HT final (remise et frais compris) : en rouge, filet au-dessus. */
-.lines tfoot tr.grand-total td.total-label,
-.lines tfoot tr.grand-total td.total {
+.totals :deep(.fee-label) {
+  text-align: right;
+}
+
+.t-remove {
+  justify-self: center;
+}
+
+.t-rule {
+  grid-column: 1 / 4;
+  margin: 0.25rem 0 0;
+  border: none;
   border-top: 2px solid var(--app-accent);
+}
+
+/* Total HT final (remise et frais compris) : grand, en rouge. */
+.totals .grand {
+  font-size: 1.15rem;
+  font-weight: 700;
   color: var(--app-accent);
+}
+
+.totals .option {
+  font-style: italic;
 }
 </style>
