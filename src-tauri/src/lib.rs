@@ -61,6 +61,7 @@ pub fn run() {
             commands::list_clients,
             commands::get_client,
             commands::update_client,
+            commands::set_client_price_list,
             commands::list_price_lists,
             commands::get_price_list_items,
             commands::get_price_list_clients,

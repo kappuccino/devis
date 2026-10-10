@@ -212,6 +212,26 @@ pub fn update_client(
     tx.commit().map_err(err)
 }
 
+/// Rattache (`attached`) ou détache un client d'une liste de prix.
+#[tauri::command]
+pub fn set_client_price_list(
+    state: State<AppState>,
+    client_code: String,
+    price_list_code: String,
+    attached: bool,
+) -> CmdResult<()> {
+    link_client_price_list(&state.conn(), &client_code, &price_list_code, attached)
+}
+
+fn link_client_price_list(conn: &Connection, client: &str, list: &str, attached: bool) -> CmdResult<()> {
+    let sql = if attached {
+        "INSERT OR IGNORE INTO client_price_lists (client_code, price_list_code) VALUES (?1, ?2)"
+    } else {
+        "DELETE FROM client_price_lists WHERE client_code = ?1 AND price_list_code = ?2"
+    };
+    conn.execute(sql, params![client, list]).map(|_| ()).map_err(err)
+}
+
 // ---------- Listes de prix ----------
 
 #[derive(Serialize)]
@@ -822,6 +842,26 @@ mod tests {
         assert_eq!(next_number(&conn, "2026-12-31").unwrap(), "26-JMOS-0008");
         // Nouvelle année : le compteur repart à 1.
         assert_eq!(next_number(&conn, "2027-01-02").unwrap(), "27-JMOS-0001");
+    }
+
+    #[test]
+    fn client_price_list_attach_and_detach() {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::init(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO clients (code, name, discount_cfa, discount_cfo) VALUES ('C1', 'Client 1', 0, 0);
+             INSERT INTO price_lists (code, label) VALUES ('TL1', 'Liste 1');",
+        )
+        .unwrap();
+        let count = || -> i64 {
+            conn.query_row("SELECT COUNT(*) FROM client_price_lists WHERE client_code = 'C1' AND price_list_code = 'TL1'", [], |r| r.get(0))
+                .unwrap()
+        };
+        link_client_price_list(&conn, "C1", "TL1", true).unwrap();
+        link_client_price_list(&conn, "C1", "TL1", true).unwrap(); // deux fois : pas de doublon
+        assert_eq!(count(), 1);
+        link_client_price_list(&conn, "C1", "TL1", false).unwrap();
+        assert_eq!(count(), 0);
     }
 
     #[test]

@@ -4,6 +4,8 @@ import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import InputText from "primevue/inputtext";
 import Tag from "primevue/tag";
+import Button from "primevue/button";
+import PriceListClientsDrawer from "../components/PriceListClientsDrawer.vue";
 import { useToast } from "primevue/usetoast";
 import { api, type ClientRef, type PriceList, type PriceListItem } from "../api";
 import { errorMessage, formatPct, formatUnitPrice } from "../format";
@@ -18,6 +20,25 @@ const items = ref<PriceListItem[]>([]);
 const listClients = ref<ClientRef[]>([]);
 const itemsLoading = ref(false);
 const itemSearch = ref("");
+
+/** Clients affichés directement ; au-delà, bouton vers le tiroir des clients. */
+const MAX_CLIENT_TAGS = 5;
+const clientsDrawer = ref<string | null>(null);
+
+/** Après un rattachement / détachement dans le tiroir : clients et compteurs à jour. */
+async function refreshClients() {
+  const list = selected.value;
+  if (!list) return;
+  try {
+    const [clients, lists2] = await Promise.all([api.getPriceListClients(list.code), api.listPriceLists()]);
+    if (selected.value?.code !== list.code) return;
+    listClients.value = clients;
+    lists.value = lists2;
+    selected.value = lists2.find((l) => l.code === list.code) ?? list;
+  } catch (e) {
+    toast.add({ severity: "error", summary: "Clients de la liste", detail: errorMessage(e) });
+  }
+}
 
 const filteredLists = computed(() => {
   const q = search.value.trim().toLowerCase();
@@ -102,10 +123,32 @@ onMounted(async () => {
             <span class="spacer" />
             <InputText v-model="itemSearch" placeholder="Réf ou désignation…" size="small" />
           </div>
+          <!-- Au plus 5 clients ici ; au-delà (et pour rattacher), le tiroir des clients. -->
           <div class="clients">
             <span class="muted">Clients rattachés :</span>
-            <Tag v-for="c in listClients" :key="c.code" :value="`${c.name} (${c.code})`" severity="secondary" />
+            <Tag
+              v-for="c in listClients.slice(0, MAX_CLIENT_TAGS)"
+              :key="c.code"
+              :value="`${c.name} (${c.code})`"
+              severity="secondary"
+            />
             <span v-if="!listClients.length" class="muted">aucun</span>
+            <Button
+              v-if="listClients.length > MAX_CLIENT_TAGS"
+              :label="`Afficher les ${listClients.length} clients`"
+              icon="pi pi-users"
+              text
+              size="small"
+              @click="clientsDrawer = selected.code"
+            />
+            <Button
+              v-else
+              label="Rattacher"
+              icon="pi pi-user-plus"
+              text
+              size="small"
+              @click="clientsDrawer = selected.code"
+            />
           </div>
           <DataTable
             :value="filteredItems"
@@ -146,6 +189,7 @@ onMounted(async () => {
         <p v-else class="muted">Sélectionnez une liste pour voir ses prix.</p>
       </div>
     </div>
+    <PriceListClientsDrawer v-model:code="clientsDrawer" @changed="refreshClients" />
   </div>
 </template>
 
@@ -197,7 +241,5 @@ onMounted(async () => {
   gap: 4px;
   flex-wrap: wrap;
   align-items: center;
-  max-height: 80px;
-  overflow: auto;
 }
 </style>

@@ -82,7 +82,7 @@
 
 - [x] Listes Produits et Clients : 500 éléments par page par défaut
 
-- [ ] Listes de prix : clients rattachés dans un tiroir
+- [x] Listes de prix : clients rattachés dans un tiroir
   - Au-delà de 5 clients rattachés (la zone défile sans fin aujourd'hui) : bouton
     « Afficher les X clients » qui ouvre un tiroir latéral avec la liste des clients de la
     liste de prix, et de quoi en rattacher d'autres.

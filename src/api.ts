@@ -190,6 +190,8 @@ export const api = {
   updateClient: (code: string, discountCfa: number, discountCfo: number, priceLists: string[]) =>
     invoke<void>("update_client", { code, discountCfa, discountCfo, priceLists }),
 
+  setClientPriceList: (clientCode: string, priceListCode: string, attached: boolean) =>
+    invoke<void>("set_client_price_list", { clientCode, priceListCode, attached }),
   listPriceLists: () => invoke<PriceList[]>("list_price_lists"),
   getPriceListItems: (code: string) => invoke<PriceListItem[]>("get_price_list_items", { code }),
   getPriceListClients: (code: string) => invoke<ClientRef[]>("get_price_list_clients", { code }),
