@@ -107,8 +107,10 @@
 - [x] Barre latérale : icône pour la replier / déployer comme sur claude.ai
   - Remplacer le chevron actuel ; deux états (ouverte / fermée) à voir ensemble.
 
-- [ ] Versions d'un devis
+- [x] Versions d'un devis
   - Pouvoir faire une nouvelle version d'un devis (à préciser ensemble le moment venu).
+  - Fait : « Nouvelle version » (liste des devis et éditeur) : copie sous le numéro d'origine
+    suffixé `-V2`, `-V3`… ; liens V1 / V2 / V3 dans l'éditeur ; anciennes versions estompées.
 
 - [x] Produits : évolution du chiffrage d'une référence
   - Depuis la liste des produits, une option pour voir l'évolution du prix devisé de cette
@@ -121,4 +123,4 @@
     transformé en commande / facture (les factures ne sont pas gérées dans l'appli : simple suivi).
   - À exploiter ensuite dans les Statistiques (taux de transformation, montants obtenus).
   - Fait : coche et filtre dans la liste des devis ; Statistiques : affaires obtenues, taux,
-    montant obtenu, part obtenue par mois, par client et par commercial.
+    montant obtenu, part obtenue par mois, par client et par commercial (une version par devis).

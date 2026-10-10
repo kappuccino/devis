@@ -444,6 +444,9 @@ pub struct QuoteSummary {
     pub line_count: i64,
     /// Affaire obtenue : date du marquage (AAAA-MM-JJ), None sinon.
     pub won_at: Option<String>,
+    /// N° de version (1 : original) ; vrai si une version plus récente existe.
+    pub version: i64,
+    pub superseded: bool,
 }
 
 #[tauri::command]
@@ -452,7 +455,10 @@ pub fn list_quotes(state: State<AppState>) -> CmdResult<Vec<QuoteSummary>> {
     query_all(
         &conn,
         "SELECT q.id, q.number, q.client_code, q.client_name, q.date, q.total_ht, q.total_net,
-                (SELECT COUNT(*) FROM quote_lines WHERE quote_id = q.id AND kind = 'item'), q.won_at
+                (SELECT COUNT(*) FROM quote_lines WHERE quote_id = q.id AND kind = 'item'), q.won_at,
+                q.version,
+                EXISTS (SELECT 1 FROM quotes v WHERE COALESCE(v.version_of, v.id) = COALESCE(q.version_of, q.id)
+                                                 AND v.version > q.version)
          FROM quotes q ORDER BY q.date DESC, q.id DESC",
         [],
         |r| {
@@ -466,6 +472,8 @@ pub fn list_quotes(state: State<AppState>) -> CmdResult<Vec<QuoteSummary>> {
                 total_net: r.get(6)?,
                 line_count: r.get(7)?,
                 won_at: r.get(8)?,
+                version: r.get(9)?,
+                superseded: r.get(10)?,
             })
         },
     )
@@ -536,6 +544,28 @@ pub struct Quote {
     #[serde(default)]
     pub total_options: f64,
     pub lines: Vec<QuoteLine>,
+    /// N° de version (1 : original) et id de l'original (None pour lui).
+    #[serde(default = "first_version")]
+    pub version: i64,
+    #[serde(default)]
+    pub version_of: Option<i64>,
+    /// Toutes les versions du devis, de la première à la dernière (lecture seule).
+    #[serde(default, skip_deserializing)]
+    pub versions: Vec<QuoteVersion>,
+}
+
+fn first_version() -> i64 {
+    1
+}
+
+/// Une version d'un devis (liens entre versions dans l'éditeur).
+#[derive(Serialize, Clone)]
+pub struct QuoteVersion {
+    pub id: i64,
+    pub number: String,
+    pub version: i64,
+    pub date: String,
+    pub won_at: Option<String>,
 }
 
 /// Contact chez le client et commercial du devis (imprimés sur le PDF).
@@ -563,7 +593,8 @@ fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
     let mut quote = conn
         .query_row(
             "SELECT id, number, client_code, client_name, date, notes, total_ht, discount_cfa, discount_cfo, price_lists,
-                    discount_pct, forced_price_list, contact_name, contact_email, contact_phone, sales_rep
+                    discount_pct, forced_price_list, contact_name, contact_email, contact_phone, sales_rep,
+                    version, version_of
              FROM quotes WHERE id = ?1",
             [id],
             |r| {
@@ -592,10 +623,20 @@ fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
                         sales_rep: r.get(15)?,
                     },
                     lines: Vec::new(),
+                    version: r.get(16)?,
+                    version_of: r.get(17)?,
+                    versions: Vec::new(),
                 })
             },
         )
         .map_err(err)?;
+    quote.versions = query_all(
+        conn,
+        "SELECT id, number, version, date, won_at FROM quotes
+         WHERE COALESCE(version_of, id) = ?1 ORDER BY version, id",
+        [quote.version_of.unwrap_or(id)],
+        |r| Ok(QuoteVersion { id: r.get(0)?, number: r.get(1)?, version: r.get(2)?, date: r.get(3)?, won_at: r.get(4)? }),
+    )?;
     quote.lines = query_all(
         conn,
         "SELECT kind, product_ref, designation, quantity, unit_price, price_source, public_price, threshold_price,
@@ -651,7 +692,10 @@ fn next_number(conn: &Connection, date: &str) -> CmdResult<String> {
         )
         .optional()
         .map_err(err)?;
-    let counter = |number: &str| number.strip_prefix(stem.as_str()).and_then(|n| n.trim().parse::<u32>().ok());
+    // « 26-JMOS-0012-V2 » (nouvelle version) compte comme 0012.
+    let counter = |number: &str| {
+        number.strip_prefix(stem.as_str()).and_then(|n| n.split('-').next()).and_then(|n| n.trim().parse::<u32>().ok())
+    };
     let in_app = last.as_deref().and_then(counter).unwrap_or(0);
     let outside = setting(conn, "quote_last_number")?.as_deref().map(str::trim).and_then(counter).unwrap_or(0);
     let n = in_app.max(outside) + 1;
@@ -717,12 +761,16 @@ pub fn store_quote(conn: &mut Connection, mut quote: Quote) -> CmdResult<Quote> 
             id
         }
         None => {
-            let number = next_number(&tx, &quote.date)?;
+            // Numéro déjà fixé : nouvelle version d'un devis (« …-V2 »).
+            let number = match quote.number.clone().filter(|_| quote.version_of.is_some()) {
+                Some(n) => n,
+                None => next_number(&tx, &quote.date)?,
+            };
             tx.execute(
                 "INSERT INTO quotes
                  (number, client_code, client_name, date, notes, total_ht, discount_cfa, discount_cfo, price_lists,
-                  discount_pct, forced_price_list, total_net)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                  discount_pct, forced_price_list, total_net, version, version_of)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
                     number,
                     client_code,
@@ -735,7 +783,9 @@ pub fn store_quote(conn: &mut Connection, mut quote: Quote) -> CmdResult<Quote> 
                     lists,
                     discount_pct,
                     forced,
-                    total_net
+                    total_net,
+                    quote.version,
+                    quote.version_of
                 ],
             )
             .map_err(err)?;
@@ -796,7 +846,51 @@ pub fn set_quote_won(state: State<AppState>, id: i64, won: bool) -> CmdResult<Op
         params![id, won],
     )
     .map_err(err)?;
+    // Une seule version d'un devis peut être l'affaire obtenue.
+    if won {
+        conn.execute(
+            "UPDATE quotes SET won_at = NULL
+             WHERE id <> ?1 AND COALESCE(version_of, id) = (SELECT COALESCE(version_of, id) FROM quotes WHERE id = ?1)",
+            [id],
+        )
+        .map_err(err)?;
+    }
     conn.query_row("SELECT won_at FROM quotes WHERE id = ?1", [id], |r| r.get(0)).map_err(err)
+}
+
+/// Nouvelle version d'un devis : copie datée du jour, numérotée comme l'original suivi de
+/// « -V<n> » (n = dernière version + 1). Les documents joints suivent ; pas le suivi « obtenue ».
+#[tauri::command]
+pub fn new_quote_version(state: State<AppState>, id: i64, date: String) -> CmdResult<Quote> {
+    let attachments = load_attachments(&state.conn(), id)?;
+    let copy = create_version(&mut state.conn(), id, date)?;
+    if let Some(new_id) = copy.id {
+        store_attachments(&mut state.conn(), new_id, &attachments)?;
+    }
+    Ok(copy)
+}
+
+fn create_version(conn: &mut Connection, id: i64, date: String) -> CmdResult<Quote> {
+    let mut quote = load_quote(conn, id)?;
+    let original = quote.version_of.unwrap_or(id);
+    let last: i64 = conn
+        .query_row("SELECT MAX(version) FROM quotes WHERE COALESCE(version_of, id) = ?1", [original], |r| r.get(0))
+        .map_err(err)?;
+    let base = version_base(quote.number.as_deref().unwrap_or_default()).to_string();
+    quote.id = None;
+    quote.version = last + 1;
+    quote.version_of = Some(original);
+    quote.number = Some(format!("{base}-V{}", quote.version));
+    quote.date = date;
+    store_quote(conn, quote)
+}
+
+/// Numéro sans le suffixe de version : « 26-JMOS-0012-V3 » → « 26-JMOS-0012 ».
+fn version_base(number: &str) -> &str {
+    match number.rsplit_once("-V") {
+        Some((base, n)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => base,
+        _ => number,
+    }
 }
 
 /// Copie un devis (nouveau numéro, date du jour fournie par le front).
@@ -806,6 +900,9 @@ pub fn duplicate_quote(state: State<AppState>, id: i64, date: String) -> CmdResu
     quote.id = None;
     quote.number = None;
     quote.date = date;
+    // La copie est un nouveau devis, pas une version.
+    quote.version = 1;
+    quote.version_of = None;
     let attachments = load_attachments(&state.conn(), id)?;
     let copy = save_quote(state.clone(), quote)?;
     // La copie reprend les documents joints.
@@ -1009,6 +1106,37 @@ mod tests {
         assert_eq!(next_number(&conn, "2027-01-02").unwrap(), "27-JMOS-0001");
         conn.execute("UPDATE settings SET value = 'ABC' WHERE key = 'quote_prefix'", []).unwrap();
         assert_eq!(next_number(&conn, "2026-10-10").unwrap(), "26-ABC-0001");
+    }
+
+    #[test]
+    fn new_versions_keep_the_original_number() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::db::init(&conn).unwrap();
+        conn.execute("INSERT INTO settings (key, value) VALUES ('quote_prefix', 'JMOS')", []).unwrap();
+        conn.execute(
+            "INSERT INTO quotes (id, number, client_code, client_name, date, won_at)
+             VALUES (1, '26-JMOS-0012', 'C1', 'ALPHA', '2026-10-01', '2026-10-02')",
+            [],
+        )
+        .unwrap();
+        let v2 = create_version(&mut conn, 1, "2026-10-09".into()).unwrap();
+        assert_eq!((v2.number.as_deref(), v2.version, v2.version_of), (Some("26-JMOS-0012-V2"), 2, Some(1)));
+        assert_eq!(v2.date, "2026-10-09");
+        // Depuis n'importe quelle version : la suivante après la dernière.
+        let v3 = create_version(&mut conn, 1, "2026-10-10".into()).unwrap();
+        assert_eq!(v3.number.as_deref(), Some("26-JMOS-0012-V3"));
+        let v4 = create_version(&mut conn, v2.id.unwrap(), "2026-10-10".into()).unwrap();
+        assert_eq!(v4.number.as_deref(), Some("26-JMOS-0012-V4"));
+        // Le suivi « obtenue » ne suit pas ; chaque version connaît toutes les autres.
+        let won: Option<String> =
+            conn.query_row("SELECT won_at FROM quotes WHERE id = ?1", [v4.id.unwrap()], |r| r.get(0)).unwrap();
+        assert_eq!(won, None);
+        let numbers: Vec<String> = v4.versions.iter().map(|v| v.number.clone()).collect();
+        assert_eq!(numbers, ["26-JMOS-0012", "26-JMOS-0012-V2", "26-JMOS-0012-V3", "26-JMOS-0012-V4"]);
+        // Les versions ne décalent pas la numérotation des nouveaux devis.
+        assert_eq!(next_number(&conn, "2026-10-10").unwrap(), "26-JMOS-0013");
+        assert_eq!(version_base("26-JMOS-0012-V12"), "26-JMOS-0012");
+        assert_eq!(version_base("DEV-VERT"), "DEV-VERT");
     }
 
     #[test]

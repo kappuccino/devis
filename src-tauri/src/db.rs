@@ -106,7 +106,11 @@ CREATE TABLE IF NOT EXISTS quotes (
     created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     -- Suivi : date à laquelle l'affaire a été marquée obtenue (devis devenu commande) ; NULL sinon.
-    won_at      TEXT
+    won_at      TEXT,
+    -- Versions d'un devis : n° de version (1 pour l'original) et id de l'original (NULL pour lui).
+    -- Une nouvelle version porte le numéro de l'original suivi de « -V2 », « -V3 »…
+    version     INTEGER NOT NULL DEFAULT 1,
+    version_of  INTEGER
 );
 
 {QUOTE_LINES}
@@ -191,6 +195,10 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     }
     // Suivi « Affaire obtenue ».
     add_column(conn, "quotes", "won_at", "TEXT")?;
+    // Versions d'un devis.
+    add_column(conn, "quotes", "version", "INTEGER NOT NULL DEFAULT 1")?;
+    add_column(conn, "quotes", "version_of", "INTEGER")?;
+    conn.execute_batch("CREATE INDEX IF NOT EXISTS quotes_version_of ON quotes(version_of)")?;
     Ok(())
 }
 

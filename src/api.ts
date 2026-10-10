@@ -173,6 +173,9 @@ export interface QuoteSummary {
   line_count: number;
   /** Affaire obtenue : date du marquage (AAAA-MM-JJ), null sinon. */
   won_at: string | null;
+  /** N° de version (1 : original) ; vrai si une version plus récente existe. */
+  version: number;
+  superseded: boolean;
 }
 
 /**
@@ -228,6 +231,20 @@ export interface Quote extends PricingContext, QuoteContact {
   /** Total des lignes en option (hors total HT). */
   total_options: number;
   lines: QuoteLine[];
+  /** N° de version (1 : original) et id de l'original (null pour lui). */
+  version?: number;
+  version_of?: number | null;
+  /** Toutes les versions du devis (lecture seule). */
+  versions?: QuoteVersion[];
+}
+
+/** Une version d'un devis. */
+export interface QuoteVersion {
+  id: number;
+  number: string;
+  version: number;
+  date: string;
+  won_at: string | null;
 }
 
 /** Document joint au PDF « Devis + Docs » (choix mémorisé avec le devis). */
@@ -302,6 +319,8 @@ export const api = {
   saveQuote: (quote: Quote) => invoke<Quote>("save_quote", { quote }),
   deleteQuote: (id: number) => invoke<void>("delete_quote", { id }),
   duplicateQuote: (id: number, date: string) => invoke<Quote>("duplicate_quote", { id, date }),
+  /** Nouvelle version (numéro de l'original suivi de « -V2 »…), datée de `date`. */
+  newQuoteVersion: (id: number, date: string) => invoke<Quote>("new_quote_version", { id, date }),
   /** Renvoie la date du marquage (null : affaire remise en attente). */
   setQuoteWon: (id: number, won: boolean) => invoke<string | null>("set_quote_won", { id, won }),
 

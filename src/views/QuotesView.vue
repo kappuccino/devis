@@ -39,7 +39,9 @@ const filtered = computed(() => {
 
 async function setWon(q: QuoteSummary, won: boolean) {
   try {
-    q.won_at = await api.setQuoteWon(q.id, won);
+    await api.setQuoteWon(q.id, won);
+    // Une seule version d'un devis peut être obtenue : les autres versions sont décochées.
+    quotes.value = await api.listQuotes();
   } catch (e) {
     toast.add({ severity: "error", summary: "Affaire obtenue", detail: errorMessage(e) });
   }
@@ -62,6 +64,16 @@ async function duplicate(q: QuoteSummary) {
     router.push(`/devis/${copy.id}`);
   } catch (e) {
     toast.add({ severity: "error", summary: "Duplication", detail: errorMessage(e) });
+  }
+}
+
+async function newVersion(q: QuoteSummary) {
+  try {
+    const v = await api.newQuoteVersion(q.id, todayIso());
+    toast.add({ severity: "success", summary: `Version ${v.number} créée`, life: 2500 });
+    router.push(`/devis/${v.id}`);
+  } catch (e) {
+    toast.add({ severity: "error", summary: "Nouvelle version", detail: errorMessage(e) });
   }
 }
 
@@ -117,11 +129,15 @@ onMounted(load);
       size="small"
       striped-rows
       class="card"
+      :row-class="(d: QuoteSummary) => (d.superseded ? 'superseded' : '')"
       @row-dblclick="router.push(`/devis/${$event.data.id}`)"
     >
       <Column field="number" header="N°" sortable>
         <template #body="{ data }">
           <RouterLink :to="`/devis/${data.id}`" class="mono">{{ data.number }}</RouterLink>
+          <span v-if="data.superseded" v-tooltip.top="'Une version plus récente de ce devis existe'" class="muted old">
+            ancienne version
+          </span>
         </template>
       </Column>
       <Column field="date" header="Date" sortable>
@@ -154,10 +170,18 @@ onMounted(load);
           />
         </template>
       </Column>
-      <Column header="" style="width: 150px">
+      <Column header="" style="width: 180px">
         <template #body="{ data }">
           <div class="row-actions">
             <Button v-tooltip.top="'PDF'" icon="pi pi-file-pdf" text rounded size="small" @click="pdf(data)" />
+            <Button
+              v-tooltip.top="'Nouvelle version (même numéro, suffixe -V2, -V3…)'"
+              icon="pi pi-history"
+              text
+              rounded
+              size="small"
+              @click="newVersion(data)"
+            />
             <Button
               v-tooltip.top="'Dupliquer (nouveau devis, nouveau numéro)'"
               icon="pi pi-copy"
@@ -188,6 +212,20 @@ onMounted(load);
   margin-left: 0.4rem;
   text-decoration: line-through;
   font-size: 0.9em;
+}
+
+.old {
+  margin-left: 0.4rem;
+  font-size: 0.8em;
+}
+
+/* Ancienne version : estompée (une version plus récente existe). */
+:deep(tr.superseded) td {
+  color: var(--app-muted);
+}
+
+:deep(tr.superseded) a {
+  color: inherit;
 }
 
 .row-actions {

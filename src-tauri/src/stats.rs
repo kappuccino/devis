@@ -5,6 +5,9 @@
 //! produits, total des lignes (remise de ligne comprise, avant remise globale). Les lignes en
 //! option ne sont pas comptées. Ce sont des montants devisés ; les affaires obtenues (coche de la
 //! liste des devis) sont comptées à part (`won_count`, `won_total`).
+//!
+//! Versions : un devis compte une fois, par sa version obtenue s'il y en a une, sinon par sa
+//! dernière version (voir `QUOTES`).
 
 use rusqlite::{params, Connection};
 use serde::Serialize;
@@ -63,6 +66,11 @@ pub struct Stats {
     pub top_products: Vec<ProductStat>,
 }
 
+/// Les devis comptés : une version par devis (l'obtenue, sinon la plus récente).
+const QUOTES: &str = "(SELECT * FROM quotes q0 WHERE q0.id = (
+        SELECT q1.id FROM quotes q1 WHERE COALESCE(q1.version_of, q1.id) = COALESCE(q0.version_of, q0.id)
+        ORDER BY q1.won_at IS NULL, q1.version DESC LIMIT 1))";
+
 /// Nombre de lignes des classements.
 const TOP: i64 = 10;
 
@@ -82,7 +90,7 @@ pub fn quote_stats(conn: &Connection, year: Option<&str>) -> Result<Stats> {
         .query_row(
             &format!(
                 "SELECT COUNT(*), COALESCE(SUM(q.total_net), 0), COUNT(DISTINCT {CLIENT_KEY}), {WON}
-                 FROM quotes q WHERE {IN_YEAR}"
+                 FROM {QUOTES} q WHERE {IN_YEAR}"
             ),
             [year],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
@@ -92,7 +100,7 @@ pub fn quote_stats(conn: &Connection, year: Option<&str>) -> Result<Stats> {
     let by_month = all(
         conn,
         &format!(
-            "SELECT substr(q.date, 1, 7), COUNT(*), COALESCE(SUM(q.total_net), 0), {WON} FROM quotes q
+            "SELECT substr(q.date, 1, 7), COUNT(*), COALESCE(SUM(q.total_net), 0), {WON} FROM {QUOTES} q
              WHERE {IN_YEAR} GROUP BY 1 ORDER BY 1"
         ),
         params![year],
@@ -104,7 +112,7 @@ pub fn quote_stats(conn: &Connection, year: Option<&str>) -> Result<Stats> {
     let top_clients = all(
         conn,
         &format!(
-            "SELECT MAX(q.client_name), q.client_code, COUNT(*), COALESCE(SUM(q.total_net), 0), {WON} FROM quotes q
+            "SELECT MAX(q.client_name), q.client_code, COUNT(*), COALESCE(SUM(q.total_net), 0), {WON} FROM {QUOTES} q
              WHERE {IN_YEAR} GROUP BY {CLIENT_KEY} ORDER BY 4 DESC, 3 DESC LIMIT ?2"
         ),
         params![year, TOP],
@@ -123,7 +131,7 @@ pub fn quote_stats(conn: &Connection, year: Option<&str>) -> Result<Stats> {
     let by_sales_rep = all(
         conn,
         &format!(
-            "SELECT trim(q.sales_rep), COUNT(*), COALESCE(SUM(q.total_net), 0), {WON} FROM quotes q
+            "SELECT trim(q.sales_rep), COUNT(*), COALESCE(SUM(q.total_net), 0), {WON} FROM {QUOTES} q
              WHERE {IN_YEAR} GROUP BY trim(q.sales_rep) ORDER BY 3 DESC"
         ),
         params![year],
@@ -143,7 +151,7 @@ pub fn quote_stats(conn: &Connection, year: Option<&str>) -> Result<Stats> {
         conn,
         &format!(
             "SELECT l.product_ref, MAX(l.designation), SUM(l.quantity), SUM(l.line_total), COUNT(DISTINCT l.quote_id)
-             FROM quote_lines l JOIN quotes q ON q.id = l.quote_id
+             FROM quote_lines l JOIN {QUOTES} q ON q.id = l.quote_id
              WHERE {IN_YEAR} AND l.kind = 'item' AND l.is_option = 0 AND l.product_ref <> ''
              GROUP BY l.product_ref ORDER BY 4 DESC LIMIT ?2"
         ),
@@ -367,5 +375,31 @@ mod tests {
         assert_eq!((all.count, all.total, all.clients), (4, 1450.0, 3));
         assert_eq!((all.won_count, all.won_total), (2, 1300.0));
         assert_eq!(all.top_clients[0].label, "BRAVO");
+    }
+
+    #[test]
+    fn stats_count_one_version_per_quote() {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::init(&conn).unwrap();
+        // Devis 1 en trois versions (la V2 obtenue) ; devis 4 en deux versions, aucune obtenue.
+        quote(&conn, 1, "2026-03-01", ("C1", "ALPHA"), "", 100.0);
+        quote(&conn, 2, "2026-03-05", ("C1", "ALPHA"), "", 200.0);
+        quote(&conn, 3, "2026-04-01", ("C1", "ALPHA"), "", 300.0);
+        quote(&conn, 4, "2026-03-01", ("C2", "BRAVO"), "", 10.0);
+        quote(&conn, 5, "2026-05-01", ("C2", "BRAVO"), "", 20.0);
+        conn.execute_batch(
+            "UPDATE quotes SET version = 2, version_of = 1 WHERE id = 2;
+             UPDATE quotes SET version = 3, version_of = 1 WHERE id = 3;
+             UPDATE quotes SET version = 2, version_of = 4 WHERE id = 5;
+             UPDATE quotes SET won_at = '2026-03-10' WHERE id = 2;",
+        )
+        .unwrap();
+        line(&conn, 1, "P1", 1.0, 100.0, false);
+        line(&conn, 2, "P1", 2.0, 200.0, false);
+        line(&conn, 3, "P1", 3.0, 300.0, false);
+        let s = quote_stats(&conn, None).unwrap();
+        assert_eq!((s.count, s.total, s.won_count, s.won_total), (2, 220.0, 1, 200.0));
+        assert_eq!(s.by_month.iter().map(|m| m.month.as_str()).collect::<Vec<_>>(), ["2026-03", "2026-05"]);
+        assert_eq!((s.top_products[0].quantity, s.top_products[0].quotes), (2.0, 1));
     }
 }

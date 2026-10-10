@@ -19,8 +19,9 @@ import {
   type Quote,
   type QuoteContact,
   type QuoteLine,
+  type QuoteVersion,
 } from "../api";
-import { errorMessage, formatEuro, formatUnitPrice, MOD, round2, todayIso } from "../format";
+import { errorMessage, formatDate, formatEuro, formatUnitPrice, MOD, round2, todayIso } from "../format";
 import { exportQuotePdf } from "../composables/usePdf";
 import QuoteDocsDialog from "../components/docs/QuoteDocsDialog.vue";
 import PriceListDrawer from "../components/PriceListDrawer.vue";
@@ -144,6 +145,8 @@ function onPriceBlur(line: EditLine) {
 
 const quoteId = ref<number | null>(null);
 const number = ref<string | null>(null);
+/** Toutes les versions du devis enregistré (une seule : pas de versions). */
+const versions = ref<QuoteVersion[]>([]);
 const date = ref(todayIso());
 const notes = ref("");
 const lines = ref<EditLine[]>([blankLine()]);
@@ -926,6 +929,23 @@ async function save(): Promise<Quote | null> {
   }
 }
 
+/** Nouvelle version du devis (enregistré d'abord s'il a des modifications), puis ouverture. */
+const creatingVersion = ref(false);
+async function newVersion() {
+  if (quoteId.value == null) return;
+  if (hasDraft.value && !(await save())) return;
+  creatingVersion.value = true;
+  try {
+    const v = await api.newQuoteVersion(quoteId.value, todayIso());
+    toast.add({ severity: "success", summary: `Version ${v.number} créée`, life: 2500 });
+    router.push(`/devis/${v.id}`);
+  } catch (e) {
+    toast.add({ severity: "error", summary: "Nouvelle version", detail: errorMessage(e) });
+  } finally {
+    creatingVersion.value = false;
+  }
+}
+
 // PDF + documentation technique : le devis est enregistré, puis la fenêtre de choix des documents s'ouvre.
 const docsDialogVisible = ref(false);
 const docsDialogQuote = ref<Quote | null>(null);
@@ -1156,6 +1176,7 @@ async function loadSaved(id: string | undefined) {
       // Nouveau devis : formulaire vierge.
       quoteId.value = null;
       number.value = null;
+      versions.value = [];
       date.value = todayIso();
       notes.value = "";
       globalDiscount.value = 0;
@@ -1175,6 +1196,7 @@ async function loadSaved(id: string | undefined) {
     const q = await api.getQuote(Number(id));
     quoteId.value = q.id;
     number.value = q.number;
+    versions.value = q.versions ?? [];
     date.value = q.date;
     notes.value = q.notes ?? "";
     globalDiscount.value = q.discount_pct;
@@ -1232,6 +1254,19 @@ onMounted(async () => {
     <div class="page-header">
       <Button icon="pi pi-arrow-left" text rounded @click="router.push('/devis')" />
       <h1>{{ number ? `Devis ${number}` : "Nouveau devis" }}</h1>
+      <!-- Versions du devis : liens de l'une à l'autre, la version obtenue cochée. -->
+      <nav v-if="versions.length > 1" class="versions" aria-label="Versions du devis">
+        <RouterLink
+          v-for="v in versions"
+          :key="v.id"
+          v-tooltip.bottom="`${v.number} du ${formatDate(v.date)}${v.won_at ? ' · affaire obtenue' : ''}`"
+          :to="`/devis/${v.id}`"
+          class="version"
+          :class="{ current: v.id === quoteId }"
+        >
+          V{{ v.version }}<i v-if="v.won_at" class="pi pi-check" />
+        </RouterLink>
+      </nav>
       <span
         v-if="hasDraft"
         v-tooltip.bottom="'Gardé sur cet ordinateur ; restauré si vous revenez sur ce devis'"
@@ -1240,6 +1275,16 @@ onMounted(async () => {
         <i class="pi pi-circle-fill" /> Modifications non enregistrées
       </span>
       <span class="spacer" />
+      <Button
+        v-if="quoteId != null"
+        v-tooltip.bottom="'Copie de ce devis sous le même numéro, suffixé -V2, -V3…'"
+        label="Nouvelle version"
+        icon="pi pi-history"
+        severity="secondary"
+        text
+        :loading="creatingVersion"
+        @click="newVersion"
+      />
       <Button label="Repartir de zéro" icon="pi pi-refresh" severity="secondary" text @click="startOver" />
       <Button label="Enregistrer" icon="pi pi-save" severity="secondary" :loading="saving" @click="save" />
       <Button label="Générer PDF" icon="pi pi-file-pdf" :loading="saving" @click="savePdf" />
@@ -1930,6 +1975,41 @@ onMounted(async () => {
 <style scoped>
 .draft-badge {
   font-size: 0.9em;
+}
+
+.versions {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--app-muted) 12%, transparent);
+}
+
+.version {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--app-muted);
+  text-decoration: none;
+}
+
+.version:hover {
+  color: var(--app-text);
+}
+
+.version.current {
+  background: var(--app-surface);
+  color: var(--app-text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+
+.version i {
+  font-size: 0.65rem;
+  color: var(--app-success);
 }
 
 .draft-badge i {
