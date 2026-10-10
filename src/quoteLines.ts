@@ -102,3 +102,67 @@ export function insertBlock<T>(lines: T[], block: T[], anchor: T | null, trailin
 }
 
 const withTrailing = <T>(list: T[], trailing: T | null) => (trailing ? [...list, trailing] : list);
+
+export interface CleanableLine extends LineLike {
+  product_ref: string;
+  designation: string;
+}
+
+/** Résultat du nettoyage : lignes gardées et lignes retirées, par motif. */
+export interface CleanResult<T> {
+  kept: T[];
+  /** Articles (réf saisie) sans quantité, ou à 0. */
+  noQuantity: T[];
+  /** Lignes vides : article sans réf, titre ou texte sans libellé. */
+  empty: T[];
+  /** Titres, textes et sous-totaux qui n'accompagnent plus aucun article. */
+  orphans: T[];
+}
+
+/**
+ * Nettoyage des lignes d'un devis (frais exclus, ligne de saisie exclue) :
+ * 1. retire les articles sans quantité et les lignes vides ;
+ * 2. retire les paragraphes devenus vides : un titre sans article avant le titre suivant part
+ *    avec ses lignes de texte et ses sous-totaux ;
+ * 3. retire les sous-totaux sans article depuis le sous-total précédent (doublons compris).
+ * Le texte placé avant le premier titre (introduction) est gardé.
+ */
+export function cleanLines<T extends CleanableLine>(lines: T[]): CleanResult<T> {
+  const noQuantity: T[] = [];
+  const empty: T[] = [];
+  const orphans: T[] = [];
+
+  let rest = lines.filter((l) => {
+    if (l.kind === "item") {
+      if (!l.product_ref.trim()) return empty.push(l), false;
+      if (!l.quantity) return noQuantity.push(l), false;
+    } else if ((l.kind === "title" || l.kind === "text") && !l.designation.trim()) {
+      return empty.push(l), false;
+    }
+    return true;
+  });
+
+  // Paragraphes (d'un titre au suivant) sans article.
+  const dropped = new Set<T>();
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i].kind !== "title") continue;
+    let j = i + 1;
+    while (j < rest.length && rest[j].kind !== "title") j++;
+    const section = rest.slice(i, j);
+    if (!section.some((l) => l.kind === "item")) section.forEach((l) => dropped.add(l));
+    i = j - 1;
+  }
+  rest = rest.filter((l) => !dropped.has(l) || (orphans.push(l), false));
+
+  // Sous-totaux sans article depuis le précédent.
+  let items = 0;
+  rest = rest.filter((l) => {
+    if (l.kind === "item") items++;
+    if (l.kind !== "subtotal") return true;
+    const keep = items > 0;
+    items = 0;
+    return keep || (orphans.push(l), false);
+  });
+
+  return { kept: rest, noQuantity, empty, orphans };
+}

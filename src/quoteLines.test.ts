@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  cleanLines,
   discountedTotal,
   insertBlock,
   lineTotal,
@@ -100,5 +101,35 @@ describe("round2", () => {
     expect(round2(1.005)).toBe(1.01);
     expect(round2(2.838928)).toBe(2.84);
     expect(round2(45.11)).toBe(45.11);
+  });
+});
+
+describe("cleanLines", () => {
+  type C = L & { product_ref: string; designation: string };
+  const c = (n: string, kind: L["kind"], quantity: number | null = 1, designation = n, product_ref = n): C =>
+    ({ n, kind, quantity, unit_price: 10, designation, product_ref }) as C;
+  const cnames = (list: C[]) => list.map((l) => l.n).join(" ");
+
+  it("retire les articles sans quantité, les lignes vides et ce qui devient orphelin", () => {
+    const lines = [
+      c("intro", "text"),
+      c("T1", "title"), c("t1", "text"), c("a", "item"), c("z0", "item", 0), c("s1", "subtotal"),
+      c("T2", "title"), c("t2", "text"), c("b0", "item", null), c("s2", "subtotal"),
+      c("T3", "title"), c("vide", "text", 0, "  "), c("c", "item", 2), c("_", "item", null, "", ""),
+      c("s3", "subtotal"), c("s4", "subtotal"),
+    ];
+    const r = cleanLines(lines);
+    expect(cnames(r.kept)).toBe("intro T1 t1 a s1 T3 c s3");
+    expect(cnames(r.noQuantity)).toBe("z0 b0");
+    expect(cnames(r.empty)).toBe("vide _");
+    // Paragraphe T2 sans article (titre, texte, sous-total) ; sous-total en double.
+    expect(cnames(r.orphans)).toBe("T2 t2 s2 s4");
+  });
+
+  it("ne touche à rien sur un devis propre", () => {
+    const lines = [c("T1", "title"), c("a", "item"), c("s1", "subtotal"), c("b", "item", 3)];
+    const r = cleanLines(lines);
+    expect(r.kept).toEqual(lines);
+    expect(r.noQuantity.length + r.empty.length + r.orphans.length).toBe(0);
   });
 });

@@ -31,6 +31,7 @@ import { useConfirm } from "primevue/useconfirm";
 import { useLineClipboard } from "../composables/useLineClipboard";
 import {
   FEE_KINDS,
+  cleanLines,
   insertBlock,
   isFee,
   lineTotal,
@@ -848,6 +849,37 @@ function removeLine(line: EditLine) {
 /** Prix net de la ligne (remise supplémentaire comprise) sous le prix seuil. */
 const isBelowThreshold = (l: EditLine) =>
   l.threshold_price != null && netUnitPrice(l.unit_price, l.discount) < l.threshold_price;
+
+// ---------- Nettoyage des lignes ----------
+
+/** Nettoyage proposé (ligne de saisie exclue) : articles sans quantité, lignes vides, orphelins. */
+const cleanup = computed(() => cleanLines(lines.value.filter((l) => !isEntryLine(l))));
+const cleanupCount = computed(
+  () => cleanup.value.noQuantity.length + cleanup.value.empty.length + cleanup.value.orphans.length,
+);
+
+function cleanUpLines() {
+  const r = cleanup.value;
+  if (!cleanupCount.value) return;
+  const parts = [
+    r.noQuantity.length && `${r.noQuantity.length} article(s) sans quantité`,
+    r.empty.length && `${r.empty.length} ligne(s) vide(s)`,
+    r.orphans.length && `${r.orphans.length} titre(s), texte(s) ou sous-total(s) qui n'accompagnent plus aucun article`,
+  ].filter(Boolean);
+  confirm.require({
+    header: "Nettoyer les lignes",
+    message: `Supprimer ${parts.join(", ")} ?`,
+    icon: "pi pi-eraser",
+    rejectProps: { label: "Annuler", severity: "secondary", text: true },
+    acceptProps: { label: `Supprimer ${cleanupCount.value} ligne(s)`, severity: "danger" },
+    accept: () => {
+      const n = cleanupCount.value;
+      lines.value = [...cleanup.value.kept, blankLine()];
+      clearSelection();
+      toast.add({ severity: "success", summary: `${n} ligne(s) supprimée(s)`, life: 2000 });
+    },
+  });
+}
 
 /** Champs enregistrés d'une ligne (sans l'état d'édition). */
 const toQuoteLine = (l: EditLine): QuoteLine => ({
@@ -2109,6 +2141,20 @@ onMounted(async () => {
 }
 
 .cd-caption {
+            <Button
+              v-tooltip.bottom="
+                cleanupCount
+                  ? 'Supprime les articles sans quantité, les lignes vides, et les titres, textes et sous-totaux qui n\'accompagnent plus aucun article'
+                  : 'Rien à nettoyer'
+              "
+              :label="cleanupCount ? `Nettoyer (${cleanupCount})` : 'Nettoyer'"
+              icon="pi pi-eraser"
+              text
+              size="small"
+              severity="secondary"
+              :disabled="!cleanupCount"
+              @click="cleanUpLines"
+            />
   padding-top: 0.45rem;
   font-size: 0.75rem;
   font-weight: 700;
@@ -2626,3 +2672,4 @@ tr:hover .drag-handle i {
   font-style: italic;
 }
 </style>
+  flex-wrap: wrap;
