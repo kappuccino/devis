@@ -1853,8 +1853,6 @@ onMounted(async () => {
             />
           </template>
 
-          <hr class="t-rule" />
-          <span></span>
           <span class="t-label grand">Total HT</span>
           <span></span>
           <span class="t-amount grand">{{ formatEuro(netTotal) }}</span>
@@ -2375,15 +2373,9 @@ tr:hover .drag-handle i {
   justify-self: center;
 }
 
-.t-rule {
-  grid-column: 1 / 4;
-  margin: 0.25rem 0 0;
-  border: none;
-  border-top: 2px solid var(--app-accent);
-}
-
-/* Total HT final (remise et frais compris) : grand, en rouge. */
+/* Total HT final (remise et frais compris) : grand, en rouge, un peu détaché. */
 .totals .grand {
+  padding-top: 0.4rem;
   font-size: 1.15rem;
   font-weight: 700;
   color: var(--app-accent);
