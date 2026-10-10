@@ -790,9 +790,17 @@ function onPaste(e: ClipboardEvent) {
   pasteLines(lineAt(target));
 }
 
+/** Lignes du devis en plein écran (toute la fenêtre), pour les gros devis. */
+const fullscreen = ref(false);
+
 function onKeydown(e: KeyboardEvent) {
   if (e.key === "Escape" && selectedKeys.value.size && !isTextField(e.target)) {
     clearSelection();
+    return;
+  }
+  // Échap quitte le plein écran (sauf si elle a déjà servi, par ex. à fermer une liste de suggestions).
+  if (e.key === "Escape" && fullscreen.value && !e.defaultPrevented) {
+    fullscreen.value = false;
     return;
   }
   if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
@@ -1473,7 +1481,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" :class="{ 'lines-fullscreen': fullscreen }">
       <!-- Lignes sélectionnées : copier / couper / supprimer. Le collage se fait au clavier (Ctrl+V / ⌘V),
            après la dernière ligne sélectionnée ou en fin de devis. -->
       <div v-if="selectedKeys.size" class="selection-bar">
@@ -1486,7 +1494,18 @@ onMounted(async () => {
       <table ref="linesTable" class="lines">
         <thead>
           <tr>
-            <th style="width: 26px"></th>
+            <th style="width: 26px" class="fullscreen-cell">
+              <button
+                v-tooltip.right="fullscreen ? 'Quitter le plein écran (Échap)' : 'Plein écran'"
+                type="button"
+                class="fullscreen-btn"
+                :aria-label="fullscreen ? 'Quitter le plein écran' : 'Lignes en plein écran'"
+                :aria-pressed="fullscreen"
+                @click="fullscreen = !fullscreen"
+              >
+                <i :class="fullscreen ? 'pi pi-window-minimize' : 'pi pi-window-maximize'" />
+              </button>
+            </th>
             <th style="width: 26px" class="select-cell">
               <input
                 type="checkbox"
@@ -2055,6 +2074,49 @@ onMounted(async () => {
   gap: 0.75rem;
   justify-content: space-between;
   width: 100%;
+}
+
+/* Plein écran : la carte des lignes couvre toute la fenêtre, en-tête du tableau figé en haut. */
+.lines-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  overflow: auto;
+  padding-top: 0;
+  border: none;
+  border-radius: 0;
+}
+
+.lines-fullscreen .lines thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.lines th.fullscreen-cell {
+  padding: 0;
+  vertical-align: middle;
+  text-align: center;
+}
+
+.fullscreen-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--app-muted);
+  cursor: pointer;
+}
+
+.fullscreen-btn:hover {
+  background: color-mix(in srgb, var(--app-muted) 15%, transparent);
+  color: var(--app-text);
+}
+
+.fullscreen-btn i {
+  font-size: 0.75rem;
 }
 
 /* Lignes du devis : rendu « tableur » (quadrillage, champs sans bordure, lignes basses)
