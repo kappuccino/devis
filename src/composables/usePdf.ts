@@ -36,61 +36,107 @@ export function agencyContact(s: Settings): string {
     .join("\n");
 }
 
+const MUTED = "#6b7280";
+const TEXT = "#1f2328";
+const BORDER = "#e3e6ea";
+/** Gris clair des pastilles de sous-total et du bandeau TOTAL HT. */
+const GREY_FILL = "#eeeff1";
+/** Largeur utile de la page A4 (595 pt − marges de 40 pt). */
+const PAGE_WIDTH = 515;
+
+/** Petit titre de section en capitales rouges (CLIENT, CONDITIONS…). */
+const sectionLabel = (text: string, margin: [number, number, number, number] = [0, 0, 0, 3]): Content => ({
+  text,
+  style: "sectionLabel",
+  margin,
+});
+
+/** Encadré léger (bordure grise fine) autour d'un contenu. */
+const softBox = (content: Content, padding = 8): Content => ({
+  table: { widths: ["*"], body: [[content]] },
+  layout: {
+    hLineColor: () => BORDER,
+    vLineColor: () => BORDER,
+    hLineWidth: () => 0.75,
+    vLineWidth: () => 0.75,
+    paddingLeft: () => padding,
+    paddingRight: () => padding,
+    paddingTop: () => padding,
+    paddingBottom: () => padding,
+  },
+});
+
+/**
+ * Devis PDF : en-tête (société à gauche ; DEVIS, numéro, date, validité, commercial à droite),
+ * bloc client, tableau des lignes (en-tête plein, titres en bandeau, sous-totaux en pastille),
+ * puis conditions / notes à gauche et totaux, TOTAL HT et « Bon pour accord » à droite.
+ */
 export function buildDocument(quote: Quote, client: Client | null, s: Settings): TDocumentDefinitions {
   const agency = agencyContact(s).trim();
   const company: Content[] = [
-    { text: s.company_name || "Ma société", style: "companyName" },
-    { text: HEAD_OFFICE[0], color: "#555" },
+    // Avec un logo, le nom de la société ferait doublon : seulement sans logo.
+    ...(s.company_logo ? [] : [{ text: s.company_name || "Ma société", style: "companyName" }]),
+    { text: HEAD_OFFICE[0], color: MUTED },
     { text: HEAD_OFFICE[1], bold: true },
     ...(agency ? [{ text: agency, margin: [0, 6, 0, 0] as [number, number, number, number] }] : []),
   ];
 
+  // Date, validité, commercial : libellés à gauche, valeurs à droite, sans cadre.
+  const meta: [string, string][] = [
+    ["En date du :", formatDate(quote.date)],
+    ...(s.quote_validity ? [["Validité :", s.quote_validity] as [string, string]] : []),
+    ...(quote.sales_rep ? [["Commercial :", quote.sales_rep] as [string, string]] : []),
+  ];
   const header: Content = {
     columns: [
       s.company_logo
-        ? { stack: [{ image: s.company_logo, fit: [140, 70], margin: [0, 0, 0, 6] }, ...company], width: "*" }
+        ? { stack: [{ image: s.company_logo, fit: [140, 60], margin: [0, 0, 0, 8] }, ...company], width: "*" }
         : { stack: company, width: "*" },
       {
-        width: 200,
+        width: 190,
         stack: [
           { text: "DEVIS", style: "title" },
-          { text: `N° ${quote.number ?? "—"}`, bold: true, alignment: "right" },
-          { text: `Date : ${formatDate(quote.date)}`, alignment: "right" },
-          ...(s.quote_validity ? [{ text: `Validité : ${s.quote_validity}`, alignment: "right" as const }] : []),
-          ...(quote.sales_rep ? [{ text: `Commercial : ${quote.sales_rep}`, alignment: "right" as const }] : []),
+          { text: `n° ${quote.number ?? "—"}`, color: ACCENT, alignment: "right", margin: [0, 0, 0, 8] },
+          {
+            columns: [
+              { width: "*", text: "" },
+              {
+                width: "auto",
+                table: { body: meta.map(([k, v]) => [{ text: k, color: MUTED }, { text: v, alignment: "right" }]) },
+                layout: { defaultBorder: false, paddingLeft: () => 0, paddingRight: (i: number) => (i === 0 ? 10 : 0), paddingTop: () => 1, paddingBottom: () => 1 },
+              },
+            ],
+          },
         ],
       },
     ],
   };
 
-  const clientBox: Content = {
-    margin: [260, 16, 0, 16],
-    table: {
-      widths: ["*"],
-      body: [
-        [
-          {
-            stack: [
-              // La raison sociale enregistrée dans le devis fait foi (client ponctuel ou nom ajusté).
-              { text: quote.client_name, bold: true, fontSize: 9.5 },
-              ...(quote.client_code ? [{ text: `Code client : ${quote.client_code}`, color: "#555" }] : []),
-              ...(client?.siren ? [{ text: `SIREN : ${client.siren}`, color: "#555" }] : []),
-              // Contact du devis ; à défaut, l'email général du client.
-              ...(quote.contact_name ? [{ text: `À l'attention de ${quote.contact_name}`, margin: [0, 4, 0, 0] as [number, number, number, number] }] : []),
-              ...[quote.contact_email || (!quote.contact_name && client?.email ? client.email.split(/[\s;,]+/)[0] : ""), quote.contact_phone && `Tél. ${quote.contact_phone}`]
-                .filter(Boolean)
-                .map((t) => ({ text: t as string, color: "#555" })),
-            ],
-            margin: [8, 6, 8, 6],
-          },
+  // Client : à droite, sous un petit titre souligné de rouge, sans cadre.
+  const clientBlock: Content = {
+    margin: [0, 18, 0, 18],
+    columns: [
+      { width: "*", text: "" },
+      {
+        width: 250,
+        stack: [
+          sectionLabel("CLIENT", [0, 0, 0, 2]),
+          { canvas: [{ type: "line", x1: 0, y1: 0, x2: 250, y2: 0, lineWidth: 0.75, lineColor: ACCENT }], margin: [0, 0, 0, 5] },
+          // La raison sociale enregistrée dans le devis fait foi (client ponctuel ou nom ajusté).
+          { text: quote.client_name, bold: true, fontSize: 9.5 },
+          ...(quote.client_code ? [{ text: `Code client : ${quote.client_code}`, color: MUTED }] : []),
+          ...(client?.siren ? [{ text: `SIREN : ${client.siren}`, color: MUTED }] : []),
+          // Contact du devis ; à défaut, l'email général du client.
+          ...(quote.contact_name ? [{ text: `À l'attention de ${quote.contact_name}`, margin: [0, 4, 0, 0] as [number, number, number, number] }] : []),
+          ...[quote.contact_email || (!quote.contact_name && client?.email ? client.email.split(/[\s;,]+/)[0] : ""), quote.contact_phone && `Tél. ${quote.contact_phone}`]
+            .filter(Boolean)
+            .map((t) => ({ text: t as string, color: MUTED })),
         ],
-      ],
-    },
-    layout: { hLineColor: () => "#ccc", vLineColor: () => "#ccc" },
+      },
+    ],
   };
 
   const th = (text: string, alignment: "left" | "right" = "left") => ({ text, style: "th", alignment });
-  // Lignes de texte sur toute la largeur ; sous-totaux surlignés.
   // La colonne « Remise » n'apparaît que si au moins une ligne a une remise supplémentaire.
   // Idem pour le code ENEDIS (avant la référence) : seulement si au moins un produit en a un.
   const withDiscount = quote.lines.some((l) => l.kind === "item" && l.discount > 0);
@@ -109,10 +155,12 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
       th("Total HT", "right"),
     ],
   ];
-  const subtotalRows = new Set<number>();
+  const titleRows = new Set<number>();
   const amounts = subtotals(quote.lines);
   for (const l of quote.lines) {
     if (l.kind === "title") {
+      // Titre de paragraphe : bandeau rouge pâle sur toute la largeur.
+      titleRows.add(body.length);
       body.push([{ text: l.designation, colSpan: cols, style: "titleLine" }, ...empties(cols - 1)]);
     } else if (l.kind === "text") {
       body.push([{ text: l.designation, colSpan: cols, style: "textLine" }, ...empties(cols - 1)]);
@@ -120,11 +168,21 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
       // Frais de port / de facturation : dans le bloc des totaux, après la remise.
       continue;
     } else if (l.kind === "subtotal") {
-      subtotalRows.add(body.length);
+      // Sous-total : pastille gris clair à droite (libellé : montant).
+      // Sur les dernières colonnes (jusqu'à 4, en laissant au moins Référence et Désignation) :
+      // un libellé long tient sur une ligne.
+      const span = Math.min(4, cols - 2);
       body.push([
-        { text: l.designation, colSpan: cols - 1, alignment: "right", bold: true },
-        ...empties(cols - 2),
-        { text: formatEuro(amounts.get(l)), alignment: "right", bold: true },
+        { text: "", colSpan: cols - span },
+        ...empties(cols - span - 1),
+        {
+          text: [{ text: `${l.designation} : ` }, { text: formatEuro(amounts.get(l)), bold: true }],
+          colSpan: span,
+          alignment: "right",
+          fillColor: GREY_FILL,
+          margin: [0, 1, 0, 1],
+        },
+        ...empties(span - 1),
       ]);
     } else {
       body.push([
@@ -143,118 +201,147 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
   const lines: Content = {
     table: {
       headerRows: 1,
-      widths: [
-        ...(withEnedis ? [54] : []),
-        withEnedis ? 54 : 62,
-        "*",
-        38,
-        62,
-        ...(withDiscount ? [46] : []),
-        70,
-      ],
+      widths: [...(withEnedis ? [54] : []), withEnedis ? 54 : 62, "*", 38, 62, ...(withDiscount ? [46] : []), 70],
       body,
       dontBreakRows: true,
     },
     layout: {
-      hLineWidth: (i, node) => (i === 0 || i === 1 || i === node.table.body.length ? 1 : 0.5),
-      vLineWidth: () => 0,
-      hLineColor: (i) => (i <= 1 ? ACCENT : "#ddd"),
-      paddingTop: () => 3.5,
-      paddingBottom: () => 3.5,
-      fillColor: (row) => (row === 0 || subtotalRows.has(row) ? ACCENT_TINT : null),
+      // Pas de quadrillage : en-tête plein, bandeaux de titre, simple filet sous le tableau.
+      hLineWidth: (i, node) => (i === node.table.body.length ? 0.75 : 0),
+      hLineColor: () => BORDER,
+      // Séparations verticales de la couleur du fond : sans elles, l'en-tête plein montre de
+      // fins traits blancs entre les cellules.
+      vLineWidth: () => 1,
+      vLineColor: (_i, _node, row) => (row === 0 ? ACCENT_TINT : "#fff"),
+      paddingTop: (i) => (i === 0 ? 5 : titleRows.has(i) ? 4 : 3),
+      paddingBottom: (i) => (i === 0 ? 5 : titleRows.has(i) ? 4 : 3),
+      fillColor: (row) => (row === 0 || titleRows.has(row) ? ACCENT_TINT : null),
     },
   };
 
   // Totaux, dans l'ordre du calcul : produits, remise globale (sur les produits seulement),
-  // frais (jamais remisés), puis TOTAL HT. Les frais au-dessus de la remise laissaient croire
-  // qu'elle portait aussi sur eux.
+  // frais (jamais remisés), puis TOTAL HT en bandeau gris. Les frais au-dessus de la remise
+  // laissaient croire qu'elle portait aussi sur eux.
   const fees = quote.lines.filter((l) => isFee(l.kind));
   const totals = quoteTotals(quote.lines, quote.discount_pct);
-  // Comme le panneau des totaux de l'écran de saisie (sans cadre ni fond) : libellés à droite
-  // en gris, montants à droite, TOTAL HT en gras rouge (taille du corps du texte), options en
-  // italique. Le bloc ne se coupe pas entre deux pages.
-  const MUTED = "#6b7280";
   const row = (label: string, amount: string, style: Record<string, unknown> = {}): TableCell[] => [
-    { text: label, alignment: "right", color: MUTED, ...style },
+    { text: label, color: MUTED, ...style },
     { text: amount, alignment: "right", noWrap: true, ...style },
   ];
-  const strong = { bold: true, color: "#1f2328" };
-  const totalsBody: TableCell[][] = [];
-  if (quote.discount_pct > 0 || fees.length) totalsBody.push(row("Total produits HT", formatEuro(totals.products)));
+  const strong = { bold: true, color: TEXT };
+  const details: TableCell[][] = [];
+  if (quote.discount_pct > 0 || fees.length) details.push(row("Total produits HT", formatEuro(totals.products)));
   if (quote.discount_pct > 0) {
-    totalsBody.push(
+    details.push(
       row(`Remise ${formatNumber(quote.discount_pct)} % sur les produits`, `− ${formatEuro(totals.discount)}`),
       row("Total produits remisé HT", formatEuro(round2(totals.products - totals.discount)), strong),
     );
   }
-  for (const f of fees) totalsBody.push(row(f.designation, formatEuro(lineTotal(f))));
-  const grandRow = totalsBody.length;
-  totalsBody.push(row("TOTAL HT", formatEuro(totals.net), { bold: true, color: ACCENT }));
-  // Lignes en option : à part, hors total HT, dans le même cadre.
-  if (quote.total_options > 0) {
-    totalsBody.push(row("Total options HT (non compris)", formatEuro(quote.total_options), { italics: true, color: MUTED }));
-  }
-  const total: Content = {
-    margin: [0, 10, 0, 0],
-    unbreakable: true,
-    columns: [
-      { width: "*", text: "" },
-      {
-        width: 270,
-        table: { widths: ["*", "auto"], body: totalsBody },
-        layout: {
-          // Sans cadre ni fond ; lignes serrées, le TOTAL HT un peu détaché.
-          hLineWidth: () => 0,
-          vLineWidth: () => 0,
-          paddingLeft: () => 10,
-          // Même marge que les cellules du tableau des lignes : montants sous la colonne Total HT.
-          paddingRight: () => 4,
-          paddingTop: (i: number) => (i === grandRow && grandRow > 0 ? 4 : 1.5),
-          paddingBottom: () => 1.5,
-        },
-      },
-    ],
+  for (const f of fees) details.push(row(f.designation, formatEuro(lineTotal(f))));
+  // Bandeau TOTAL HT gris clair : une seule cellule (deux cellules remplies laissent une couture).
+  const band: TableCell[] = [
+    {
+      colSpan: 2,
+      fillColor: GREY_FILL,
+      margin: [0, 2, 0, 2],
+      columns: [
+        { text: "TOTAL HT", bold: true, fontSize: 10 },
+        { text: formatEuro(totals.net), bold: true, fontSize: 10, alignment: "right", width: "auto", noWrap: true },
+      ],
+    },
+    {},
+  ];
+  const totalsTable: Content = {
+    table: { widths: ["*", "auto"], body: [...details, band] },
+    layout: {
+      // Cadre léger autour du détail, filets fins entre les lignes ; le bandeau ferme le bloc.
+      hLineWidth: (i) => (i < details.length ? 0.75 : 0),
+      vLineWidth: () => 0,
+      hLineColor: () => BORDER,
+      paddingLeft: () => 8,
+      paddingRight: () => 8,
+      paddingTop: (i) => (i === details.length ? 5 : 3),
+      paddingBottom: (i) => (i === details.length ? 5 : 3),
+    },
   };
-
-  const content: Content[] = [header, clientBox, lines, total];
-  if (quote.notes) content.push({ text: quote.notes, margin: [0, 16, 0, 0] });
-  const conditions = conditionsText(s).trim();
-  if (conditions) {
-    content.push({
-      style: "conditions",
-      stack: parseConditions(conditions).map((line) => ({
-        text: line.runs.length
-          ? line.runs.map((r) => ({ text: r.text, bold: r.bold, decoration: r.underline ? ("underline" as const) : undefined }))
-          : " ",
-        ...(line.title ? { bold: true, fontSize: 9, color: "#000", margin: [0, 0, 0, 3] as [number, number, number, number] } : {}),
-      })),
+  const right: Content[] = [totalsTable];
+  // Lignes en option : leur total à part, hors total HT.
+  if (quote.total_options > 0) {
+    right.push({
+      columns: [
+        { text: "Total options HT (non compris)", italics: true, color: MUTED },
+        { text: formatEuro(quote.total_options), italics: true, color: MUTED, alignment: "right", width: "auto" },
+      ],
+      margin: [8, 5, 8, 0],
     });
   }
+  // Accord du client.
+  right.push({
+    margin: [0, 12, 0, 0],
+    ...(softBox({ stack: [{ text: "Mention « Bon pour accord », date et signature", color: MUTED }, { text: " ", margin: [0, 0, 0, 48] }] }) as object),
+  } as Content);
+
+  // À gauche : notes puis conditions de vente, dans un encadré léger.
+  const left: Content[] = [];
+  if (quote.notes) left.push(sectionLabel("NOTES"), { text: quote.notes, margin: [0, 0, 0, 12] });
+  const conditions = conditionsText(s).trim();
+  if (conditions) {
+    left.push(
+      sectionLabel("CONDITIONS"),
+      softBox({
+        style: "conditions",
+        stack: parseConditions(conditions).map((line) => ({
+          text: line.runs.length
+            ? line.runs.map((r) => ({ text: r.text, bold: r.bold, decoration: r.underline ? ("underline" as const) : undefined }))
+            : " ",
+          ...(line.title ? { bold: true, fontSize: 8, color: TEXT, margin: [0, 0, 0, 3] as [number, number, number, number] } : {}),
+        })),
+      }),
+    );
+  }
+
+  const bottom: Content = {
+    margin: [0, 16, 0, 0],
+    unbreakable: true,
+    columns: [
+      { width: "*", stack: left.length ? left : [{ text: "" }] },
+      { width: 230, stack: right },
+    ],
+    columnGap: 20,
+  };
 
   return {
     pageSize: "A4",
-    pageMargins: [40, 40, 40, 50],
+    pageMargins: [40, 40, 40, 60],
     info: { title: `Devis ${quote.number ?? ""}` },
-    content,
+    content: [header, clientBlock, lines, bottom],
+    // Pied de page : filet rouge, siège à gauche, n° du devis et page à droite.
     footer: (page, pages) => ({
-      columns: [
-        { text: s.company_name ?? "", color: "#999" },
-        { text: `${page} / ${pages}`, alignment: "right", color: "#999" },
+      margin: [40, 14, 40, 0],
+      stack: [
+        { canvas: [{ type: "line", x1: 0, y1: 0, x2: PAGE_WIDTH, y2: 0, lineWidth: 0.75, lineColor: ACCENT }] },
+        {
+          margin: [0, 5, 0, 0],
+          columns: [
+            { text: HEAD_OFFICE[0], color: MUTED },
+            { text: `Devis n° ${quote.number ?? "—"} · Page ${page} / ${pages}`, alignment: "right", color: MUTED, width: "auto" },
+          ],
+        },
       ],
-      margin: [40, 16, 40, 0],
-      fontSize: 7,
+      fontSize: 6.5,
     }),
-    defaultStyle: { fontSize: 8, lineHeight: 1.15 },
+    defaultStyle: { fontSize: 8, lineHeight: 1.15, color: TEXT },
     styles: {
       companyName: { fontSize: 12, bold: true, color: ACCENT, margin: [0, 0, 0, 2] },
-      title: { fontSize: 18, bold: true, color: ACCENT, alignment: "right", margin: [0, 0, 0, 4] },
-      th: { bold: true, color: ACCENT },
-      // Titre : gras, rouge, taille 10 ; texte : noir, gras, taille 8,5 (corps du texte : 8).
-      titleLine: { bold: true, color: ACCENT, fontSize: 10, margin: [0, 5, 0, 0] },
+      title: { fontSize: 24, alignment: "right" },
+      th: { bold: true, color: ACCENT, fontSize: 7.5 },
+      sectionLabel: { fontSize: 7, bold: true, color: ACCENT, characterSpacing: 0.6 },
+      // Titre : gras, rouge, taille 10 (bandeau) ; texte : noir, gras, taille 8,5 (corps : 8).
+      titleLine: { bold: true, color: ACCENT, fontSize: 10 },
       textLine: { bold: true, color: "#000", fontSize: 8.5 },
       optionTag: { color: ACCENT, fontSize: 7 },
       mono: { fontSize: 7.5 },
-      conditions: { fontSize: 7, color: "#666", margin: [0, 18, 0, 0] },
+      conditions: { fontSize: 7, color: "#555" },
     },
   };
 }

@@ -26,6 +26,12 @@ describe("PDF du devis", () => {
     expect(all.slice(i, i + 4)).toEqual(["CAHORS", ...HEAD_OFFICE, "Jean Dupont\nTél. 06 00 00 00 00"]);
   });
 
+  it("n'imprime pas le nom de la société sous le logo", () => {
+    const logo = "data:image/png;base64,iVBORw0KGgo=";
+    expect(texts(buildDocument(quote, null, { company_name: "GROUPE CAHORS", company_logo: logo }).content)).not.toContain("GROUPE CAHORS");
+    expect(texts(buildDocument(quote, null, { company_name: "GROUPE CAHORS" }).content)).toContain("GROUPE CAHORS");
+  });
+
   it("reprend les anciens champs tant que l'agence n'a pas été saisie", () => {
     expect(agencyContact({ company_address: "1 rue X", company_phone: "05 00", company_email: "a@b.fr" })).toBe("1 rue X\nTél. 05 00\na@b.fr");
     expect(agencyContact({ company_address: "1 rue X", [AGENCY_KEY]: "" })).toBe("");
