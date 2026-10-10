@@ -70,7 +70,7 @@
 
 - [x] Renommer l'application « Devis Groupe Cahors » (au lieu de « Devis Cahors »)
 
-- [ ] Numéro de devis de départ
+- [x] Numéro de devis de départ (Réglages → Config PDF → Devis → « Dernier n° déjà utilisé »)
   - Pouvoir indiquer dans les réglages un numéro minimum, pour que la numérotation de l'appli
     prenne la suite des devis déjà faits hors de l'appli (ex. si le dernier est 26-JMOS-0140,
     le prochain devis de l'appli est 26-JMOS-0141).

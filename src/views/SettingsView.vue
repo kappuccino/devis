@@ -94,6 +94,17 @@ const quoteFields: Field[] = [
   { key: "quote_validity", label: "Validité", placeholder: "ex. 30 jours" },
 ];
 
+/**
+ * Dernier numéro déjà utilisé hors de l'appli : la numérotation en prend la suite
+ * (seulement s'il porte l'année en cours et le préfixe actuel).
+ */
+const LAST_NUMBER_KEY = "quote_last_number";
+const numberStem = computed(() => `${String(new Date().getFullYear()).slice(2)}-${(settings.value.quote_prefix ?? "").trim() || "DEV"}-`);
+const lastNumberIgnored = computed(() => {
+  const v = (settings.value[LAST_NUMBER_KEY] ?? "").trim();
+  return v !== "" && !(v.startsWith(numberStem.value) && /^\d+$/.test(v.slice(numberStem.value.length)));
+});
+
 /** Frais ajoutés automatiquement sur les devis (seuils sur le total HT des produits). */
 const feeFields: Field[] = [
   { key: FEE_SETTINGS.billing.threshold[0], label: "Minimum de facturation (€ HT)", placeholder: FEE_SETTINGS.billing.threshold[1] },
@@ -192,7 +203,7 @@ async function saveSettings() {
     // Seulement les champs du PDF : les favoris sont enregistrés à part, dès leur choix.
     const keys = [...companyFields, ...quoteFields, ...feeFields]
       .map((f) => f.key)
-      .concat("company_logo", AGENCY_KEY, CONDITIONS_KEY, CGV_PDF_KEY, SALES_REPS_KEY);
+      .concat("company_logo", AGENCY_KEY, CONDITIONS_KEY, CGV_PDF_KEY, SALES_REPS_KEY, LAST_NUMBER_KEY);
     settings.value[SALES_REPS_KEY] = salesRepSetting(salesReps.value);
     await api.saveSettings(Object.fromEntries(keys.map((k) => [k, settings.value[k] ?? ""])));
     toast.add({ severity: "success", summary: "Réglages enregistrés", life: 2000 });
@@ -496,6 +507,21 @@ onMounted(async () => {
               <Textarea v-if="f.multiline" :id="f.key" v-model="settings[f.key]" rows="3" auto-resize />
               <InputText v-else :id="f.key" v-model="settings[f.key]" :placeholder="f.placeholder" />
             </template>
+            <label for="last-number" class="label-top">Dernier n° déjà utilisé</label>
+            <div class="last-number">
+              <InputText
+                id="last-number"
+                v-model="settings[LAST_NUMBER_KEY]"
+                :placeholder="`ex. ${numberStem}0140`"
+                :invalid="lastNumberIgnored"
+              />
+              <small v-if="lastNumberIgnored" class="warn">
+                Ignoré : le numéro doit commencer par {{ numberStem }} (année en cours et préfixe actuel).
+              </small>
+              <small v-else class="muted">
+                Pour prendre la suite des devis faits hors de l'appli : le prochain devis portera le numéro suivant.
+              </small>
+            </div>
             <label for="new-sales-rep" class="label-top">Commerciaux</label>
             <div class="sales-reps">
               <div v-for="(name, i) in salesReps" :key="name" class="sales-rep">
@@ -725,6 +751,13 @@ onMounted(async () => {
 
 .add-favorite {
   width: 100%;
+}
+
+.last-number {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-width: 360px;
 }
 
 .sales-reps {

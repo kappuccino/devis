@@ -492,14 +492,19 @@ fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
     Ok(quote)
 }
 
-/// Numéro suivant au format `<année sur 2 chiffres>-<préfixe>-<n° sur 4 chiffres>` (ex. `26-JMOS-0001`).
-/// Le compteur repart à 1 chaque année.
-fn next_number(conn: &Connection, date: &str) -> CmdResult<String> {
-    let prefix: String = conn
-        .query_row("SELECT value FROM settings WHERE key = 'quote_prefix'", [], |r| r.get(0))
+fn setting(conn: &Connection, key: &str) -> CmdResult<Option<String>> {
+    conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| r.get(0))
         .optional()
-        .map_err(err)?
-        .filter(|p: &String| !p.trim().is_empty())
+        .map_err(err)
+}
+
+/// Numéro suivant au format `<année sur 2 chiffres>-<préfixe>-<n° sur 4 chiffres>` (ex. `26-JMOS-0001`).
+/// Le compteur repart à 1 chaque année. Réglage `quote_last_number` : dernier numéro déjà utilisé
+/// hors de l'appli (ex. `26-JMOS-0140`) ; la numérotation en prend la suite, pour cette année et ce
+/// préfixe seulement.
+fn next_number(conn: &Connection, date: &str) -> CmdResult<String> {
+    let prefix = setting(conn, "quote_prefix")?
+        .filter(|p| !p.trim().is_empty())
         .unwrap_or_else(|| "DEV".to_string());
     let year = date.get(2..4).unwrap_or("00");
     let stem = format!("{year}-{}-", prefix.trim());
@@ -511,10 +516,10 @@ fn next_number(conn: &Connection, date: &str) -> CmdResult<String> {
         )
         .optional()
         .map_err(err)?;
-    let n = last
-        .and_then(|l| l[stem.len()..].parse::<u32>().ok())
-        .unwrap_or(0)
-        + 1;
+    let counter = |number: &str| number.strip_prefix(stem.as_str()).and_then(|n| n.trim().parse::<u32>().ok());
+    let in_app = last.as_deref().and_then(counter).unwrap_or(0);
+    let outside = setting(conn, "quote_last_number")?.as_deref().map(str::trim).and_then(counter).unwrap_or(0);
+    let n = in_app.max(outside) + 1;
     Ok(format!("{stem}{n:04}"))
 }
 
@@ -817,6 +822,22 @@ mod tests {
         assert_eq!(next_number(&conn, "2026-12-31").unwrap(), "26-JMOS-0008");
         // Nouvelle année : le compteur repart à 1.
         assert_eq!(next_number(&conn, "2027-01-02").unwrap(), "27-JMOS-0001");
+    }
+
+    #[test]
+    fn quote_numbers_continue_after_last_number_used_outside() {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::init(&conn).unwrap();
+        conn.execute("INSERT INTO settings (key, value) VALUES ('quote_prefix', 'JMOS')", []).unwrap();
+        conn.execute("INSERT INTO settings (key, value) VALUES ('quote_last_number', ' 26-JMOS-0140 ')", []).unwrap();
+        assert_eq!(next_number(&conn, "2026-10-09").unwrap(), "26-JMOS-0141");
+        // Les devis de l'appli au-delà priment.
+        conn.execute("INSERT INTO quotes (number, client_code, date) VALUES ('26-JMOS-0150', '', '2026-10-09')", []).unwrap();
+        assert_eq!(next_number(&conn, "2026-10-10").unwrap(), "26-JMOS-0151");
+        // Autre année ou autre préfixe : le réglage ne s'applique pas.
+        assert_eq!(next_number(&conn, "2027-01-02").unwrap(), "27-JMOS-0001");
+        conn.execute("UPDATE settings SET value = 'ABC' WHERE key = 'quote_prefix'", []).unwrap();
+        assert_eq!(next_number(&conn, "2026-10-10").unwrap(), "26-ABC-0001");
     }
 
     #[test]
