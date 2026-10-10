@@ -16,6 +16,7 @@ const nav = [
   { to: "/produits", label: "Produits", icon: "pi pi-box" },
   { to: "/clients", label: "Clients", icon: "pi pi-users" },
   { to: "/listes", label: "Listes de prix", icon: "pi pi-list" },
+  { to: "/statistiques", label: "Statistiques", icon: "pi pi-chart-bar" },
   // Documentation technique (ex-PDF Finder) : à part, un peu plus bas.
   { to: "/documentation", label: "Documentation", icon: "pi pi-book", separated: true },
 ];

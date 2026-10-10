@@ -10,6 +10,7 @@ export const router = createRouter({
     { path: "/produits", component: () => import("./views/ProductsView.vue") },
     { path: "/clients", component: () => import("./views/ClientsView.vue") },
     { path: "/listes", component: () => import("./views/PriceListsView.vue") },
+    { path: "/statistiques", component: () => import("./views/StatsView.vue") },
     { path: "/documentation", component: () => import("./views/DocumentationView.vue") },
     { path: "/reglages", redirect: "/reglages/import" },
     { path: "/reglages/:section", component: () => import("./views/SettingsView.vue"), props: true },

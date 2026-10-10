@@ -290,6 +290,14 @@ pub fn get_price_list_items(state: State<AppState>, code: String) -> CmdResult<V
     )
 }
 
+// ---------- Statistiques ----------
+
+/// Statistiques des devis d'une année (`"2026"`), ou de toute la base si `year` est absent.
+#[tauri::command]
+pub fn quote_stats(state: State<AppState>, year: Option<String>) -> CmdResult<crate::stats::Stats> {
+    crate::stats::quote_stats(&state.conn(), year.as_deref())
+}
+
 // ---------- Sauvegarde ----------
 
 #[derive(Serialize)]

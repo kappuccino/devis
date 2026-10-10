@@ -58,6 +58,20 @@ export interface PriceListItem {
   family: Family | null;
 }
 
+/** Statistiques des devis (montants HT après remise globale, frais compris ; options exclues). */
+export interface QuoteStats {
+  years: string[];
+  count: number;
+  total: number;
+  clients: number;
+  /** month : « AAAA-MM ». */
+  by_month: { month: string; count: number; total: number }[];
+  /** code vide : client ponctuel (ou commercial). */
+  top_clients: { label: string; code: string; count: number; total: number }[];
+  by_sales_rep: { label: string; code: string; count: number; total: number }[];
+  top_products: { product_ref: string; designation: string; quantity: number; total: number; quotes: number }[];
+}
+
 /** Copie de la base des devis (dossier de sauvegarde). */
 export interface BackupFile {
   path: string;
@@ -209,6 +223,8 @@ export const api = {
 
   setClientPriceList: (clientCode: string, priceListCode: string, attached: boolean) =>
     invoke<void>("set_client_price_list", { clientCode, priceListCode, attached }),
+  /** Statistiques d'une année (« 2026 ») ou de toute la base (null). */
+  quoteStats: (year: string | null) => invoke<QuoteStats>("quote_stats", { year }),
   backupInfo: () => invoke<BackupInfo>("backup_info"),
   backupNow: () => invoke<string>("backup_now"),
   /** Renvoie le chemin de la copie de sécurité de la base remplacée. */

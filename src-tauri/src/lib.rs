@@ -4,6 +4,7 @@ mod db;
 mod docs;
 mod import;
 mod pricing;
+mod stats;
 mod xlsx_export;
 
 use rusqlite::Connection;
@@ -76,6 +77,7 @@ pub fn run() {
             commands::update_client,
             commands::set_client_price_list,
             commands::export_price_list,
+            commands::quote_stats,
             commands::backup_info,
             commands::backup_now,
             commands::restore_backup,

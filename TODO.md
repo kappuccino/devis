@@ -101,8 +101,11 @@
   - Modifier une liste de prix dans l'appli (produits, prix).
   - [x] Export d'une liste de prix vers Excel (écran Clients, gabarit choisi dans les Réglages).
 
-- [ ] Écran « Statistiques »
-  - À préciser : par exemple nombre et montant des devis par période, par client, par commercial.
+- [x] Écran « Statistiques » (par année : chiffres clés, devis par mois, meilleurs clients,
+  commerciaux, produits les plus chiffrés)
 
 - [x] Barre latérale : icône pour la replier / déployer comme sur claude.ai
   - Remplacer le chevron actuel ; deux états (ouverte / fermée) à voir ensemble.
+
+- [ ] Versions d'un devis
+  - Pouvoir faire une nouvelle version d'un devis (à préciser ensemble le moment venu).
