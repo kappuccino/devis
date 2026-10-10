@@ -61,8 +61,8 @@ onMounted(load);
       :value="filtered"
       :loading="loading"
       paginator
-      :rows="500"
-      :rows-per-page-options="[50, 100, 250, 500]"
+      :rows="200"
+      :rows-per-page-options="[50, 100, 200, 500]"
       size="small"
       striped-rows
       selection-mode="single"
