@@ -421,6 +421,44 @@ async function searchProducts(e: AutoCompleteCompleteEvent, line: EditLine) {
   }
 }
 
+/** Colonne ENEDIS : mêmes propositions que la référence, limitées aux produits qui ont un code ENEDIS. */
+const enedisSuggestions = ref<ProductHit[]>([]);
+const isStaleEnedis = (line: EditLine) =>
+  line.pendingRef != null || document.activeElement?.id !== `enedis-${line.key}`;
+async function searchEnedis(e: AutoCompleteCompleteEvent, line: EditLine) {
+  if (isStaleEnedis(line)) {
+    enedisSuggestions.value = [];
+    return;
+  }
+  try {
+    const hits = (await api.searchProducts(e.query, searchLists.value)).filter((h) => h.enedis_code);
+    enedisSuggestions.value = isStaleEnedis(line) ? [] : hits;
+  } catch {
+    enedisSuggestions.value = [];
+  }
+}
+
+/**
+ * Tab juste après avoir tapé une référence ou un code ENEDIS : on valide la ligne et on passe
+ * à sa quantité (au lieu de descendre la colonne, voir gridNav). Maj+Tab garde l'ordre normal.
+ */
+async function validateAndGoToQuantity(line: EditLine, field: "ref" | "enedis", e: KeyboardEvent) {
+  if (e.shiftKey) return;
+  const value = field === "ref" ? line.product_ref.trim() : (line.enedis_code ?? "").trim();
+  const known = field === "ref" ? line.resolvedRef : line.resolvedRef != null ? line.resolvedEnedis : null;
+  if (!value || value === known) return;
+  e.preventDefault();
+  if (field === "enedis") line.product_ref = value;
+  await resolve(line, false, field);
+  if (line.error) return;
+  await nextTick();
+  const qty = document.getElementById(`qty-${line.key}`);
+  if (qty instanceof HTMLInputElement) {
+    qty.focus();
+    qty.select();
+  }
+}
+
 /** La dernière ligne est toujours vide : on y place le curseur pour enchaîner la saisie. */
 /** `field` : on reste dans la colonne utilisée pour saisir (référence ou code ENEDIS). */
 async function focusNewLine(field: "ref" | "enedis" = "ref") {
@@ -1556,18 +1594,33 @@ onMounted(async () => {
                 />
               </td>
               <td>
-                <InputText
-                  :id="`enedis-${line.key}`"
+                <AutoComplete
                   :model-value="line.enedis_code ?? ''"
-                  autocomplete="off"
-                  placeholder="Code…"
+                  :input-id="`enedis-${line.key}`"
+                  :suggestions="enedisSuggestions"
+                  option-label="enedis_code"
+                  :delay="200"
+                  :min-length="2"
+                  :show-empty-message="false"
                   fluid
                   size="small"
-                  class="mono enedis-input"
-                  @update:model-value="(v: string | undefined) => (line.enedis_code = v ?? '')"
+                  placeholder="Code…"
+                  input-class="mono enedis-input"
+                  @update:model-value="(v: string | ProductHit) => (line.enedis_code = typeof v === 'string' ? v : (v.enedis_code ?? ''))"
+                  @complete="searchEnedis($event, line)"
+                  @option-select="commitEnedis(line, true)"
                   @keydown.enter="commitEnedis(line, true)"
+                  @keydown.tab="validateAndGoToQuantity(line, 'enedis', $event)"
                   @blur="commitEnedis(line, false)"
-                />
+                >
+                  <template #option="{ option }">
+                    <div class="opt">
+                      <span class="mono">{{ option.enedis_code }}</span>
+                      <span class="mono muted">{{ option.ref }}</span>
+                      <span class="muted">{{ option.designation }}</span>
+                    </div>
+                  </template>
+                </AutoComplete>
               </td>
               <td>
                 <AutoComplete
@@ -1587,6 +1640,7 @@ onMounted(async () => {
                   @option-select="commitRef(line)"
                   @blur="onRefBlur(line)"
                   @keydown.enter="commitRef(line)"
+                  @keydown.tab="validateAndGoToQuantity(line, 'ref', $event)"
                 >
                   <template #option="{ option }">
                     <div class="opt">
