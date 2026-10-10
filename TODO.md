@@ -75,7 +75,7 @@
     prenne la suite des devis déjà faits hors de l'appli (ex. si le dernier est 26-JMOS-0140,
     le prochain devis de l'appli est 26-JMOS-0141).
 
-- [ ] Détail d'une liste de prix dans le devis (tiroir latéral)
+- [x] Détail d'une liste de prix dans le devis (tiroir latéral)
   - Clic sur le code d'une liste de prix (partie Client du devis) : ouvre un tiroir sur le côté
     avec tous les produits de la liste, et une recherche.
   - Liste forcée (favorites) : un bouton à côté du menu ouvre le même tiroir pour cette liste.

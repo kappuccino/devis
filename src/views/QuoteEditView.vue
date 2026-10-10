@@ -23,6 +23,7 @@ import {
 import { errorMessage, formatEuro, formatUnitPrice, MOD, round2, todayIso } from "../format";
 import { exportQuotePdf } from "../composables/usePdf";
 import QuoteDocsDialog from "../components/docs/QuoteDocsDialog.vue";
+import PriceListDrawer from "../components/PriceListDrawer.vue";
 import { readDraft, removeDraft, writeDraft, type QuoteDraft } from "../drafts";
 import { useConfirm } from "primevue/useconfirm";
 import { useLineClipboard } from "../composables/useLineClipboard";
@@ -327,6 +328,10 @@ async function applyEphemeral() {
   priceLists.value = list ? [list] : [];
   await repriceLines();
 }
+
+/** Liste de prix affichée dans le tiroir latéral (null : fermé). */
+const drawerList = ref<string | null>(null);
+const openPriceList = (code: string) => (drawerList.value = code);
 
 /** Retire le client du devis (conditions et contact compris) ; les prix sont recalculés. */
 async function clearClient() {
@@ -1239,6 +1244,7 @@ onMounted(async () => {
       />
     </div>
     <QuoteDocsDialog v-model:visible="docsDialogVisible" :quote="docsDialogQuote" />
+    <PriceListDrawer v-model:code="drawerList" />
 
     <div class="card head">
       <div class="field client-field">
@@ -1369,7 +1375,16 @@ onMounted(async () => {
           <div class="field">
             <label>Listes de prix</label>
             <div v-if="clientCode" class="cd-inline">
-              <Tag v-for="l in priceLists" :key="l" :value="l" severity="secondary" />
+              <button
+                v-for="l in priceLists"
+                :key="l"
+                v-tooltip.bottom="'Voir les produits de cette liste'"
+                type="button"
+                class="list-link"
+                @click="openPriceList(l)"
+              >
+                <Tag :value="l" severity="secondary" />
+              </button>
               <span v-if="!priceLists.length" class="muted">aucune</span>
             </div>
             <Select
@@ -1384,6 +1399,17 @@ onMounted(async () => {
               size="small"
               class="list-select"
               :virtual-scroller-options="{ itemSize: 36 }"
+            />
+            <Button
+              v-if="!clientCode && ephemeralList"
+              v-tooltip.bottom="'Voir les produits de cette liste'"
+              icon="pi pi-list"
+              text
+              rounded
+              size="small"
+              severity="secondary"
+              aria-label="Voir les produits de la liste"
+              @click="openPriceList(ephemeralList)"
             />
           </div>
           <div class="field">
@@ -1400,6 +1426,17 @@ onMounted(async () => {
               size="small"
               class="list-select"
               @change="onForcedListChange"
+            />
+            <Button
+              v-tooltip.bottom="'Voir les produits de la liste forcée'"
+              icon="pi pi-list"
+              text
+              rounded
+              size="small"
+              severity="secondary"
+              :disabled="!forcedList"
+              aria-label="Voir les produits de la liste forcée"
+              @click="forcedList && openPriceList(forcedList)"
             />
           </div>
         </div>
@@ -1986,6 +2023,19 @@ onMounted(async () => {
 
 .sales-rep {
   min-width: 200px;
+}
+
+/* Code de liste de prix cliquable : ouvre le tiroir des produits. */
+.list-link {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.list-link:hover :deep(.p-tag) {
+  background: color-mix(in srgb, var(--app-accent) 14%, transparent);
+  color: var(--app-accent);
 }
 
 .list-select {
