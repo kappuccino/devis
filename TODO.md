@@ -88,7 +88,8 @@
     liste de prix, et de quoi en rattacher d'autres.
 
 - [ ] Sécurité
-  - Désactiver les outils de développement (devtools) dans la version compilée.
+  - [x] Désactiver les outils de développement (devtools) dans la version compilée
+    (fait : absents par défaut, la CI échoue si la fonction « devtools » de Tauri est activée).
   - Audit de sécurité de l'appli.
 
 - [ ] Sauvegarde des données

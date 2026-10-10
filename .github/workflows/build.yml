@@ -38,6 +38,15 @@ jobs:
       - name: Tests Rust
         working-directory: src-tauri
         run: cargo test
+      # Sécurité : outils de développement (inspecteur) absents de la version compilée.
+      # Tauri ne les inclut qu'en mode dev, sauf si la fonction « devtools » est activée.
+      - name: Pas de devtools en version compilée
+        working-directory: src-tauri
+        run: |
+          if cargo tree -e features -i tauri | grep -F 'feature "devtools"'; then
+            echo "::error::La fonction devtools de Tauri est activée : l'inspecteur serait disponible dans l'appli livrée."
+            exit 1
+          fi
 
   # Installeurs Windows seulement : la version Mac est construite en local (voir README).
   build:
