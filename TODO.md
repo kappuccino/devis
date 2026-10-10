@@ -80,7 +80,7 @@
     avec tous les produits de la liste, et une recherche.
   - Liste forcée (favorites) : un bouton à côté du menu ouvre le même tiroir pour cette liste.
 
-- [ ] Listes Produits et Clients : 500 éléments par page par défaut
+- [x] Listes Produits et Clients : 500 éléments par page par défaut
 
 - [ ] Listes de prix : clients rattachés dans un tiroir
   - Au-delà de 5 clients rattachés (la zone défile sans fin aujourd'hui) : bouton

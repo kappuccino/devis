@@ -48,8 +48,8 @@ onMounted(async () => {
       :value="filtered"
       :loading="loading"
       paginator
-      :rows="50"
-      :rows-per-page-options="[50, 100, 250]"
+      :rows="500"
+      :rows-per-page-options="[50, 100, 250, 500]"
       size="small"
       striped-rows
       sort-mode="single"
