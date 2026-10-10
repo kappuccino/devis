@@ -794,7 +794,7 @@ function onPaste(e: ClipboardEvent) {
   pasteLines(lineAt(target));
 }
 
-/** Lignes du devis en plein écran (toute la fenêtre), pour les gros devis. */
+/** Lignes du devis en plein écran (toute la zone de contenu, menu visible), pour les gros devis. */
 const fullscreen = ref(false);
 
 function onKeydown(e: KeyboardEvent) {
@@ -1242,6 +1242,8 @@ async function loadSaved(id: string | undefined) {
 watch(
   () => props.id,
   (id) => {
+    // Autre devis (ou nouveau) : on sort du plein écran.
+    fullscreen.value = false;
     if (id !== (quoteId.value == null ? undefined : String(quoteId.value))) load(id);
   },
 );
@@ -2201,10 +2203,12 @@ onMounted(async () => {
   width: 100%;
 }
 
-/* Plein écran : la carte des lignes couvre toute la fenêtre, en-tête du tableau figé en haut. */
+/* Plein écran : la carte des lignes couvre toute la zone de contenu (la barre latérale reste
+   visible), en-tête du tableau figé en haut. */
 .lines-fullscreen {
   position: fixed;
-  inset: 0;
+  inset: 0 0 0 var(--sidebar-width, 0);
+  transition: left 0.18s ease;
   z-index: 900;
   overflow: auto;
   padding-top: 0;

@@ -133,6 +133,12 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 .layout {
   display: flex;
   height: 100vh;
+  /* Largeur de la barre latérale, pour les vues en plein écran qui la laissent visible. */
+  --sidebar-width: 220px;
+}
+
+.layout:has(.sidebar.collapsed) {
+  --sidebar-width: 58px;
 }
 
 /* Barre latérale sombre : le logo Cahors (texte blanc) y est lisible. */
