@@ -93,6 +93,13 @@ const favorites = computed({
 type Field = { key: string; label: string; multiline?: boolean; placeholder?: string };
 /** Champs imprimés sur le PDF : en-tête société, puis informations du devis. */
 const companyFields: Field[] = [{ key: "company_name", label: "Raison sociale" }];
+/** Rédacteur du devis : imprimé sous le logo (coordonnées de celui qui fait le devis). */
+const authorFields: Field[] = [
+  { key: "author_name", label: "Nom et prénom" },
+  { key: "author_address", label: "Adresse", multiline: true },
+  { key: "author_phone", label: "Téléphone" },
+  { key: "author_email", label: "Email" },
+];
 const quoteFields: Field[] = [
   { key: "quote_prefix", label: "Préfixe des n° de devis", placeholder: "JMOS → 26-JMOS-0001" },
   { key: "quote_validity", label: "Validité", placeholder: "ex. 30 jours" },
@@ -206,7 +213,7 @@ async function saveSettings() {
   saving.value = true;
   try {
     // Seulement les champs du PDF : les favoris sont enregistrés à part, dès leur choix.
-    const keys = [...companyFields, ...quoteFields, ...feeFields]
+    const keys = [...companyFields, ...authorFields, ...quoteFields, ...feeFields]
       .map((f) => f.key)
       .concat("company_logo", CGV_PDF_KEY, SALES_REPS_KEY, LAST_NUMBER_KEY, PRICE_LIST_TEMPLATE_KEY);
     settings.value[SALES_REPS_KEY] = salesRepSetting(salesReps.value);
@@ -500,6 +507,18 @@ onMounted(async () => {
                 @click="settings.company_logo = ''"
               />
             </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Rédacteur du devis</h2>
+          <p class="muted">Vos coordonnées, imprimées sous le logo (le client est à part, dans un cadre).</p>
+          <div class="form-grid">
+            <template v-for="f in authorFields" :key="f.key">
+              <label :for="f.key" :class="{ 'label-top': f.multiline }">{{ f.label }}</label>
+              <Textarea v-if="f.multiline" :id="f.key" v-model="settings[f.key]" rows="3" auto-resize />
+              <InputText v-else :id="f.key" v-model="settings[f.key]" :placeholder="f.placeholder" />
+            </template>
           </div>
         </section>
 

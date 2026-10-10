@@ -80,7 +80,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "PDF et PDF + Docs",
-        text: "« PDF » enregistre le devis puis génère le PDF (logo, coordonnées, conditions, CGV en dernière page si choisies dans les Réglages) et l'ouvre. « PDF + Docs » ajoute à la suite la documentation technique des produits du devis (pages trouvées dans la documentation et fichiers ajoutés à la main), avec un sommaire.",
+        text: "« PDF » enregistre le devis puis génère le PDF (logo et coordonnées du rédacteur en haut, client dans un cadre gris en dessous, conditions générales de vente en bas du devis — identiques pour tous, intégrées à l'appli —, siège et adresse des commandes en pied de page, version complète des conditions en dernière page si choisie dans les Réglages) et l'ouvre. « PDF + Docs » ajoute à la suite la documentation technique des produits du devis (pages trouvées dans la documentation et fichiers ajoutés à la main), avec un sommaire.",
       },
       {
         title: "Versions d'un devis",
@@ -202,7 +202,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Config PDF",
-        text: "Société et logo, siège, agence, conditions de vente, CGV complètes (PDF ajouté en dernière page), préfixe et dernier numéro de devis, commerciaux, gabarit de l'export Excel, frais automatiques (franco de port, minimum de facturation).",
+        text: "Société et logo, rédacteur du devis (nom, adresse, téléphone, email, imprimés sous le logo), version complète des conditions générales de vente (PDF ajouté en dernière page ; le texte en bas du devis est fixe), préfixe et dernier numéro de devis, commerciaux, gabarit de l'export Excel, frais automatiques (franco de port, minimum de facturation).",
       },
       {
         title: "Sauvegarde",
