@@ -10,6 +10,7 @@ import { useToast } from "primevue/usetoast";
 import Dialog from "primevue/dialog";
 import InputNumber from "primevue/inputnumber";
 import Select from "primevue/select";
+import Checkbox from "primevue/checkbox";
 import {
   api,
   type Client,
@@ -929,6 +930,19 @@ async function save(): Promise<Quote | null> {
   }
 }
 
+/** Suivi « Affaire obtenue » (devis devenu commande / facture) : date du marquage. */
+const wonAt = ref<string | null>(null);
+async function setWon(won: boolean) {
+  if (quoteId.value == null) return;
+  try {
+    wonAt.value = await api.setQuoteWon(quoteId.value, won);
+    // Une seule version obtenue : les autres sont décochées.
+    for (const v of versions.value) v.won_at = v.id === quoteId.value ? wonAt.value : won ? null : v.won_at;
+  } catch (e) {
+    toast.add({ severity: "error", summary: "Affaire obtenue", detail: errorMessage(e) });
+  }
+}
+
 /** Nouvelle version du devis (enregistré d'abord s'il a des modifications), puis ouverture. */
 const creatingVersion = ref(false);
 async function newVersion() {
@@ -1177,6 +1191,7 @@ async function loadSaved(id: string | undefined) {
       quoteId.value = null;
       number.value = null;
       versions.value = [];
+      wonAt.value = null;
       date.value = todayIso();
       notes.value = "";
       globalDiscount.value = 0;
@@ -1197,6 +1212,7 @@ async function loadSaved(id: string | undefined) {
     quoteId.value = q.id;
     number.value = q.number;
     versions.value = q.versions ?? [];
+    wonAt.value = q.won_at ?? null;
     date.value = q.date;
     notes.value = q.notes ?? "";
     globalDiscount.value = q.discount_pct;
@@ -1267,6 +1283,15 @@ onMounted(async () => {
           V{{ v.version }}<i v-if="v.won_at" class="pi pi-check" />
         </RouterLink>
       </nav>
+      <label
+        v-if="quoteId != null"
+        v-tooltip.bottom="wonAt ? `Cochée le ${formatDate(wonAt)}` : 'Le devis est devenu une commande / facture'"
+        class="won-toggle"
+        :class="{ on: wonAt }"
+      >
+        <Checkbox :model-value="!!wonAt" binary @update:model-value="setWon" />
+        Affaire obtenue
+      </label>
       <span
         v-if="hasDraft"
         v-tooltip.bottom="'Gardé sur cet ordinateur ; restauré si vous revenez sur ce devis'"
@@ -1975,6 +2000,26 @@ onMounted(async () => {
 <style scoped>
 .draft-badge {
   font-size: 0.9em;
+}
+
+.won-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 3px 10px 3px 6px;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: var(--app-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.won-toggle.on {
+  border-color: color-mix(in srgb, var(--app-success) 45%, transparent);
+  background: color-mix(in srgb, var(--app-success) 10%, transparent);
+  color: var(--app-success);
+  font-weight: 600;
 }
 
 .versions {

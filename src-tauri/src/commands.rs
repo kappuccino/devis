@@ -552,6 +552,9 @@ pub struct Quote {
     /// Toutes les versions du devis, de la première à la dernière (lecture seule).
     #[serde(default, skip_deserializing)]
     pub versions: Vec<QuoteVersion>,
+    /// Affaire obtenue : date du marquage, None sinon (lecture seule : modifié par `set_quote_won`).
+    #[serde(default, skip_deserializing)]
+    pub won_at: Option<String>,
 }
 
 fn first_version() -> i64 {
@@ -594,7 +597,7 @@ fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
         .query_row(
             "SELECT id, number, client_code, client_name, date, notes, total_ht, discount_cfa, discount_cfo, price_lists,
                     discount_pct, forced_price_list, contact_name, contact_email, contact_phone, sales_rep,
-                    version, version_of
+                    version, version_of, won_at
              FROM quotes WHERE id = ?1",
             [id],
             |r| {
@@ -625,6 +628,7 @@ fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
                     lines: Vec::new(),
                     version: r.get(16)?,
                     version_of: r.get(17)?,
+                    won_at: r.get(18)?,
                     versions: Vec::new(),
                 })
             },

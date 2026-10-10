@@ -236,6 +236,8 @@ export interface Quote extends PricingContext, QuoteContact {
   version_of?: number | null;
   /** Toutes les versions du devis (lecture seule). */
   versions?: QuoteVersion[];
+  /** Affaire obtenue : date du marquage (lecture seule, voir setQuoteWon). */
+  won_at?: string | null;
 }
 
 /** Une version d'un devis. */
