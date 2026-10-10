@@ -1385,8 +1385,8 @@ onMounted(async () => {
       <table class="lines">
         <thead>
           <tr>
-            <th style="width: 34px"></th>
-            <th style="width: 28px" class="select-cell">
+            <th style="width: 26px"></th>
+            <th style="width: 26px" class="select-cell">
               <input
                 type="checkbox"
                 :checked="allSelected"
@@ -1395,23 +1395,23 @@ onMounted(async () => {
                 @click="toggleAll"
               />
             </th>
-            <th style="width: 90px">ENEDIS</th>
-            <th style="width: 190px">Référence</th>
+            <th style="width: 78px">ENEDIS</th>
+            <th style="width: 100px">Référence</th>
             <th>Désignation</th>
-            <th style="width: 90px" class="num">Qté</th>
-            <th style="width: 95px" class="num">Prix public</th>
-            <th v-tooltip.top="'Prix public − remise CFA / CFO du devis'" style="width: 95px" class="num">Prix remisé</th>
-            <th v-tooltip.top="'Prix négocié de la liste de prix'" style="width: 95px" class="num">LPN</th>
-            <th style="width: 120px" class="num">PU HT (€)</th>
-            <th v-tooltip.top="'Remise supplémentaire sur le prix de la ligne'" style="width: 90px" class="num">
+            <th style="width: 56px" class="num">Qté</th>
+            <th style="width: 76px" class="num">Prix public</th>
+            <th v-tooltip.top="'Prix public − remise CFA / CFO du devis'" style="width: 76px" class="num">Prix remisé</th>
+            <th v-tooltip.top="'Prix négocié de la liste de prix'" style="width: 76px" class="num">LPN</th>
+            <th style="width: 80px" class="num">PU HT</th>
+            <th v-tooltip.top="'Remise supplémentaire sur le prix de la ligne'" style="width: 64px" class="num">
               Remise sup. (%)
             </th>
             <th style="width: 110px" class="num">Total HT</th>
             <th v-tooltip.top="'Ligne en option : hors total HT, comptée dans « Total options »'" style="width: 54px" class="select-cell">
               Option
             </th>
-            <th v-tooltip.top="'Non imprimé sur le devis'" style="width: 100px" class="num seuil">Prix seuil</th>
-            <th style="width: 44px"></th>
+            <th v-tooltip.top="'Non imprimé sur le devis'" style="width: 70px" class="num seuil">Prix seuil</th>
+            <th style="width: 30px"></th>
           </tr>
         </thead>
         <tbody ref="tbodyEl">
@@ -1458,7 +1458,7 @@ onMounted(async () => {
                 </td>
                 <td></td>
               </template>
-              <!-- Titre : sépare le devis en paragraphes (gras, rouge, plus grand). -->
+              <!-- Titre : sépare le devis en paragraphes (gras, rouge ; plus grand sur le PDF). -->
               <template v-else-if="line.kind === 'title'">
                 <td colspan="11">
                   <InputText
@@ -1601,17 +1601,20 @@ onMounted(async () => {
                     : ''
                 "
               >
-                <InputText
-                  :model-value="line.priceText"
-                  inputmode="decimal"
-                  autocomplete="off"
-                  fluid
-                  size="small"
-                  class="num"
-                  :invalid="isBelowThreshold(line)"
-                  @update:model-value="(v: string | undefined) => onPriceInput(line, v ?? '')"
-                  @blur="onPriceBlur(line)"
-                />
+                <div class="euro-input">
+                  <InputText
+                    :model-value="line.priceText"
+                    inputmode="decimal"
+                    autocomplete="off"
+                    fluid
+                    size="small"
+                    class="num"
+                    :invalid="isBelowThreshold(line)"
+                    @update:model-value="(v: string | undefined) => onPriceInput(line, v ?? '')"
+                    @blur="onPriceBlur(line)"
+                  />
+                  <span v-if="line.product_ref">€</span>
+                </div>
               </td>
               <td>
                 <InputText
@@ -1930,52 +1933,141 @@ onMounted(async () => {
   width: 100%;
 }
 
+/* Lignes du devis : rendu « tableur » (quadrillage, champs sans bordure, lignes basses)
+   pour voir une vingtaine d'articles d'un coup. */
 .lines {
   width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
 }
 
 .lines th {
   text-align: left;
+  vertical-align: bottom;
   font-weight: 600;
+  font-size: 0.75rem;
+  line-height: 1.2;
   color: var(--app-muted);
-  padding: 0 6px 8px;
-  border-bottom: 1px solid var(--app-border);
+  padding: 6px;
+  background: color-mix(in srgb, var(--app-muted) 8%, var(--app-surface));
+  border: 1px solid var(--app-border);
 }
 
 .lines th.num {
   text-align: right;
 }
 
-/* Lignes serrées : une vingtaine d'articles visibles d'un coup dans la fenêtre. */
 .lines td {
-  padding: 1px 4px;
-  vertical-align: top;
-  border-bottom: 1px solid var(--app-border);
-  font-size: 0.8125rem;
+  height: 26px;
+  padding: 0 6px;
+  vertical-align: middle;
+  border: 1px solid var(--app-border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.lines td.num {
-  padding-top: 5px;
+/* Cellule qui contient un champ : le champ occupe toute la cellule. */
+.lines td:has(> .p-inputtext),
+.lines td:has(> .euro-input),
+.lines td:has(> .p-textarea),
+.lines td:has(> .p-autocomplete) {
+  padding: 0;
+}
+
+/* Montant saisi : le symbole € suit le champ, comme dans les autres colonnes de prix. */
+.euro-input {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding-right: 6px;
+}
+
+.euro-input :deep(.p-inputtext) {
+  flex: 1;
+  min-width: 0;
+}
+
+.lines .euro-input :deep(.p-inputtext) {
+  padding-right: 0;
+}
+
+/* Dans les totaux (champ encadré) : le € est dans le champ, pour rester aligné sur les montants. */
+.totals .euro-input {
+  position: relative;
+  padding-right: 0;
+}
+
+.totals .euro-input :deep(.p-inputtext) {
+  padding-right: 1.5rem;
+}
+
+.totals .euro-input span {
+  position: absolute;
+  right: 0.6rem;
+  pointer-events: none;
+}
+
+/* Poignée et cases à cocher : centrées, sans « … » de débordement. */
+.lines td.drag-cell,
+.lines td.select-cell {
+  padding: 0;
+  text-overflow: clip;
+}
+
+/* Texte libre : zone multi-ligne, même apparence que les champs. */
+.lines tbody :deep(.p-textarea) {
+  display: block;
+  width: 100%;
+  min-height: 26px;
+  padding: 4px 6px;
+  font-size: 0.8125rem;
+  line-height: 18px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  white-space: pre-wrap;
+}
+
+.lines tbody :deep(.p-textarea:enabled:focus) {
+  box-shadow: inset 0 0 0 2px var(--app-accent);
+  background: var(--app-surface);
 }
 
 .lines tbody :deep(.p-inputtext) {
-  padding: 2px 6px;
+  width: 100%;
+  height: 26px;
+  padding: 0 6px;
   font-size: 0.8125rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.lines tbody :deep(.p-inputtext:enabled:focus) {
+  box-shadow: inset 0 0 0 2px var(--app-accent);
+  background: var(--app-surface);
+}
+
+.lines tbody :deep(.p-inputtext.p-invalid) {
+  box-shadow: inset 0 0 0 1px var(--app-accent);
+  background: color-mix(in srgb, var(--app-accent) 6%, transparent);
+}
+
+.lines tbody :deep(.p-inputtext::placeholder) {
+  color: color-mix(in srgb, var(--app-muted) 60%, transparent);
 }
 
 .lines tbody :deep(.p-button.p-button-icon-only) {
-  width: 1.6rem;
-  height: 1.6rem;
+  width: 22px;
+  height: 22px;
 }
 
 .drag-cell {
   text-align: center;
-}
-
-.lines td.drag-cell {
-  padding-top: 5px;
 }
 
 /* Toute la cellule sert de poignée (l'icône seule était trop petite à attraper). */
@@ -2022,10 +2114,6 @@ tr:hover .drag-handle i {
   box-shadow: inset 3px 0 0 var(--app-muted);
 }
 
-.options-total td {
-  padding-top: 0.75rem;
-}
-
 .lines tr.dragging td {
   opacity: 0.35;
 }
@@ -2054,10 +2142,9 @@ tr:hover .drag-handle i {
   border-color: var(--app-border);
 }
 
-/* Titre : gras, rouge, plus grand (taille 12 sur le PDF). */
+/* Titre : gras, rouge, taille courante (taille 12 sur le PDF). */
 .lines .title-row :deep(.title-line) {
   font-weight: 700;
-  font-size: 1.1rem;
   color: var(--app-accent);
   border-color: transparent;
   background: transparent;
@@ -2069,9 +2156,7 @@ tr:hover .drag-handle i {
   border-color: var(--app-border);
 }
 
-.title-row td {
-  padding-top: 0.9rem;
-}
+
 
 .subtotal-row td {
   background: color-mix(in srgb, var(--app-accent) 9%, transparent);
@@ -2084,23 +2169,12 @@ tr:hover .drag-handle i {
   background: transparent;
 }
 
-.subtotal-amount {
+.lines td.subtotal-amount {
   font-weight: 700;
-  font-size: 1rem;
+  overflow: visible;
 }
 
-.fee-row td:not(:first-child) {
-  background: color-mix(in srgb, var(--app-muted) 6%, transparent);
-}
-
-.fee-row :deep(.fee-label) {
-  text-align: right;
-  font-weight: 600;
-  background: transparent;
-}
-
-.lines td.fee-hint {
-  padding-top: 5px;
+.fee-hint {
   font-size: 0.85em;
 }
 
@@ -2115,8 +2189,9 @@ tr:hover .drag-handle i {
   font-size: 0.92em;
 }
 
-th.seuil {
-  font-style: italic;
+/* Jamais en italique, même sur une ligne en option. */
+.lines tr.option-row td.seuil {
+  font-style: normal;
 }
 
 .selection-bar {
@@ -2139,10 +2214,6 @@ th.seuil {
 
 .select-cell {
   text-align: center;
-}
-
-.lines td.select-cell {
-  padding-top: 3px;
 }
 
 .select-cell input {
