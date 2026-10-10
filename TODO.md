@@ -109,3 +109,9 @@
 
 - [ ] Versions d'un devis
   - Pouvoir faire une nouvelle version d'un devis (à préciser ensemble le moment venu).
+
+- [ ] Produits : évolution du chiffrage d'une référence
+  - Depuis la liste des produits, une option pour voir l'évolution du prix devisé de cette
+    référence dans tous les devis (date, devis, client, quantité, prix unitaire…).
+  - Filtre : restreindre à un ou plusieurs clients.
+  - Écran à part (pas une fenêtre modale : pas assez lisible).
