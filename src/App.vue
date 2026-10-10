@@ -69,7 +69,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
           :aria-label="collapsed ? 'Déplier la barre latérale' : 'Replier la barre latérale'"
           @click="toggle"
         >
-          <i :class="collapsed ? 'pi pi-angle-double-right' : 'pi pi-angle-double-left'" />
+          <!-- Icône « panneau latéral » (comme sur claude.ai) : flèche vers la gauche pour replier,
+               vers la droite pour déplier. -->
+          <svg class="panel-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2.5" />
+            <path d="M9 3v18" />
+            <path v-if="collapsed" d="m14 9 3 3-3 3" />
+            <path v-else d="m16 15-3-3 3-3" />
+          </svg>
         </button>
       </div>
 
@@ -139,6 +146,16 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
   gap: 2px;
   overflow: hidden;
   transition: width 0.18s ease;
+}
+
+.panel-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .sidebar.collapsed {

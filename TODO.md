@@ -64,7 +64,7 @@
 - [x] Réglages : rubrique « Interface »
   - Choix du thème : clair, sombre, ou automatique (suit le système).
 
-- [ ] Mises à jour simplifiées
+- [x] Mises à jour simplifiées (testé sur PC le 2026-10-10 : mise à jour proposée et installée)
   - Voir si l'appli peut se mettre à jour toute seule depuis les releases GitHub
     (module de mise à jour de Tauri : vérification au démarrage, téléchargement, redémarrage).
 
@@ -104,5 +104,5 @@
 - [ ] Écran « Statistiques »
   - À préciser : par exemple nombre et montant des devis par période, par client, par commercial.
 
-- [ ] Barre latérale : icône pour la replier / déployer comme sur claude.ai
+- [x] Barre latérale : icône pour la replier / déployer comme sur claude.ai
   - Remplacer le chevron actuel ; deux états (ouverte / fermée) à voir ensemble.
