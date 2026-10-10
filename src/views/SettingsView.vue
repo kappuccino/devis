@@ -20,6 +20,7 @@ import { getTheme, setTheme, type ThemeMode } from "../theme";
 import { getVersion } from "@tauri-apps/api/app";
 import { checkForUpdate, installUpdate, updater, updatesSupported } from "../updater";
 import { FEE_SETTINGS } from "../fees";
+import { salesRepList, salesRepSetting, SALES_REPS_KEY } from "../salesReps";
 import { AGENCY_KEY, agencyContact, CGV_PDF_KEY, HEAD_OFFICE } from "../composables/usePdf";
 import { FAVORITE_LISTS_KEY, favoriteLists } from "../favorites";
 import { errorMessage, formatNumber } from "../format";
@@ -114,6 +115,15 @@ watch(theme, (mode) => setTheme(mode));
 const appVersion = ref("");
 getVersion().then((v) => (appVersion.value = v)).catch(() => {});
 
+/** Commerciaux proposés sur les devis (menu « Commercial »). */
+const salesReps = ref<string[]>([]);
+const newSalesRep = ref("");
+function addSalesRep() {
+  const name = newSalesRep.value.trim();
+  if (name && !salesReps.value.includes(name)) salesReps.value.push(name);
+  newSalesRep.value = "";
+}
+
 /** CGV complètes : PDF ajouté en dernière page des devis. */
 async function chooseCgv() {
   const path = await open({ multiple: false, directory: false, title: "PDF des conditions générales de vente", filters: [{ name: "PDF", extensions: ["pdf"] }] });
@@ -182,7 +192,8 @@ async function saveSettings() {
     // Seulement les champs du PDF : les favoris sont enregistrés à part, dès leur choix.
     const keys = [...companyFields, ...quoteFields, ...feeFields]
       .map((f) => f.key)
-      .concat("company_logo", AGENCY_KEY, CONDITIONS_KEY, CGV_PDF_KEY);
+      .concat("company_logo", AGENCY_KEY, CONDITIONS_KEY, CGV_PDF_KEY, SALES_REPS_KEY);
+    settings.value[SALES_REPS_KEY] = salesRepSetting(salesReps.value);
     await api.saveSettings(Object.fromEntries(keys.map((k) => [k, settings.value[k] ?? ""])));
     toast.add({ severity: "success", summary: "Réglages enregistrés", life: 2000 });
   } catch (e) {
@@ -198,6 +209,7 @@ onMounted(async () => {
     // Conditions jamais renseignées : on part du texte actuel des conditions de vente.
     if (!(CONDITIONS_KEY in settings.value)) settings.value[CONDITIONS_KEY] = DEFAULT_CONDITIONS;
     settings.value[AGENCY_KEY] = agencyContact(settings.value);
+    salesReps.value = salesRepList(settings.value);
   } catch (e) {
     toast.add({ severity: "error", summary: "Chargement des réglages", detail: errorMessage(e) });
   }
@@ -484,6 +496,26 @@ onMounted(async () => {
               <Textarea v-if="f.multiline" :id="f.key" v-model="settings[f.key]" rows="3" auto-resize />
               <InputText v-else :id="f.key" v-model="settings[f.key]" :placeholder="f.placeholder" />
             </template>
+            <label for="new-sales-rep" class="label-top">Commerciaux</label>
+            <div class="sales-reps">
+              <div v-for="(name, i) in salesReps" :key="name" class="sales-rep">
+                <span>{{ name }}</span>
+                <Button
+                  v-tooltip.left="'Retirer de la liste (les devis existants gardent leur commercial)'"
+                  icon="pi pi-times"
+                  text
+                  rounded
+                  size="small"
+                  severity="secondary"
+                  @click="salesReps.splice(i, 1)"
+                />
+              </div>
+              <form class="sales-rep-add" @submit.prevent="addSalesRep">
+                <InputText id="new-sales-rep" v-model="newSalesRep" placeholder="Prénom Nom" size="small" />
+                <Button type="submit" label="Ajouter" icon="pi pi-plus" size="small" severity="secondary" :disabled="!newSalesRep.trim()" />
+              </form>
+              <small class="muted">Proposés dans le menu « Commercial » des devis.</small>
+            </div>
           </div>
         </section>
 
@@ -687,6 +719,31 @@ onMounted(async () => {
 
 .add-favorite {
   width: 100%;
+}
+
+.sales-reps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-width: 360px;
+}
+
+.sales-rep {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.15rem 0.25rem 0.15rem 0.75rem;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+}
+
+.sales-rep-add {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.sales-rep-add :deep(input) {
+  flex: 1;
 }
 
 .head-office {

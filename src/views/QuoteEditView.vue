@@ -38,6 +38,7 @@ import {
   type FeeKind,
 } from "../quoteLines";
 import { favoriteLists } from "../favorites";
+import { lastSalesRep, rememberSalesRep, salesRepList } from "../salesReps";
 import { autoFeeChanges, feeRulesFrom, type FeeRules } from "../fees";
 
 const props = defineProps<{ id?: string }>();
@@ -283,8 +284,8 @@ const contact = ref<QuoteContact>(emptyContact());
 async function applyClient(c: Client) {
   clientCode.value = c.code;
   clientName.value = c.name;
-  // Nouveau client : contact vide, commercial repris de la fiche client.
-  contact.value = { ...emptyContact(), sales_rep: c.sales_rep ?? "" };
+  // Nouveau client : contact vide ; le commercial choisi reste (le nom de la fiche client est incomplet).
+  contact.value = { ...emptyContact(), sales_rep: contact.value.sales_rep };
   discountCfa.value = c.discount_cfa;
   discountCfo.value = c.discount_cfo;
   priceLists.value = [...c.price_lists];
@@ -316,7 +317,7 @@ async function applyEphemeral() {
     return;
   }
   ephemeralVisible.value = false;
-  if (clientCode.value) contact.value = emptyContact();
+  if (clientCode.value) contact.value = { ...emptyContact(), sales_rep: contact.value.sales_rep };
   client.value = null;
   clientCode.value = null;
   clientName.value = name.trim();
@@ -325,6 +326,25 @@ async function applyEphemeral() {
   priceLists.value = list ? [list] : [];
   await repriceLines();
 }
+
+/** Retire le client du devis (conditions et contact compris) ; les prix sont recalculés. */
+async function clearClient() {
+  client.value = null;
+  clientCode.value = null;
+  clientName.value = "";
+  discountCfa.value = 0;
+  discountCfo.value = 0;
+  priceLists.value = [];
+  contact.value = { ...emptyContact(), sales_rep: contact.value.sales_rep };
+  await repriceLines();
+}
+
+// Commercial : choisi dans la liste des Réglages ; le dernier choisi est repris sur les nouveaux devis.
+const salesReps = ref<string[]>([]);
+const salesRepOptions = computed(() => {
+  const current = contact.value.sales_rep;
+  return current && !salesReps.value.includes(current) ? [...salesReps.value, current] : salesReps.value;
+});
 
 /** Liste de prix unique d'un client ponctuel, modifiable dans l'en-tête du devis. */
 const ephemeralList = computed({
@@ -958,7 +978,7 @@ function applyDraft(draft: QuoteDraft) {
     contact_name: draft.contact_name,
     contact_email: draft.contact_email,
     contact_phone: draft.contact_phone,
-    sales_rep: draft.sales_rep ?? known?.sales_rep ?? "",
+    sales_rep: draft.sales_rep ?? "",
   });
   const restored = draft.lines.map((l) => ({
     ...blankLine(),
@@ -1059,6 +1079,7 @@ async function loadSaved(id: string | undefined) {
         discount_cfo: 0,
         price_lists: [],
         forced_price_list: null,
+        sales_rep: lastSalesRep(),
       });
       lines.value = [blankLine()];
       feeLines.value = [];
@@ -1110,6 +1131,7 @@ onMounted(async () => {
     clients.value = list;
     allPriceLists.value = priceListRows;
     favorites.value = favoriteLists(settings);
+    salesReps.value = salesRepList(settings);
     feeRules.value = feeRulesFrom(settings);
   } catch (e) {
     toast.add({ severity: "error", summary: "Chargement des clients", detail: errorMessage(e) });
@@ -1146,7 +1168,6 @@ onMounted(async () => {
 
     <div class="card head">
       <div class="field client-field">
-        <label for="client">Client</label>
         <div class="client-picker">
           <AutoComplete
             v-model="client"
@@ -1180,83 +1201,6 @@ onMounted(async () => {
           />
         </div>
 
-        <!-- Conditions du devis : modifiables ici sans toucher à la fiche client. -->
-        <div v-if="hasClient" class="conditions">
-          <InputText
-            v-model="clientName"
-            v-tooltip.bottom="'Raison sociale imprimée sur le devis'"
-            size="small"
-            class="conditions-name"
-          />
-          <Tag v-if="clientCode" :value="`Client ${clientCode}`" severity="secondary" />
-          <Tag v-else value="Client ponctuel" severity="info" />
-          <label for="cfa">CFA</label>
-          <InputNumber
-            v-model="discountCfa"
-            input-id="cfa"
-            :min="0"
-            :max="100"
-            :max-fraction-digits="2"
-            suffix=" %"
-            size="small"
-            input-class="pct"
-            @update:model-value="repriceLines(true)"
-          />
-          <label for="cfo">CFO</label>
-          <InputNumber
-            v-model="discountCfo"
-            input-id="cfo"
-            :min="0"
-            :max="100"
-            :max-fraction-digits="2"
-            suffix=" %"
-            size="small"
-            input-class="pct"
-            @update:model-value="repriceLines(true)"
-          />
-          <template v-if="clientCode">
-            <Tag v-for="l in priceLists" :key="l" :value="l" severity="secondary" />
-            <span v-if="!priceLists.length" class="muted">aucune liste de prix</span>
-          </template>
-          <Select
-            v-else
-            v-model="ephemeralList"
-            :options="priceListOptions"
-            option-label="label"
-            option-value="code"
-            filter
-            show-clear
-            placeholder="Aucune liste de prix"
-            size="small"
-            class="list-select"
-            :virtual-scroller-options="{ itemSize: 36 }"
-          />
-          <label for="forced-list">Liste forcée</label>
-          <Select
-            v-model="forcedList"
-            input-id="forced-list"
-            :options="forcedOptions"
-            option-label="label"
-            option-value="code"
-            show-clear
-            :placeholder="forcedOptions.length ? 'Aucune' : 'Aucune favorite (Réglages)'"
-            :disabled="!forcedOptions.length"
-            size="small"
-            class="list-select"
-            @change="onForcedListChange"
-          />
-          <span class="muted hint">pour ce devis uniquement</span>
-        </div>
-        <!-- Contact chez le client et commercial : imprimés sur le PDF. -->
-        <div v-if="hasClient" class="conditions contact-row">
-          <label for="contact-name">Contact</label>
-          <InputText id="contact-name" v-model="contact.contact_name" placeholder="Nom du contact" size="small" />
-          <InputText v-model="contact.contact_email" placeholder="Email" size="small" type="email" class="contact-email" />
-          <InputText v-model="contact.contact_phone" placeholder="Téléphone" size="small" class="contact-phone" />
-          <label for="sales-rep">Commercial</label>
-          <InputText id="sales-rep" v-model="contact.sales_rep" placeholder="Commercial" size="small" />
-        </div>
-
         <Dialog v-model:visible="ephemeralVisible" modal header="Client ponctuel" :style="{ width: '480px' }">
           <p class="muted dialog-hint">Ce client n'est pas ajouté à la base : il n'existe que dans ce devis.</p>
           <form class="form-grid" @submit.prevent="applyEphemeral">
@@ -1286,8 +1230,135 @@ onMounted(async () => {
         </Dialog>
       </div>
       <div class="field">
-        <label for="date">Date</label>
-        <InputText id="date" v-model="date" type="date" />
+        <InputText id="date" v-model="date" v-tooltip.bottom="'Date du devis'" aria-label="Date du devis" type="date" />
+      </div>
+
+      <!-- Client du devis : raison sociale, conditions et contact, modifiables ici sans toucher à la fiche client. -->
+      <div v-if="hasClient" class="client-details">
+        <span class="cd-caption">Client</span>
+        <div class="cd-fields">
+          <InputText
+            v-model="clientName"
+            v-tooltip.bottom="'Raison sociale imprimée sur le devis'"
+            aria-label="Raison sociale"
+            placeholder="Raison sociale"
+            size="small"
+            class="cd-name"
+          />
+          <div class="field">
+            <div class="cd-inline">
+              <Tag v-if="clientCode" :value="`Code ${clientCode}`" severity="secondary" />
+              <Tag v-else value="Client ponctuel" severity="info" />
+              <Button
+                v-tooltip.bottom="'Retirer le client de ce devis (les prix sont recalculés sans remise)'"
+                label="Retirer le client"
+                icon="pi pi-user-minus"
+                severity="secondary"
+                text
+                size="small"
+                @click="clearClient"
+              />
+            </div>
+          </div>
+        </div>
+
+        <span class="cd-caption">Conditions</span>
+        <div class="cd-fields">
+          <div class="field">
+            <label for="cfa">Remise CFA</label>
+            <InputNumber
+              v-model="discountCfa"
+              input-id="cfa"
+              :min="0"
+              :max="100"
+              :max-fraction-digits="2"
+              suffix=" %"
+              size="small"
+              input-class="pct"
+              @update:model-value="repriceLines(true)"
+            />
+          </div>
+          <div class="field">
+            <label for="cfo">Remise CFO</label>
+            <InputNumber
+              v-model="discountCfo"
+              input-id="cfo"
+              :min="0"
+              :max="100"
+              :max-fraction-digits="2"
+              suffix=" %"
+              size="small"
+              input-class="pct"
+              @update:model-value="repriceLines(true)"
+            />
+          </div>
+          <div class="field">
+            <label>Listes de prix</label>
+            <div v-if="clientCode" class="cd-inline">
+              <Tag v-for="l in priceLists" :key="l" :value="l" severity="secondary" />
+              <span v-if="!priceLists.length" class="muted">aucune</span>
+            </div>
+            <Select
+              v-else
+              v-model="ephemeralList"
+              :options="priceListOptions"
+              option-label="label"
+              option-value="code"
+              filter
+              show-clear
+              placeholder="Aucune liste de prix"
+              size="small"
+              class="list-select"
+              :virtual-scroller-options="{ itemSize: 36 }"
+            />
+          </div>
+          <div class="field">
+            <label v-tooltip.top="'Pour ce devis uniquement'" for="forced-list">Liste forcée</label>
+            <Select
+              v-model="forcedList"
+              input-id="forced-list"
+              :options="forcedOptions"
+              option-label="label"
+              option-value="code"
+              show-clear
+              :placeholder="forcedOptions.length ? 'Aucune' : 'Aucune favorite (Réglages)'"
+              :disabled="!forcedOptions.length"
+              size="small"
+              class="list-select"
+              @change="onForcedListChange"
+            />
+          </div>
+        </div>
+
+        <!-- Contact chez le client et commercial : imprimés sur le PDF. -->
+        <span class="cd-caption">Contact</span>
+        <div class="cd-fields">
+          <div class="field">
+            <label for="contact-name">Nom</label>
+            <InputText id="contact-name" v-model="contact.contact_name" size="small" class="contact-name" />
+          </div>
+          <div class="field">
+            <label for="contact-email">Email</label>
+            <InputText id="contact-email" v-model="contact.contact_email" size="small" type="email" class="contact-email" />
+          </div>
+          <div class="field">
+            <label for="contact-phone">Téléphone</label>
+            <InputText id="contact-phone" v-model="contact.contact_phone" size="small" class="contact-phone" />
+          </div>
+          <div class="field">
+            <label for="sales-rep">Commercial</label>
+            <Select
+              :model-value="contact.sales_rep || null"
+              input-id="sales-rep"
+              :options="salesRepOptions"
+              show-clear
+              :placeholder="salesRepOptions.length ? 'Choisir…' : 'Aucun (à ajouter dans Réglages)'"
+              size="small"
+              class="sales-rep"
+              @update:model-value="(v: string | null) => rememberSalesRep((contact.sales_rep = v ?? ''))"
+            />
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1736,6 +1807,7 @@ onMounted(async () => {
 
 .head {
   display: flex;
+  flex-wrap: wrap;
   gap: 1.5rem;
   align-items: flex-start;
 }
@@ -1763,20 +1835,68 @@ onMounted(async () => {
   flex: 1;
 }
 
-.conditions {
+/* Détails du client : une ligne par thème (légende à gauche, champs avec libellé au-dessus). */
+/* Pleine largeur sous la recherche du client et la date (filet de séparation compris). */
+.client-details {
+  flex-basis: 100%;
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  column-gap: 1rem;
+  row-gap: 0.4rem;
+  align-items: start;
+  padding-top: 1rem;
+  border-top: 1px solid var(--app-border);
+}
+
+.cd-caption {
+  padding-top: 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--app-muted);
+}
+
+.cd-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  align-items: flex-start;
+}
+
+/* Libellé devant le champ. */
+.cd-fields .field {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cd-fields .field label {
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.cd-name {
+  flex: 0 1 380px;
+  font-weight: 600;
+}
+
+/* Contenu aligné sur la hauteur d'un champ (étiquettes, bouton). */
+.cd-inline {
   display: flex;
   gap: 0.5rem;
   align-items: center;
   flex-wrap: wrap;
+  min-height: 2.1rem;
 }
 
-.conditions label {
-  color: var(--app-muted);
-  margin-left: 0.5rem;
+.cd-fields :deep(input.pct) {
+  width: 90px;
+  text-align: right;
 }
 
-.contact-row label:first-child {
-  margin-left: 0;
+.contact-name {
+  width: 170px;
 }
 
 .contact-email {
@@ -1784,17 +1904,11 @@ onMounted(async () => {
 }
 
 .contact-phone {
-  width: 140px;
+  width: 150px;
 }
 
-.conditions-name {
-  width: 260px;
-  font-weight: 600;
-}
-
-.conditions :deep(input.pct) {
-  width: 80px;
-  text-align: right;
+.sales-rep {
+  min-width: 200px;
 }
 
 .list-select {
