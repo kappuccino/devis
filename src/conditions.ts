@@ -1,20 +1,17 @@
-// Conditions de vente imprimées en bas du devis (Réglages → Config PDF).
-// Mise en forme simple : une ligne « # … » est un titre ; **…** en gras ; __…__ souligné.
+// Conditions générales de vente imprimées en bas de tous les devis : identiques pour tout le
+// monde, fixées ici (plus de réglage). Mise en forme simple : une ligne « # … » est un titre ;
+// **…** en gras ; __…__ souligné.
 
-/** Texte par défaut : conditions de vente actuelles. */
-export const DEFAULT_CONDITIONS = `# VIREMENT SUR FACTURE 30 JOURS FIN DE MOIS LE 10
-Garantie contractuelle : 1 an, pièces et main d'oeuvre en nos ateliers
+export const CONDITIONS = `**VIREMENT SUR FACTURE 30 JOURS FIN DE MOIS LE 10**
+
+**Garantie contractuelle :** 1 an, pièces et main d'oeuvre en nos ateliers
 Nos prix sont nets, unitaires, Hors Taxes.
-Emballage et transport : Franco de port et d'emballage pour toute commande de plus de 840 EUR HT et livraison en un seul point.
-Minimum de facturation : Toute commande inférieure à 140 EUR HT sera majorée de 25 EUR pour participation aux frais de facturation et de traitement.
 
-__Toute commande entraîne de plein droit l'acceptation de nos conditions générales de vente.__
-(Ci-joint en dernière page.)`;
+**Emballage et transport :** Franco de port et d'emballage pour toute commande de plus de 840 EUR HT et livraison en un seul point.
 
-export const CONDITIONS_KEY = "quote_conditions";
+**Minimum de facturation :** Toute commande inférieure à 140 EUR HT sera majorée de 25 EUR pour participation aux frais de facturation et de traitement.
 
-/** Conditions à imprimer : celles des réglages, ou le texte par défaut si jamais renseignées. */
-export const conditionsText = (settings: Record<string, string>) => settings[CONDITIONS_KEY] ?? DEFAULT_CONDITIONS;
+**Toute commande entraîne de plein droit l'acceptation de nos conditions générales de vente.**`;
 
 export interface Run {
   text: string;

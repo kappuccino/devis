@@ -14,14 +14,13 @@ import { useConfirm } from "primevue/useconfirm";
 import { api, type DbStats, type ImportReport, type PriceList, type Settings } from "../api";
 import Checkbox from "primevue/checkbox";
 import { docs, indexing, reindex, setFolder, setIndexOnStartup } from "../docs/store";
-import { CONDITIONS_KEY, DEFAULT_CONDITIONS } from "../conditions";
 import SelectButton from "primevue/selectbutton";
 import { getTheme, setTheme, type ThemeMode } from "../theme";
 import { getVersion } from "@tauri-apps/api/app";
 import { checkForUpdate, installUpdate, updater, updatesSupported } from "../updater";
 import { FEE_SETTINGS } from "../fees";
 import { salesRepList, salesRepSetting, SALES_REPS_KEY } from "../salesReps";
-import { AGENCY_KEY, agencyContact, CGV_PDF_KEY, HEAD_OFFICE } from "../composables/usePdf";
+import { CGV_PDF_KEY, HEAD_OFFICE } from "../composables/usePdf";
 import { FAVORITE_LISTS_KEY, favoriteLists } from "../favorites";
 import { errorMessage, formatNumber } from "../format";
 import BackupSettings from "../components/BackupSettings.vue";
@@ -209,7 +208,7 @@ async function saveSettings() {
     // Seulement les champs du PDF : les favoris sont enregistrés à part, dès leur choix.
     const keys = [...companyFields, ...quoteFields, ...feeFields]
       .map((f) => f.key)
-      .concat("company_logo", AGENCY_KEY, CONDITIONS_KEY, CGV_PDF_KEY, SALES_REPS_KEY, LAST_NUMBER_KEY, PRICE_LIST_TEMPLATE_KEY);
+      .concat("company_logo", CGV_PDF_KEY, SALES_REPS_KEY, LAST_NUMBER_KEY, PRICE_LIST_TEMPLATE_KEY);
     settings.value[SALES_REPS_KEY] = salesRepSetting(salesReps.value);
     await api.saveSettings(Object.fromEntries(keys.map((k) => [k, settings.value[k] ?? ""])));
     toast.add({ severity: "success", summary: "Réglages enregistrés", life: 2000 });
@@ -223,9 +222,6 @@ async function saveSettings() {
 onMounted(async () => {
   try {
     [settings.value, allPriceLists.value] = await Promise.all([api.getSettings(), api.listPriceLists(), loadStats()]);
-    // Conditions jamais renseignées : on part du texte actuel des conditions de vente.
-    if (!(CONDITIONS_KEY in settings.value)) settings.value[CONDITIONS_KEY] = DEFAULT_CONDITIONS;
-    settings.value[AGENCY_KEY] = agencyContact(settings.value);
     salesReps.value = salesRepList(settings.value);
   } catch (e) {
     toast.add({ severity: "error", summary: "Chargement des réglages", detail: errorMessage(e) });
@@ -486,19 +482,11 @@ onMounted(async () => {
               <Textarea v-if="f.multiline" :id="f.key" v-model="settings[f.key]" rows="3" auto-resize />
               <InputText v-else :id="f.key" v-model="settings[f.key]" :placeholder="f.placeholder" />
             </template>
-            <span class="muted label-top">Siège</span>
+            <span class="muted label-top">Pied de page</span>
             <div class="head-office muted">
               <div v-for="l in HEAD_OFFICE" :key="l">{{ l }}</div>
-              <small>Toujours imprimé, non modifiable.</small>
+              <small>Identique sur tous les devis, non modifiable.</small>
             </div>
-            <label :for="AGENCY_KEY" class="label-top">Agence / contact</label>
-            <Textarea
-              :id="AGENCY_KEY"
-              v-model="settings[AGENCY_KEY]"
-              rows="4"
-              auto-resize
-              placeholder="Nom, adresse, téléphone, email… (imprimé tel quel sous le siège)"
-            />
             <label for="logo">Logo</label>
             <div class="logo">
               <img v-if="settings.company_logo" :src="settings.company_logo" alt="Logo" />
@@ -562,19 +550,13 @@ onMounted(async () => {
         </section>
 
         <section class="card">
-          <h2>Conditions de vente</h2>
+          <h2>Conditions générales de vente</h2>
           <div class="form-grid">
-            <label for="conditions" class="label-top">Conditions (bas du devis)</label>
-            <div>
-              <Textarea id="conditions" v-model="settings[CONDITIONS_KEY]" rows="9" auto-resize fluid />
-              <small class="muted">
-                Mise en forme : ligne commençant par <code># </code> = titre · <code>**gras**</code> ·
-                <code>__souligné__</code>
-              </small>
-            </div>
-            <label>CGV complètes (PDF)</label>
+            <span class="muted label-top">Bas du devis</span>
+            <small class="muted">Identiques sur tous les devis, intégrées à l'appli (non modifiables).</small>
+            <label>Conditions générales de vente complètes (PDF)</label>
             <div class="dir-row">
-              <code class="dir">{{ settings[CGV_PDF_KEY] || "Aucun fichier : pas de CGV en dernière page" }}</code>
+              <code class="dir">{{ settings[CGV_PDF_KEY] || "Aucun fichier : pas de conditions générales de vente en dernière page" }}</code>
               <Button label="Choisir…" icon="pi pi-file-pdf" severity="secondary" @click="chooseCgv" />
               <Button
                 v-if="settings[CGV_PDF_KEY]"

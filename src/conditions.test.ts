@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { conditionsText, DEFAULT_CONDITIONS, parseConditions } from "./conditions";
+import { CONDITIONS, parseConditions } from "./conditions";
 
 describe("conditions de vente", () => {
   it("titre, gras et souligné", () => {
@@ -11,8 +11,9 @@ describe("conditions de vente", () => {
     ]);
   });
 
-  it("texte par défaut tant que les conditions n'ont jamais été renseignées", () => {
-    expect(conditionsText({})).toBe(DEFAULT_CONDITIONS);
-    expect(conditionsText({ quote_conditions: "" })).toBe("");
+  it("conditions fixes : première ligne en gras, mention d'acceptation à la fin", () => {
+    const lines = parseConditions(CONDITIONS);
+    expect(lines[0].runs).toEqual([{ text: "VIREMENT SUR FACTURE 30 JOURS FIN DE MOIS LE 10", bold: true }]);
+    expect(lines[lines.length - 1].runs[0].text).toMatch(/^Toute commande entraîne/);
   });
 });

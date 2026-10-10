@@ -140,7 +140,7 @@ async function pdf(q: QuoteSummary) {
     const result = await exportQuotePdf(await api.getQuote(q.id));
     if (result) {
       toast.add({ severity: "success", summary: "PDF enregistré", detail: result.path, life: 4000 });
-      if (result.warning) toast.add({ severity: "warn", summary: "Conditions générales", detail: result.warning });
+      if (result.warning) toast.add({ severity: "warn", summary: "Conditions générales de vente", detail: result.warning });
     }
   } catch (e) {
     toast.add({ severity: "error", summary: "Génération du PDF", detail: errorMessage(e) });

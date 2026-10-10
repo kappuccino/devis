@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
-const { agencyContact, AGENCY_KEY, buildDocument, HEAD_OFFICE } = await import("./usePdf");
+const { buildDocument, HEAD_OFFICE } = await import("./usePdf");
 import type { Quote } from "../api";
 import { formatEuro } from "../format";
 
@@ -17,11 +17,12 @@ const texts = (c: unknown): string[] => {
 };
 
 describe("PDF du devis", () => {
-  it("imprime le siège, puis les coordonnées de l'agence", () => {
-    const doc = buildDocument(quote, null, { company_name: "CAHORS", [AGENCY_KEY]: "Jean Dupont\nTél. 06 00 00 00 00" });
-    const all = texts(doc.content);
-    const i = all.indexOf("CAHORS");
-    expect(all.slice(i, i + 4)).toEqual(["CAHORS", ...HEAD_OFFICE, "Jean Dupont\nTél. 06 00 00 00 00"]);
+  it("imprime le siège et l'adresse des commandes en pied de page, pas en haut", () => {
+    const doc = buildDocument(quote, null, { company_name: "CAHORS", agency_contact: "Jean Dupont" });
+    const footer = texts((doc.footer as (p: number, n: number) => unknown)(1, 1));
+    expect(footer.slice(0, 2)).toEqual(HEAD_OFFICE);
+    expect(footer.join(" ")).not.toContain("Jean Dupont");
+    expect(texts(doc.content)).not.toContain(HEAD_OFFICE[0]);
   });
 
   it("n'imprime pas le nom de la société sous le logo", () => {
@@ -30,16 +31,20 @@ describe("PDF du devis", () => {
     expect(texts(buildDocument(quote, null, { company_name: "GROUPE CAHORS" }).content)).toContain("GROUPE CAHORS");
   });
 
+  it("imprime le rédacteur du devis sous le logo, avant le client", () => {
+    const all = texts(
+      buildDocument(quote, null, { author_name: "Julie Martin", author_address: "1 rue X\n46000 Cahors", author_phone: "05 00", author_email: "j@x.fr" }).content,
+    );
+    const i = all.indexOf("Julie Martin");
+    expect(all.slice(i, i + 5)).toEqual(["Julie Martin", "1 rue X", "46000 Cahors", "Tél. 05 00", "j@x.fr"]);
+    expect(all.indexOf("Client")).toBeGreaterThan(i);
+  });
+
   it("imprime le nom de l'affaire, s'il y en a un", () => {
     const all = texts(buildDocument({ ...quote, project_name: " Lotissement Les Jardins " }, null, {}).content);
     expect(all).toContain("Lotissement Les Jardins");
     expect(all).not.toContain("AFFAIRE");
     expect(all).not.toContain("CLIENT");
-  });
-
-  it("reprend les anciens champs tant que l'agence n'a pas été saisie", () => {
-    expect(agencyContact({ company_address: "1 rue X", company_phone: "05 00", company_email: "a@b.fr" })).toBe("1 rue X\nTél. 05 00\na@b.fr");
-    expect(agencyContact({ company_address: "1 rue X", [AGENCY_KEY]: "" })).toBe("");
   });
 
   it("totaux dans l'ordre du calcul : produits, remise, frais, TOTAL HT", () => {

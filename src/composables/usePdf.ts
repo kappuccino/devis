@@ -5,7 +5,7 @@ import { openFile, pickSavePath } from "../dialogs";
 import { api, type Client, type Quote, type Settings } from "../api";
 import { formatDate, formatEuro, formatNumber, formatUnitPrice, round2 } from "../format";
 import { isFee, lineTotal, quoteTotals, subtotals } from "../quoteLines";
-import { conditionsText, parseConditions } from "../conditions";
+import { CONDITIONS, parseConditions } from "../conditions";
 import { PDFDocument } from "pdf-lib";
 import { readFile } from "../docs/files";
 
@@ -15,25 +15,11 @@ pdfMake.addVirtualFileSystem(pdfFonts);
 const ACCENT = "#e60005";
 const ACCENT_TINT = "#fdeced";
 
-/** Siège : imprimé tel quel sur tous les devis, sous le nom de la société. */
+/** Pied de page : identique sur tous les devis (siège et adresse des commandes), non modifiable. */
 export const HEAD_OFFICE = [
   "CAHORS – 372 av Pierre Bourrieres – 46003 CAHORS – Tél. 05 65 35 72 11",
   "ENVOI DES COMMANDES à maec-commande@groupe-cahors.com",
 ];
-
-/** Réglage : coordonnées de l'agence (texte libre, imprimé sous le siège). */
-export const AGENCY_KEY = "agency_contact";
-
-/**
- * Coordonnées de l'agence. Tant qu'elles n'ont pas été saisies, reprises des anciens champs
- * séparés (adresse, téléphone, email, SIRET).
- */
-export function agencyContact(s: Settings): string {
-  if (AGENCY_KEY in s) return s[AGENCY_KEY];
-  return [s.company_address, s.company_phone && `Tél. ${s.company_phone}`, s.company_email, s.company_siret && `SIRET ${s.company_siret}`]
-    .filter(Boolean)
-    .join("\n");
-}
 
 const MUTED = "#6b7280";
 const TEXT = "#1f2328";
@@ -43,7 +29,7 @@ const GREY_FILL = "#eeeff1";
 /** Largeur utile de la page A4 (595 pt − marges de 40 pt). */
 const PAGE_WIDTH = 515;
 
-/** Petit titre de section en capitales rouges (CLIENT, CONDITIONS…). */
+/** Petit titre de section en capitales rouges (NOTES, CONDITIONS GÉNÉRALES DE VENTE). */
 const sectionLabel = (text: string, margin: [number, number, number, number] = [0, 0, 0, 3]): Content => ({
   text,
   style: "sectionLabel",
@@ -71,14 +57,6 @@ const softBox = (content: Content, padding = 8): Content => ({
  * puis conditions / notes à gauche et totaux, TOTAL HT et « Bon pour accord » à droite.
  */
 export function buildDocument(quote: Quote, client: Client | null, s: Settings): TDocumentDefinitions {
-  const agency = agencyContact(s).trim();
-  const company: Content[] = [
-    // Avec un logo, le nom de la société ferait doublon : seulement sans logo.
-    ...(s.company_logo ? [] : [{ text: s.company_name || "Ma société", style: "companyName" }]),
-    { text: HEAD_OFFICE[0], color: MUTED },
-    { text: HEAD_OFFICE[1], bold: true },
-    ...(agency ? [{ text: agency, margin: [0, 6, 0, 0] as [number, number, number, number] }] : []),
-  ];
 
   // Date, validité, commercial : libellés à gauche, valeurs à droite, sans cadre.
   const meta: [string, string][] = [
@@ -86,16 +64,54 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     ...(s.quote_validity ? [["Validité :", s.quote_validity] as [string, string]] : []),
     ...(quote.sales_rep ? [["Commercial :", quote.sales_rep] as [string, string]] : []),
   ];
+  // Rédacteur du devis (Réglages) : sous le logo, en petit ; le client est à part, dans un cadre gris.
+  const author: Content[] = [
+    ...(s.author_name?.trim() ? [{ text: s.author_name.trim(), bold: true }] : []),
+    ...[
+      ...(s.author_address ?? "").split("\n"),
+      s.author_phone?.trim() && `Tél. ${s.author_phone.trim()}`,
+      s.author_email,
+    ]
+      .map((l) => (l ?? "").trim())
+      .filter(Boolean)
+      .map((t) => ({ text: t, color: MUTED })),
+  ];
+
+  // Coordonnées du client : à gauche, sous le rédacteur, dans un cadre gris.
+  const clientDetails: Content[] = [
+    // La raison sociale enregistrée dans le devis fait foi (client ponctuel ou nom ajusté).
+    { text: quote.client_name, bold: true, fontSize: 9.5 },
+    ...(quote.client_code ? [{ text: `Code client : ${quote.client_code}`, color: MUTED }] : []),
+    ...(client?.siren ? [{ text: `SIREN : ${client.siren}`, color: MUTED }] : []),
+    // Contact du devis ; à défaut, l'email général du client.
+    ...(quote.contact_name ? [{ text: `À l'attention de ${quote.contact_name}`, margin: [0, 4, 0, 0] as [number, number, number, number] }] : []),
+    ...[quote.contact_email || (!quote.contact_name && client?.email ? client.email.split(/[\s;,]+/)[0] : ""), quote.contact_phone && `Tél. ${quote.contact_phone}`]
+      .filter(Boolean)
+      .map((t) => ({ text: t as string, color: MUTED })),
+  ];
+
   const header: Content = {
     columns: [
-      s.company_logo
-        ? { stack: [{ image: s.company_logo, fit: [140, 60], margin: [0, 0, 0, 8] }, ...company], width: "*" }
-        : { stack: company, width: "*" },
+      {
+        width: "*",
+        stack: [
+          // Avec un logo, le nom de la société ferait doublon : seulement sans logo.
+          s.company_logo
+            ? { image: s.company_logo, fit: [140, 60] }
+            : { text: s.company_name || "Ma société", style: "companyName" },
+          ...(author.length ? [{ stack: author, margin: [0, 10, 0, 0] as [number, number, number, number] }] : []),
+          {
+            margin: [0, 14, 0, 0],
+            table: { widths: [260], body: [[{ stack: clientDetails, fillColor: GREY_FILL, margin: [8, 6, 8, 6] }]] },
+            layout: "noBorders",
+          },
+        ],
+      },
       {
         width: 190,
         stack: [
           { text: "DEVIS", style: "title" },
-          { text: `n° ${quote.number ?? "—"}`, color: ACCENT, alignment: "right", margin: [0, 0, 0, 8] },
+          { text: `n° ${quote.number ?? "—"}`, color: ACCENT, fontSize: 12, bold: true, alignment: "right", margin: [0, 0, 0, 8] },
           {
             columns: [
               { width: "*", text: "" },
@@ -111,43 +127,11 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     ],
   };
 
-  // Client à droite ; nom de l'affaire à gauche, aligné sur le bas du bloc client (juste au-dessus
-  // des lignes). Sans titres ni cadre : un tableau sans bordure permet l'alignement en bas.
+  // Nom de l'affaire : juste au-dessus des lignes, à gauche.
   const project = quote.project_name?.trim();
-  const clientBlock: Content = {
-    margin: [0, 18, 0, 18],
-    table: {
-      widths: ["*", 250],
-      body: [
-        [
-          project
-            ? { text: project, bold: true, fontSize: 11, verticalAlignment: "bottom", margin: [0, 0, 15, 0] }
-            : { text: "" },
-          {
-            stack: [
-              // La raison sociale enregistrée dans le devis fait foi (client ponctuel ou nom ajusté).
-              { text: quote.client_name, bold: true, fontSize: 9.5 },
-              ...(quote.client_code ? [{ text: `Code client : ${quote.client_code}`, color: MUTED }] : []),
-              ...(client?.siren ? [{ text: `SIREN : ${client.siren}`, color: MUTED }] : []),
-              // Contact du devis ; à défaut, l'email général du client.
-              ...(quote.contact_name ? [{ text: `À l'attention de ${quote.contact_name}`, margin: [0, 4, 0, 0] as [number, number, number, number] }] : []),
-              ...[quote.contact_email || (!quote.contact_name && client?.email ? client.email.split(/[\s;,]+/)[0] : ""), quote.contact_phone && `Tél. ${quote.contact_phone}`]
-                .filter(Boolean)
-                .map((t) => ({ text: t as string, color: MUTED })),
-            ],
-          },
-        ],
-      ],
-    },
-    layout: {
-      hLineWidth: () => 0,
-      vLineWidth: () => 0,
-      paddingLeft: () => 0,
-      paddingRight: () => 0,
-      paddingTop: () => 0,
-      paddingBottom: () => 0,
-    },
-  } as Content;
+  const projectBlock: Content = project
+    ? { text: project, bold: true, fontSize: 11, margin: [0, 16, 0, 8] }
+    : { text: "", margin: [0, 0, 0, 16] };
 
   const th = (text: string, alignment: "left" | "right" = "left") => ({ text, style: "th", alignment });
   // La colonne « Remise » n'apparaît que si au moins une ligne a une remise supplémentaire.
@@ -294,30 +278,27 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     ...(softBox({ stack: [{ text: "Mention « Bon pour accord », date et signature", color: MUTED }, { text: " ", margin: [0, 0, 0, 48] }] }) as object),
   } as Content);
 
-  // À gauche : notes puis conditions de vente, dans un encadré léger.
+  // À gauche : notes puis conditions générales de vente (fixes), dans un encadré léger.
   const left: Content[] = [];
   if (quote.notes) left.push(sectionLabel("NOTES"), { text: quote.notes, margin: [0, 0, 0, 12] });
-  const conditions = conditionsText(s).trim();
-  if (conditions) {
-    left.push(
-      sectionLabel("CONDITIONS"),
-      softBox({
-        style: "conditions",
-        stack: parseConditions(conditions).map((line) => ({
-          text: line.runs.length
-            ? line.runs.map((r) => ({ text: r.text, bold: r.bold, decoration: r.underline ? ("underline" as const) : undefined }))
-            : " ",
-          ...(line.title ? { bold: true, fontSize: 8, color: TEXT, margin: [0, 0, 0, 3] as [number, number, number, number] } : {}),
-        })),
-      }),
-    );
-  }
+  left.push(
+    sectionLabel("CONDITIONS GÉNÉRALES DE VENTE"),
+    softBox({
+      style: "conditions",
+      stack: parseConditions(CONDITIONS).map((line) => ({
+        text: line.runs.length
+          ? line.runs.map((r) => ({ text: r.text, bold: r.bold, decoration: r.underline ? ("underline" as const) : undefined }))
+          : " ",
+        ...(line.title ? { bold: true, fontSize: 8, color: TEXT, margin: [0, 0, 0, 3] as [number, number, number, number] } : {}),
+      })),
+    }),
+  );
 
   const bottom: Content = {
     margin: [0, 16, 0, 0],
     unbreakable: true,
     columns: [
-      { width: "*", stack: left.length ? left : [{ text: "" }] },
+      { width: "*", stack: left },
       { width: 230, stack: right },
     ],
     columnGap: 20,
@@ -325,10 +306,11 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
 
   return {
     pageSize: "A4",
-    pageMargins: [40, 40, 40, 60],
+    pageMargins: [40, 40, 40, 64],
     info: { title: `Devis ${quote.number ?? ""}` },
-    content: [header, clientBlock, lines, bottom],
-    // Pied de page : filet rouge, siège à gauche, n° du devis et page à droite.
+    content: [header, projectBlock, lines, bottom],
+    // Pied de page : filet rouge ; à gauche le siège et l'adresse des commandes ;
+    // à droite le n° du devis et la page.
     footer: (page, pages) => ({
       margin: [40, 14, 40, 0],
       stack: [
@@ -336,7 +318,12 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
         {
           margin: [0, 5, 0, 0],
           columns: [
-            { text: HEAD_OFFICE[0], color: MUTED },
+            {
+              stack: [
+                { text: HEAD_OFFICE[0], color: MUTED },
+                { text: HEAD_OFFICE[1], bold: true },
+              ],
+            },
             { text: `Devis n° ${quote.number ?? "—"} · Page ${page} / ${pages}`, alignment: "right", color: MUTED, width: "auto" },
           ],
         },
@@ -347,10 +334,10 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     styles: {
       companyName: { fontSize: 12, bold: true, color: ACCENT, margin: [0, 0, 0, 2] },
       title: { fontSize: 24, alignment: "right" },
-      th: { bold: true, color: ACCENT, fontSize: 7.5 },
+      th: { bold: true, color: MUTED, fontSize: 8.5 },
       sectionLabel: { fontSize: 7, bold: true, color: ACCENT, characterSpacing: 0.6 },
       // Titre : gras, rouge, taille 10 (bandeau) ; texte : noir, gras, taille 8,5 (corps : 8).
-      titleLine: { bold: true, color: ACCENT, fontSize: 10 },
+      titleLine: { bold: true, color: ACCENT, fontSize: 9 },
       textLine: { bold: true, color: "#000", fontSize: 8.5 },
       optionTag: { color: ACCENT, fontSize: 7 },
       mono: { fontSize: 7.5 },
@@ -387,7 +374,7 @@ export async function appendCgv(bytes: Uint8Array): Promise<{ bytes: Uint8Array;
     for (const page of await doc.copyPages(cgv, cgv.getPageIndices())) doc.addPage(page);
     return { bytes: await doc.save() };
   } catch (e) {
-    return { bytes, warning: `CGV non ajoutées (${path}) : ${e instanceof Error ? e.message : String(e)}` };
+    return { bytes, warning: `Conditions générales de vente non ajoutées (${path}) : ${e instanceof Error ? e.message : String(e)}` };
   }
 }
 
