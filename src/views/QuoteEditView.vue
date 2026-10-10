@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import AutoComplete, { type AutoCompleteCompleteEvent } from "primevue/autocomplete";
 import InputText from "primevue/inputtext";
@@ -39,6 +39,7 @@ import {
 } from "../quoteLines";
 import { favoriteLists } from "../favorites";
 import { lastSalesRep, rememberSalesRep, salesRepList } from "../salesReps";
+import { applyColumnTabOrder } from "../gridNav";
 import { autoFeeChanges, feeRulesFrom, type FeeRules } from "../fees";
 
 const props = defineProps<{ id?: string }>();
@@ -342,6 +343,7 @@ async function clearClient() {
 // Totaux : la colonne des montants se cale sur la colonne « Total HT » du tableau
 // (même largeur, même distance au bord droit), quelle que soit la largeur de la fenêtre.
 const linesTable = ref<HTMLTableElement | null>(null);
+const totalsPanel = ref<HTMLElement | null>(null);
 const totalHeader = ref<HTMLTableCellElement | null>(null);
 const totalColumn = ref({ width: 100, tail: 150 });
 function measureTotalColumn() {
@@ -367,6 +369,11 @@ onMounted(() => {
   measureTotalColumn();
 });
 onBeforeUnmount(() => tableObserver?.disconnect());
+
+// Tab descend dans la colonne, Maj+Tab remonte (tabindex recalculés à chaque rendu).
+const updateTabOrder = () => applyColumnTabOrder(linesTable.value, totalsPanel.value);
+onMounted(updateTabOrder);
+onUpdated(updateTabOrder);
 
 // Commercial : choisi dans la liste des Réglages ; le dernier choisi est repris sur les nouveaux devis.
 const salesReps = ref<string[]>([]);
