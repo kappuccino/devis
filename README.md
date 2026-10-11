@@ -69,14 +69,16 @@ Le workflow GitHub Actions (`.github/workflows/build.yml`) :
    La version **Mac** est construite en local (voir « Build local ») ;
 3. publie une **release GitHub** :
    - à chaque push sur `main` : release `build-N` (N = numéro du run) ;
-   - à chaque tag `v*` (ex. `git tag v0.2.0 && git push --tags`) : release officielle.
+   - à chaque tag `v*` (ex. `git tag v0.2.0 && git push --tags`) : release officielle, publiée aussi
+     dans le dépôt **public** [`kappuccino/devis-release`](https://github.com/kappuccino/devis-release)
+     (installeurs seulement, sans code). Le dépôt du code peut ainsi être privé.
 
 Penser à monter la version dans `src-tauri/tauri.conf.json` (et `package.json`) avant un tag.
 
 ### Mises à jour automatiques
 
 Sous **Windows**, l'application installée cherche une nouvelle version à chaque démarrage (et dans
-Réglages → À propos) : elle lit `latest.json` de la **dernière release officielle** du dépôt,
+Réglages → À propos) : elle lit `latest.json` de la **dernière release officielle** du dépôt public `devis-release`,
 télécharge l'installeur signé, l'installe et redémarre. La version Mac, construite en local,
 ne se met pas à jour toute seule.
 
@@ -84,7 +86,11 @@ ne se met pas à jour toute seule.
   perdue, les applications installées ne peuvent plus être mises à jour). Sa clé publique est dans
   `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`) ; la clé privée et son mot de passe sont dans
   les secrets du dépôt `TAURI_SIGNING_PRIVATE_KEY` et `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
-- Les builds `build-N` (à chaque push) sont des **pré-versions** : jamais proposées en mise à jour.
+- Les builds `build-N` (à chaque push) sont des **pré-versions** : jamais proposées en mise à jour,
+  publiées seulement dans le dépôt du code.
+- Publication dans `devis-release` : secret `RELEASES_TOKEN`, jeton GitHub à grain fin limité à ce
+  dépôt (permission *Contents* : lecture et écriture). Il expire : le renouveler (la CI échoue
+  clairement s'il manque).
 
 **Publier une version** :
 

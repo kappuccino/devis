@@ -115,12 +115,18 @@ jobs:
   release:
     # Une pré-version par commit poussé sur main (tag build-N), jamais proposée en mise à jour ;
     # une release « officielle » par tag v*, avec latest.json lu par l'appli pour se mettre à jour.
+    #
+    # Le dépôt du code peut être privé : les versions officielles sont aussi publiées dans le dépôt
+    # public RELEASES_REPO (sans code, seulement les installeurs), où l'appli cherche ses mises à
+    # jour. Les pré-versions restent dans le dépôt du code.
     name: Release
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      RELEASES_REPO: kappuccino/devis-release
     steps:
       - uses: actions/checkout@v4
         with:
@@ -172,7 +178,7 @@ jobs:
         shell: bash
         env:
           TAG: ${{ steps.meta.outputs.tag }}
-          REPO: ${{ github.repository }}
+          REPO: ${{ env.RELEASES_REPO }}
           NOTES: ${{ steps.meta.outputs.body }}
         run: |
           python3 - <<'PY'
@@ -206,5 +212,29 @@ jobs:
           # Seules les releases officielles sont « latest » : c'est là que l'appli cherche latest.json.
           prerelease: ${{ steps.meta.outputs.official != 'true' }}
           make_latest: ${{ steps.meta.outputs.official == 'true' }}
+          fail_on_unmatched_files: true
+          files: out/*
+
+      # Jeton à accès limité au dépôt public des releases (Contents : lecture et écriture).
+      - name: Vérifier le jeton du dépôt des releases
+        if: steps.meta.outputs.official == 'true'
+        shell: bash
+        env:
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          if [ -z "$RELEASES_TOKEN" ]; then
+            echo "::error::Secret RELEASES_TOKEN absent : la version ne serait pas publiée dans $RELEASES_REPO (Settings → Secrets and variables → Actions)"; exit 1
+          fi
+      - uses: softprops/action-gh-release@v2
+        if: steps.meta.outputs.official == 'true'
+        with:
+          repository: ${{ env.RELEASES_REPO }}
+          token: ${{ secrets.RELEASES_TOKEN }}
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.name }}
+          body: ${{ steps.meta.outputs.body }}
+          # Le dépôt des releases n'a pas ce commit : le tag y est posé sur sa branche principale.
+          target_commitish: main
+          make_latest: true
           fail_on_unmatched_files: true
           files: out/*

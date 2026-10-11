@@ -149,4 +149,10 @@
     sous-totaux en double.
   - Fait : bouton « Nettoyer (n) » sous les lignes, avec confirmation détaillée.
 
+- [ ] Dépôt du code en privé (mises à jour servies par le dépôt public `devis-release`)
+  - [x] CI : versions officielles publiées aussi dans `devis-release` ; l'appli y cherche ses mises à jour.
+  - [x] Créer `kappuccino/devis-release` (public, avec un README) et le secret `RELEASES_TOKEN`.
+  - [ ] Publier une version (0.1.11) : les postes l'installent depuis l'ancienne adresse et passent à la nouvelle.
+  - [ ] Quand tous les postes sont en 0.1.11 ou plus : passer `kappuccino/devis` en privé.
+
 - [ ] Export / import d'un devis (fichier), pour partager un devis type entre collègues.
