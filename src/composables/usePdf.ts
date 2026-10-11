@@ -14,8 +14,8 @@ pdfMake.addVirtualFileSystem(pdfFonts);
 /** Rouge du logo Cahors, et sa teinte claire pour les fonds. */
 const ACCENT = "#e60005";
 const ACCENT_TINT = "#fdeced";
-/** En-tête du tableau des lignes : rouge clair un peu plus soutenu. */
-const HEADER_FILL = "#f7d4d5";
+/** En-tête du tableau des lignes : gris clair, un peu plus soutenu que les titres. */
+const HEADER_FILL = "#d3d6db";
 
 /** Pied de page : identique sur tous les devis (siège et adresse des commandes), non modifiable. */
 export const HEAD_OFFICE = [
@@ -267,7 +267,7 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
         verticalAlignment: "middle",
         table: {
           widths: ["*"],
-          body: [[{ text: project, fontSize: 15, bold: true, color: TEXT, lineHeight: 1.05 }]],
+          body: [[{ text: project, fontSize: 14, color: TEXT, lineHeight: 1.05 }]],
         },
         layout: {
           hLineWidth: () => 0,
@@ -481,7 +481,7 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
       text: [{ text: "Envoi des commandes : ", bold: true }, { text: ORDERS_EMAIL, bold: true, color: ACCENT }, "\nJoindre le devis à la commande."],
       fontSize: 7.5,
       color: TEXT,
-      margin: [0, 0, 0, 5],
+      margin: [0, 0, 0, 10],
     },
     conditionsBlock(),
   ];
@@ -502,20 +502,22 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     info: { title: `Devis ${quote.number ?? ""}` },
     content: [header, projectBlock, lines, bottom],
     // Pied de page : logo, siège et adresse des commandes, n° du devis et page en pastille rouge ;
-    // un liseré rouge borde le bas de chaque page.
+    // un liseré rouge borde le haut et le bas de chaque page.
     footer: (page, pages) => footer(s, quote, page, pages),
     background: () => ({
-      absolutePosition: { x: 0, y: PAGE_HEIGHT - 6 },
+      absolutePosition: { x: 0, y: 0 },
       canvas: [
-        { type: "rect", x: 0, y: 0, w: PAGE_WIDTH + 80, h: 2, color: ACCENT_TINT },
-        { type: "rect", x: 0, y: 2, w: PAGE_WIDTH + 80, h: 4, color: ACCENT },
+        { type: "rect", x: 0, y: 0, w: PAGE_WIDTH + 80, h: 4, color: ACCENT },
+        { type: "rect", x: 0, y: 4, w: PAGE_WIDTH + 80, h: 2, color: ACCENT_TINT },
+        { type: "rect", x: 0, y: PAGE_HEIGHT - 6, w: PAGE_WIDTH + 80, h: 2, color: ACCENT_TINT },
+        { type: "rect", x: 0, y: PAGE_HEIGHT - 4, w: PAGE_WIDTH + 80, h: 4, color: ACCENT },
       ],
     }),
     defaultStyle: { fontSize: 8, lineHeight: 1.15, color: TEXT },
     styles: {
       companyName: { fontSize: 12, bold: true, color: ACCENT, margin: [0, 0, 0, 2] },
       title: { fontSize: 24, alignment: "right" },
-      th: { bold: true, color: "#3f444b", fontSize: 7.5 },
+      th: { bold: true, color: "#000", fontSize: 7.5 },
       sectionLabel: { fontSize: 7, bold: true, color: ACCENT, characterSpacing: 0.6 },
       // Titre : gras, noir, taille 8 (bandeau gris fin) ; texte : noir, gras, taille 7,5 (lignes : 7).
       titleLine: { bold: true, color: "#000", fontSize: 8 },
