@@ -124,6 +124,11 @@ pub fn resolve_price(conn: &Connection, ctx: &PricingContext, product_ref: &str)
         }
         (Some((price, list, _)), None) => (round2(*price), list.clone()),
         (None, Some((remise, remise_source))) => (*remise, remise_source.clone()),
+        (None, None) if canonical.is_none() && enedis_refs(conn, typed).map_err(|e| e.to_string())?.len() > 1 => {
+            return Err(format!(
+                "Plusieurs produits portent le code ENEDIS « {typed} » : choisissez le bon dans la liste"
+            ))
+        }
         (None, None) => return Err(format!("Produit « {product_ref} » introuvable")),
     };
 
@@ -180,14 +185,19 @@ fn canonical_ref(conn: &Connection, lists_json: &str, typed: &str) -> rusqlite::
         }
     }
     // Enfin, un code ENEDIS (« 67.98.302 » ou « 6798302 ») : la référence du produit qui le porte.
-    let by_enedis: Vec<String> = conn
-        .prepare(
-            "SELECT ref FROM products
-             WHERE enedis_code IS NOT NULL AND replace(enedis_code, '.', '') = replace(replace(?1, '.', ''), ' ', '')",
-        )?
-        .query_map([typed], |r| r.get(0))?
-        .collect::<Result<_, _>>()?;
+    let by_enedis = enedis_refs(conn, typed)?;
     Ok(if by_enedis.len() == 1 { by_enedis.into_iter().next() } else { None })
+}
+
+/// Références des produits qui portent ce code ENEDIS (avec ou sans les points) ; un même code
+/// peut être porté par plusieurs produits.
+fn enedis_refs(conn: &Connection, typed: &str) -> rusqlite::Result<Vec<String>> {
+    conn.prepare(
+        "SELECT ref FROM products
+         WHERE enedis_code IS NOT NULL AND replace(enedis_code, '.', '') = replace(replace(?1, '.', ''), ' ', '')",
+    )?
+    .query_map([typed], |r| r.get(0))?
+    .collect()
 }
 
 /// Prix unitaire après la remise supplémentaire de la ligne (en %), au centime.
@@ -351,6 +361,16 @@ mod tests {
         conn.execute("UPDATE products SET enedis_code = '67.98.302' WHERE ref = 'A1'", []).unwrap();
         assert_eq!(resolve_price(&conn, &ctx(), "A1").unwrap().enedis_code.as_deref(), Some("67.98.302"));
         assert_eq!(resolve_price(&conn, &ctx(), "X9").unwrap().enedis_code, None);
+    }
+
+    #[test]
+    fn shared_enedis_code_asks_to_choose() {
+        let conn = setup();
+        conn.execute("UPDATE products SET enedis_code = '67.98.302' WHERE ref IN ('A1', 'B1')", []).unwrap();
+        let err = resolve_price(&conn, &ctx(), "6798302").unwrap_err();
+        assert!(err.contains("Plusieurs produits"), "{err}");
+        // Le choix dans la liste envoie la référence exacte.
+        assert_eq!(resolve_price(&conn, &ctx(), "B1").unwrap().product_ref, "B1");
     }
 
     #[test]

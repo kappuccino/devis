@@ -33,7 +33,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Saisie des lignes",
-        text: "Tapez une référence ou un code ENEDIS : des propositions s'affichent. Le prix est calculé pour le client : le plus bas de ses listes de prix (LPN), sinon le prix public moins sa remise CFA ou CFO. Les colonnes Prix public, Prix remisé et LPN montrent d'où vient le prix (en gras : celui retenu).",
+        text: "Tapez une référence ou un code ENEDIS : des propositions s'affichent. Le prix est calculé pour le client : le plus bas de ses listes de prix (LPN), sinon le prix public moins sa remise CFA ou CFO. Les colonnes Prix public, Prix remisé et LPN montrent d'où vient le prix (en gras : celui retenu). Un même code ENEDIS peut correspondre à plusieurs produits : choisissez alors le bon dans la liste proposée."
       },
       {
         title: "Navigation au clavier",

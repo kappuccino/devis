@@ -511,8 +511,11 @@ async function resolve(line: EditLine, focusNext = false, field: "ref" | "enedis
     return;
   }
   line.pendingRef = r;
+  // Une autre saisie a été lancée entre-temps (ex. choix dans la liste ENEDIS) : on l'ignore.
+  const stale = () => line.pendingRef !== r;
   try {
     const p = await api.resolvePrice(pricing.value, r);
+    if (stale()) return;
     Object.assign(line, {
       product_ref: p.product_ref,
       enedis_code: p.enedis_code,
@@ -530,6 +533,7 @@ async function resolve(line: EditLine, focusNext = false, field: "ref" | "enedis
       error: null,
     });
   } catch (e) {
+    if (stale()) return;
     Object.assign(line, {
       resolvedRef: r,
       price_source: null,
@@ -541,7 +545,7 @@ async function resolve(line: EditLine, focusNext = false, field: "ref" | "enedis
       error: errorMessage(e),
     });
   } finally {
-    line.pendingRef = null;
+    if (!stale()) line.pendingRef = null;
   }
   if (lines.value[lines.value.length - 1] === line) lines.value.push(blankLine());
   // En cas d'erreur, le curseur reste sur la ligne à corriger.
@@ -566,12 +570,24 @@ function commitEnedis(line: EditLine, focusNext: boolean) {
   const code = (line.enedis_code ?? "").trim();
   if (!code) return;
   const unchanged = line.resolvedRef != null && code === line.resolvedEnedis;
+  // Produit en cours de résolution (choix dans la liste) : rien à refaire.
+  if (line.pendingRef != null) return;
   if (unchanged) {
     if (focusNext && !line.error) focusNewLine("enedis");
     return;
   }
   line.product_ref = code;
   resolve(line, focusNext, "enedis");
+}
+
+/**
+ * Choix d'un produit dans la liste de la colonne ENEDIS : on prend sa référence exacte
+ * (un même code ENEDIS peut être porté par plusieurs produits).
+ */
+function selectEnedis(line: EditLine, hit: ProductHit) {
+  line.enedis_code = hit.enedis_code;
+  line.product_ref = hit.ref;
+  resolve(line, true, "enedis");
 }
 
 /**
@@ -1951,7 +1967,7 @@ async function saveAsTemplate() {
                   input-class="mono enedis-input"
                   @update:model-value="(v: string | ProductHit) => (line.enedis_code = typeof v === 'string' ? v : (v.enedis_code ?? ''))"
                   @complete="searchEnedis($event, line)"
-                  @option-select="commitEnedis(line, true)"
+                  @option-select="selectEnedis(line, $event.value)"
                   @keydown.enter="commitEnedis(line, true)"
                   @keydown.tab="validateAndGoToQuantity(line, 'enedis', $event)"
                   @blur="commitEnedis(line, false)"
