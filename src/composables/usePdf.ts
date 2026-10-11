@@ -20,8 +20,11 @@ const HEADER_FILL = "#f7d4d5";
 /** Pied de page : identique sur tous les devis (siège et adresse des commandes), non modifiable. */
 export const HEAD_OFFICE = [
   "CAHORS – 372 av Pierre Bourrieres – 46003 CAHORS – Tél. 05 65 35 72 11",
-  "ENVOI DES COMMANDES à maec-commande@groupe-cahors.com",
+  "SIRET : 451 01 058 00017 – NAF/APE 27.12Z",
 ];
+
+/** Mention fixe au-dessus des conditions générales de vente. */
+export const ORDERS_EMAIL = "maec-commande@groupe-cahors.com";
 
 /** Validité imprimée quand le réglage est vide. */
 export const DEFAULT_VALIDITY = "90 jours";
@@ -124,7 +127,7 @@ function footer(s: Settings, quote: Quote, page: number, pages: number): Content
         width: "*",
         stack: [
           { text: HEAD_OFFICE[0], color: MUTED },
-          { text: HEAD_OFFICE[1], bold: true },
+          { text: HEAD_OFFICE[1], color: MUTED },
         ],
         margin: [0, 1, 0, 0],
       },
@@ -421,9 +424,15 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     ...(softBox({ stack: [{ text: "Mention « Bon pour accord », date et signature", color: MUTED, fontSize: 7.5 }, { text: " ", margin: [0, 0, 0, 34] }] }, 6) as object),
   } as Content);
 
-  // À gauche : notes puis conditions générales de vente ; à droite : totaux et « Bon pour accord ».
+  // À gauche : notes, envoi des commandes puis conditions générales de vente ; à droite : totaux et « Bon pour accord ».
   const left: Content[] = [
     ...(quote.notes ? [sectionLabel("NOTES"), { text: quote.notes, margin: [0, 0, 0, 8] as [number, number, number, number] }] : []),
+    {
+      text: [{ text: "Envoi des commandes : ", bold: true }, { text: ORDERS_EMAIL, bold: true, color: ACCENT }, "\nJoindre le devis à la commande."],
+      fontSize: 7.5,
+      color: TEXT,
+      margin: [0, 0, 0, 5],
+    },
     conditionsBlock(),
   ];
 

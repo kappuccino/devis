@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
-const { buildDocument, DEFAULT_VALIDITY, HEAD_OFFICE } = await import("./usePdf");
+const { buildDocument, DEFAULT_VALIDITY, HEAD_OFFICE, ORDERS_EMAIL } = await import("./usePdf");
 import type { Quote } from "../api";
 import { formatEuro } from "../format";
 
@@ -17,7 +17,7 @@ const texts = (c: unknown): string[] => {
 };
 
 describe("PDF du devis", () => {
-  it("imprime le siège et l'adresse des commandes en pied de page, pas en haut", () => {
+  it("imprime le siège et le SIRET en pied de page, pas en haut", () => {
     const doc = buildDocument(quote, null, { company_name: "CAHORS", agency_contact: "Jean Dupont" });
     const footer = texts((doc.footer as (p: number, n: number) => unknown)(1, 1));
     const i = footer.indexOf(HEAD_OFFICE[0]);
@@ -48,6 +48,9 @@ describe("PDF du devis", () => {
     expect(bottom.unbreakable).toBe(true);
     expect(texts(bottom.columns[0])).toContain("CONDITIONS GÉNÉRALES DE VENTE");
     expect(texts(bottom.columns[1])).toContain("TOTAL HT");
+    const left = texts(bottom.columns[0]);
+    expect(left.indexOf(ORDERS_EMAIL)).toBeGreaterThan(-1);
+    expect(left.indexOf(ORDERS_EMAIL)).toBeLessThan(left.indexOf("CONDITIONS GÉNÉRALES DE VENTE"));
   });
 
   it("n'imprime pas le nom de la société sous le logo", () => {
