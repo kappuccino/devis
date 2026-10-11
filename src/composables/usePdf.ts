@@ -14,6 +14,8 @@ pdfMake.addVirtualFileSystem(pdfFonts);
 /** Rouge du logo Cahors, et sa teinte claire pour les fonds. */
 const ACCENT = "#e60005";
 const ACCENT_TINT = "#fdeced";
+/** En-tête du tableau des lignes : rouge clair un peu plus soutenu. */
+const HEADER_FILL = "#f7d4d5";
 
 /** Pied de page : identique sur tous les devis (siège et adresse des commandes), non modifiable. */
 export const HEAD_OFFICE = [
@@ -51,6 +53,95 @@ const softBox = (content: Content, padding = 8): Content => ({
   },
 });
 
+/** Hauteur de la page A4 et marge du bas (place du pied de page). */
+const PAGE_HEIGHT = 842;
+const BOTTOM_MARGIN = 64;
+/**
+ * Conditions générales de vente, en bas à gauche du devis (à côté des totaux) : encadré gris
+ * très clair à filet rouge épais à gauche, titre en petites capitales rouges, paragraphes serrés ;
+ * le dernier (« Toute commande entraîne… ») en italique.
+ */
+function conditionsBlock(): Content {
+  const paragraphs: Content[][] = [[]];
+  for (const line of parseConditions(CONDITIONS)) {
+    if (!line.runs.length) {
+      if (paragraphs[paragraphs.length - 1].length) paragraphs.push([]);
+      continue;
+    }
+    paragraphs[paragraphs.length - 1].push({
+      text: line.runs.map((r) => ({ text: r.text, bold: r.bold, color: r.bold ? TEXT : undefined, decoration: r.underline ? ("underline" as const) : undefined })),
+      ...(line.title ? { bold: true, color: TEXT } : {}),
+    });
+  }
+  const last = paragraphs.length > 1 ? paragraphs.pop()! : [];
+  return {
+    table: {
+      widths: ["*"],
+      body: [
+        [
+          {
+            style: "conditions",
+            stack: [
+              { text: "CONDITIONS GÉNÉRALES DE VENTE", style: "sectionLabel", margin: [0, 0, 0, 4] },
+              ...paragraphs.map((p, i) => ({ stack: p, margin: [0, i ? 3 : 0, 0, 0] })),
+              ...(last.length ? [{ stack: last, italics: true, margin: [0, 4, 0, 0] }] : []),
+            ],
+          },
+        ],
+      ],
+    },
+    layout: {
+      hLineWidth: () => 0,
+      vLineWidth: (i: number) => (i === 0 ? 2.5 : 0),
+      vLineColor: () => ACCENT,
+      fillColor: () => "#f6f7f8",
+      paddingLeft: () => 8,
+      paddingRight: () => 8,
+      paddingTop: () => 6,
+      paddingBottom: () => 6,
+    },
+  } as unknown as Content;
+}
+
+/** Pied de page : logo | siège et commandes | n° du devis et pastille de page. */
+function footer(s: Settings, quote: Quote, page: number, pages: number): Content {
+  const brand = (
+    s.company_logo
+      ? { image: s.company_logo, fit: [62, 16], width: 62 }
+      : { text: s.company_name || "CAHORS", bold: true, color: ACCENT, fontSize: 9, width: "auto" }
+  ) as Content;
+  return {
+    margin: [40, 16, 40, 0],
+    fontSize: 6.5,
+    columns: [
+      brand,
+      // Séparateur vertical fin entre le logo et l'adresse.
+      { width: 1, canvas: [{ type: "line", x1: 0, y1: 0, x2: 0, y2: 18, lineWidth: 0.5, lineColor: BORDER }] },
+      {
+        width: "*",
+        stack: [
+          { text: HEAD_OFFICE[0], color: MUTED },
+          { text: HEAD_OFFICE[1], bold: true },
+        ],
+        margin: [0, 1, 0, 0],
+      },
+      {
+        width: "auto",
+        stack: [
+          { text: `Devis n° ${quote.number ?? "—"}`, color: MUTED, alignment: "right" },
+          {
+            alignment: "right",
+            margin: [0, 2, 0, 0],
+            table: { body: [[{ text: `${page} / ${pages}`, bold: true, color: "#fff", fillColor: ACCENT, fontSize: 7 }]] },
+            layout: { defaultBorder: false, paddingLeft: () => 6, paddingRight: () => 6, paddingTop: () => 1, paddingBottom: () => 1 },
+          },
+        ],
+      },
+    ],
+    columnGap: 10,
+  } as Content;
+}
+
 /**
  * Devis PDF : en-tête (société à gauche ; DEVIS, numéro, date, validité, commercial à droite),
  * bloc client, tableau des lignes (en-tête plein, titres en bandeau, sous-totaux en pastille),
@@ -77,7 +168,7 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
       .map((t) => ({ text: t, color: MUTED })),
   ];
 
-  // Coordonnées du client : à gauche, sous le rédacteur, dans un cadre gris.
+  // Coordonnées du client : à droite, dans un cadre gris (en face du nom de l'affaire).
   const clientDetails: Content[] = [
     // La raison sociale enregistrée dans le devis fait foi (client ponctuel ou nom ajusté).
     { text: quote.client_name, bold: true, fontSize: 9.5 },
@@ -97,28 +188,25 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
         stack: [
           // Avec un logo, le nom de la société ferait doublon : seulement sans logo.
           s.company_logo
-            ? { image: s.company_logo, fit: [140, 60] }
+            ? { image: s.company_logo, fit: [210, 72] }
             : { text: s.company_name || "Ma société", style: "companyName" },
-          ...(author.length ? [{ stack: author, margin: [0, 10, 0, 0] as [number, number, number, number] }] : []),
-          {
-            margin: [0, 14, 0, 0],
-            table: { widths: [260], body: [[{ stack: clientDetails, fillColor: GREY_FILL, margin: [8, 6, 8, 6] }]] },
-            layout: "noBorders",
-          },
+          ...(author.length ? [{ stack: author, margin: [0, 8, 0, 0] as [number, number, number, number] }] : []),
         ],
       },
       {
         width: 190,
         stack: [
           { text: "DEVIS", style: "title" },
-          { text: `n° ${quote.number ?? "—"}`, color: ACCENT, fontSize: 12, bold: true, alignment: "right", margin: [0, 0, 0, 8] },
+          { text: `n° ${quote.number ?? "—"}`, color: ACCENT, fontSize: 12, bold: true, alignment: "right", margin: [0, 0, 0, 6] },
+          // Date, validité, commercial : en petit.
           {
             columns: [
               { width: "*", text: "" },
               {
                 width: "auto",
+                fontSize: 7,
                 table: { body: meta.map(([k, v]) => [{ text: k, color: MUTED }, { text: v, alignment: "right" }]) },
-                layout: { defaultBorder: false, paddingLeft: () => 0, paddingRight: (i: number) => (i === 0 ? 10 : 0), paddingTop: () => 1, paddingBottom: () => 1 },
+                layout: { defaultBorder: false, paddingLeft: () => 0, paddingRight: (i: number) => (i === 0 ? 8 : 0), paddingTop: () => 0.5, paddingBottom: () => 0.5 },
               },
             ],
           },
@@ -127,28 +215,60 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     ],
   };
 
-  // Nom de l'affaire : juste au-dessus des lignes, à gauche.
+  // Sous l'en-tête : le nom de l'affaire à gauche, mis en valeur (filet rouge, grand titre),
+  // en face des coordonnées du client, à droite dans un cadre gris.
   const project = quote.project_name?.trim();
-  const projectBlock: Content = project
-    ? { text: project, bold: true, fontSize: 11, margin: [0, 16, 0, 8] }
-    : { text: "", margin: [0, 0, 0, 16] };
+  const projectCell: TableCell = project
+    ? {
+        verticalAlignment: "middle",
+        table: {
+          widths: ["*"],
+          body: [[{ text: project, fontSize: 15, bold: true, color: TEXT, lineHeight: 1.05 }]],
+        },
+        layout: {
+          hLineWidth: () => 0,
+          vLineWidth: (i: number) => (i === 0 ? 3 : 0),
+          vLineColor: () => ACCENT,
+          paddingLeft: () => 10,
+          paddingRight: () => 0,
+          paddingTop: () => 3,
+          paddingBottom: () => 3,
+        },
+      } as TableCell
+    : { text: "" };
+  const projectBlock: Content = {
+    margin: [0, 14, 0, 16],
+    table: {
+      // Colonne vide de 20 pt entre les deux (le fond gris ne doit couvrir que le client).
+      widths: ["*", 20, 250],
+      body: [[projectCell, { text: "" }, { stack: clientDetails, fillColor: GREY_FILL, margin: [6, 4, 6, 4] }]],
+    },
+    layout: { defaultBorder: false, paddingLeft: () => 0, paddingRight: () => 0, paddingTop: () => 0, paddingBottom: () => 0 },
+  };
 
   const th = (text: string, alignment: "left" | "right" = "left") => ({ text, style: "th", alignment });
-  // La colonne « Remise » n'apparaît que si au moins une ligne a une remise supplémentaire.
-  // Idem pour le code ENEDIS (avant la référence) : seulement si au moins un produit en a un.
-  const withDiscount = quote.lines.some((l) => l.kind === "item" && l.discount > 0);
+  // Colonne « Remise » (remise supplémentaire de la ligne) : toujours présente.
+  // Le code ENEDIS (avant la référence) : seulement si au moins un produit en a un.
   const withEnedis = quote.lines.some((l) => l.kind === "item" && l.enedis_code);
-  // Le prix public n'est jamais imprimé (le client ne voit que son prix net).
-  const cols = 5 + (withDiscount ? 1 : 0) + (withEnedis ? 1 : 0);
+  // Prix public, avant le PU HT retenu : seulement si au moins un produit en a un.
+  // Le prix seuil n'est jamais imprimé.
+  const withPublic = quote.lines.some((l) => l.kind === "item" && l.public_price != null);
+  const cols = 6 + (withEnedis ? 1 : 0) + (withPublic ? 1 : 0);
+  const price = (v: number | null | undefined, style: Record<string, unknown> = {}) => ({
+    text: v != null ? formatUnitPrice(v) : "",
+    alignment: "right" as const,
+    ...style,
+  });
   const empties = (n: number) => Array.from({ length: n }, () => ({}));
   const body: TableCell[][] = [
     [
-      ...(withEnedis ? [th("Code ENEDIS")] : []),
+      ...(withEnedis ? [th("Codet")] : []),
       th("Référence"),
       th("Désignation"),
       th("Qté", "right"),
+      ...(withPublic ? [th("Prix public", "right")] : []),
       th("PU HT", "right"),
-      ...(withDiscount ? [th("Remise", "right")] : []),
+      th("Remise", "right"),
       th("Total HT", "right"),
     ],
   ];
@@ -156,7 +276,7 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
   const amounts = subtotals(quote.lines);
   for (const l of quote.lines) {
     if (l.kind === "title") {
-      // Titre de paragraphe : bandeau rouge pâle sur toute la largeur.
+      // Titre de paragraphe : bandeau gris clair sur toute la largeur.
       titleRows.add(body.length);
       body.push([{ text: l.designation, colSpan: cols, style: "titleLine" }, ...empties(cols - 1)]);
     } else if (l.kind === "text") {
@@ -188,31 +308,48 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
         // Ligne en option : signalée, et hors total HT (comptée dans « Total options »).
         l.is_option ? { text: [l.designation, { text: "  (option)", style: "optionTag" }], italics: true } : l.designation,
         { text: formatNumber(l.quantity), alignment: "right" },
-        { text: formatUnitPrice(l.unit_price), alignment: "right" },
-        ...(withDiscount ? [{ text: l.discount ? `${formatNumber(l.discount)} %` : "", alignment: "right" as const }] : []),
+        ...(withPublic ? [price(l.public_price, { color: MUTED })] : []),
+        price(l.unit_price, withPublic ? { bold: true } : {}),
+        { text: l.discount ? `${formatNumber(l.discount)} %` : "", alignment: "right" },
         { text: formatEuro(lineTotal(l)), alignment: "right" },
       ]);
     }
   }
 
+  // Lignes en 7 pt : la plupart des désignations tiennent sur une seule ligne.
   const lines: Content = {
+    fontSize: 7,
     table: {
       headerRows: 1,
-      widths: [...(withEnedis ? [54] : []), withEnedis ? 54 : 62, "*", 38, 62, ...(withDiscount ? [46] : []), 70],
+      // Largeurs sans les marges des cellules (3 pt de chaque côté) : le tout tient dans la page.
+      widths: [
+        ...(withEnedis ? [36] : []),
+        withEnedis ? 44 : 52,
+        "*",
+        20,
+        ...(withPublic ? [44] : []),
+        withPublic ? 44 : 52,
+        30,
+        48,
+      ],
       body,
       dontBreakRows: true,
     },
     layout: {
       // Pas de quadrillage : en-tête plein, bandeaux de titre, simple filet sous le tableau.
-      hLineWidth: (i, node) => (i === node.table.body.length ? 0.75 : 0),
-      hLineColor: () => BORDER,
+      // Filet gris fin sous la dernière ligne (fin du devis, avant les totaux) ; un titre en
+      // première ligne est décollé de l'en-tête par une bande blanche.
+      hLineWidth: (i, node) => (i === node.table.body.length ? 0.8 : i === 1 && titleRows.has(1) ? 5 : 0),
+      hLineColor: (i, node) => (i === node.table.body.length ? "#a9aeb5" : "#fff"),
       // Séparations verticales de la couleur du fond : sans elles, l'en-tête plein montre de
       // fins traits blancs entre les cellules.
       vLineWidth: () => 1,
-      vLineColor: (_i, _node, row) => (row === 0 ? ACCENT_TINT : "#fff"),
-      paddingTop: (i) => (i === 0 ? 5 : titleRows.has(i) ? 4 : 3),
-      paddingBottom: (i) => (i === 0 ? 5 : titleRows.has(i) ? 4 : 3),
-      fillColor: (row) => (row === 0 || titleRows.has(row) ? ACCENT_TINT : null),
+      vLineColor: (_i, _node, row) => (row === 0 ? HEADER_FILL : "#fff"),
+      paddingLeft: () => 3,
+      paddingRight: () => 3,
+      paddingTop: (i) => (i === 0 ? 2.5 : titleRows.has(i) ? 2 : 3),
+      paddingBottom: (i) => (i === 0 ? 2 : titleRows.has(i) ? 1.5 : 3),
+      fillColor: (row) => (row === 0 ? HEADER_FILL : titleRows.has(row) ? GREY_FILL : null),
     },
   };
 
@@ -240,25 +377,27 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     {
       colSpan: 2,
       fillColor: GREY_FILL,
-      margin: [0, 2, 0, 2],
+      margin: [0, 1, 0, 1],
       columns: [
-        { text: "TOTAL HT", bold: true, fontSize: 10 },
-        { text: formatEuro(totals.net), bold: true, fontSize: 10, alignment: "right", width: "auto", noWrap: true },
+        { text: "TOTAL HT", bold: true, fontSize: 9 },
+        { text: formatEuro(totals.net), bold: true, fontSize: 9, alignment: "right", width: "auto", noWrap: true },
       ],
     },
     {},
   ];
+  // Bloc compact (7,5 pt) : un devis de quelques lignes tient sur une page.
   const totalsTable: Content = {
+    fontSize: 7.5,
     table: { widths: ["*", "auto"], body: [...details, band] },
     layout: {
       // Cadre léger autour du détail, filets fins entre les lignes ; le bandeau ferme le bloc.
       hLineWidth: (i) => (i < details.length ? 0.75 : 0),
       vLineWidth: () => 0,
       hLineColor: () => BORDER,
-      paddingLeft: () => 8,
-      paddingRight: () => 8,
-      paddingTop: (i) => (i === details.length ? 5 : 3),
-      paddingBottom: (i) => (i === details.length ? 5 : 3),
+      paddingLeft: () => 6,
+      paddingRight: () => 6,
+      paddingTop: (i) => (i === details.length ? 4 : 2),
+      paddingBottom: (i) => (i === details.length ? 4 : 2),
     },
   };
   const right: Content[] = [totalsTable];
@@ -269,79 +408,59 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
         { text: "Total options HT (non compris)", italics: true, color: MUTED },
         { text: formatEuro(quote.total_options), italics: true, color: MUTED, alignment: "right", width: "auto" },
       ],
-      margin: [8, 5, 8, 0],
+      margin: [6, 4, 6, 0],
+      fontSize: 7.5,
     });
   }
   // Accord du client.
   right.push({
-    margin: [0, 12, 0, 0],
-    ...(softBox({ stack: [{ text: "Mention « Bon pour accord », date et signature", color: MUTED }, { text: " ", margin: [0, 0, 0, 48] }] }) as object),
+    margin: [0, 8, 0, 0],
+    ...(softBox({ stack: [{ text: "Mention « Bon pour accord », date et signature", color: MUTED, fontSize: 7.5 }, { text: " ", margin: [0, 0, 0, 34] }] }, 6) as object),
   } as Content);
 
-  // À gauche : notes puis conditions générales de vente (fixes), dans un encadré léger.
-  const left: Content[] = [];
-  if (quote.notes) left.push(sectionLabel("NOTES"), { text: quote.notes, margin: [0, 0, 0, 12] });
-  left.push(
-    sectionLabel("CONDITIONS GÉNÉRALES DE VENTE"),
-    softBox({
-      style: "conditions",
-      stack: parseConditions(CONDITIONS).map((line) => ({
-        text: line.runs.length
-          ? line.runs.map((r) => ({ text: r.text, bold: r.bold, decoration: r.underline ? ("underline" as const) : undefined }))
-          : " ",
-        ...(line.title ? { bold: true, fontSize: 8, color: TEXT, margin: [0, 0, 0, 3] as [number, number, number, number] } : {}),
-      })),
-    }),
-  );
+  // À gauche : notes puis conditions générales de vente ; à droite : totaux et « Bon pour accord ».
+  const left: Content[] = [
+    ...(quote.notes ? [sectionLabel("NOTES"), { text: quote.notes, margin: [0, 0, 0, 8] as [number, number, number, number] }] : []),
+    conditionsBlock(),
+  ];
 
   const bottom: Content = {
-    margin: [0, 16, 0, 0],
+    margin: [0, 12, 0, 0],
     unbreakable: true,
     columns: [
       { width: "*", stack: left },
-      { width: 230, stack: right },
+      { width: 210, stack: right },
     ],
-    columnGap: 20,
+    columnGap: 16,
   };
 
   return {
     pageSize: "A4",
-    pageMargins: [40, 40, 40, 64],
+    pageMargins: [40, 40, 40, BOTTOM_MARGIN],
     info: { title: `Devis ${quote.number ?? ""}` },
     content: [header, projectBlock, lines, bottom],
-    // Pied de page : filet rouge ; à gauche le siège et l'adresse des commandes ;
-    // à droite le n° du devis et la page.
-    footer: (page, pages) => ({
-      margin: [40, 14, 40, 0],
-      stack: [
-        { canvas: [{ type: "line", x1: 0, y1: 0, x2: PAGE_WIDTH, y2: 0, lineWidth: 0.75, lineColor: ACCENT }] },
-        {
-          margin: [0, 5, 0, 0],
-          columns: [
-            {
-              stack: [
-                { text: HEAD_OFFICE[0], color: MUTED },
-                { text: HEAD_OFFICE[1], bold: true },
-              ],
-            },
-            { text: `Devis n° ${quote.number ?? "—"} · Page ${page} / ${pages}`, alignment: "right", color: MUTED, width: "auto" },
-          ],
-        },
+    // Pied de page : logo, siège et adresse des commandes, n° du devis et page en pastille rouge ;
+    // un liseré rouge borde le bas de chaque page.
+    footer: (page, pages) => footer(s, quote, page, pages),
+    background: () => ({
+      absolutePosition: { x: 0, y: PAGE_HEIGHT - 6 },
+      canvas: [
+        { type: "rect", x: 0, y: 0, w: PAGE_WIDTH + 80, h: 2, color: ACCENT_TINT },
+        { type: "rect", x: 0, y: 2, w: PAGE_WIDTH + 80, h: 4, color: ACCENT },
       ],
-      fontSize: 6.5,
     }),
     defaultStyle: { fontSize: 8, lineHeight: 1.15, color: TEXT },
     styles: {
       companyName: { fontSize: 12, bold: true, color: ACCENT, margin: [0, 0, 0, 2] },
       title: { fontSize: 24, alignment: "right" },
-      th: { bold: true, color: MUTED, fontSize: 8.5 },
+      th: { bold: true, color: "#3f444b", fontSize: 7.5 },
       sectionLabel: { fontSize: 7, bold: true, color: ACCENT, characterSpacing: 0.6 },
-      // Titre : gras, rouge, taille 10 (bandeau) ; texte : noir, gras, taille 8,5 (corps : 8).
-      titleLine: { bold: true, color: ACCENT, fontSize: 9 },
-      textLine: { bold: true, color: "#000", fontSize: 8.5 },
+      // Titre : gras, noir, taille 8 (bandeau gris fin) ; texte : noir, gras, taille 7,5 (lignes : 7).
+      titleLine: { bold: true, color: "#000", fontSize: 8 },
+      textLine: { bold: true, color: "#000", fontSize: 7.5 },
       optionTag: { color: ACCENT, fontSize: 7 },
-      mono: { fontSize: 7.5 },
-      conditions: { fontSize: 7, color: "#555" },
+      mono: { fontSize: 7 },
+      conditions: { fontSize: 6.8, color: "#4b5058", lineHeight: 1.2 },
     },
   };
 }

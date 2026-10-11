@@ -29,7 +29,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Nom de l'affaire",
-        text: "Champ « Affaire » à droite de la ligne Client (chantier, opération…). Il est imprimé sur le PDF au-dessus des lignes, à gauche du client, et apparaît sous le client dans la liste des devis (recherche possible).",
+        text: "Champ « Affaire » à droite de la ligne Client (chantier, opération…). Il est imprimé en grand sur le PDF, à gauche, en face des coordonnées du client, et apparaît sous le client dans la liste des devis (recherche possible).",
       },
       {
         title: "Saisie des lignes",
@@ -50,7 +50,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Titres, textes et sous-totaux",
-        text: "Boutons sous les lignes : Titre (paragraphe en rouge), Texte (ligne libre), Sous-total (somme des articles depuis le sous-total précédent). Ils s'ajoutent en fin de devis ; déplacez-les avec la poignée.",
+        text: "Boutons sous les lignes : Titre (bandeau gris sur le PDF), Texte (ligne libre), Sous-total (somme des articles depuis le sous-total précédent). Ils s'ajoutent en fin de devis ; déplacez-les avec la poignée.",
       },
       {
         title: "Lignes en option",
@@ -80,7 +80,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "PDF et PDF + Docs",
-        text: "« PDF » enregistre le devis puis génère le PDF (logo et coordonnées du rédacteur en haut, client dans un cadre gris en dessous, conditions générales de vente en bas du devis — identiques pour tous, intégrées à l'appli —, siège et adresse des commandes en pied de page, version complète des conditions en dernière page si choisie dans les Réglages) et l'ouvre. « PDF + Docs » ajoute à la suite la documentation technique des produits du devis (pages trouvées dans la documentation et fichiers ajoutés à la main), avec un sommaire.",
+        text: "« PDF » enregistre le devis puis génère le PDF (logo et coordonnées du rédacteur en haut à gauche, date, validité et commercial en petit sous le numéro, puis nom de l'affaire en grand à gauche, en face du client dans un cadre gris à droite, lignes avec codet ENEDIS, prix public (en gris), PU HT retenu (en gras) et remise supplémentaire, en bas : notes et conditions générales de vente dans un encadré à gauche — identiques pour tous, intégrées à l'appli —, totaux et « Bon pour accord » à droite ; un devis de quelques lignes tient sur une page ; pied de page avec le logo, le siège, l'adresse des commandes et le numéro de page, version complète des conditions en dernière page si choisie dans les Réglages) et l'ouvre. « PDF + Docs » ajoute à la suite la documentation technique des produits du devis (pages trouvées dans la documentation et fichiers ajoutés à la main), avec un sommaire.",
       },
       {
         title: "Versions d'un devis",

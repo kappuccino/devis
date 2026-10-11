@@ -20,9 +20,27 @@ describe("PDF du devis", () => {
   it("imprime le siège et l'adresse des commandes en pied de page, pas en haut", () => {
     const doc = buildDocument(quote, null, { company_name: "CAHORS", agency_contact: "Jean Dupont" });
     const footer = texts((doc.footer as (p: number, n: number) => unknown)(1, 1));
-    expect(footer.slice(0, 2)).toEqual(HEAD_OFFICE);
+    const i = footer.indexOf(HEAD_OFFICE[0]);
+    expect(footer.slice(i, i + 2)).toEqual(HEAD_OFFICE);
+    expect(footer).toContain("1 / 1");
     expect(footer.join(" ")).not.toContain("Jean Dupont");
     expect(texts(doc.content)).not.toContain(HEAD_OFFICE[0]);
+  });
+
+  it("met le logo dans le pied de page (sinon le nom de la société)", () => {
+    const logo = "data:image/png;base64,iVBORw0KGgo=";
+    const footer = (s: Record<string, string>) => JSON.stringify((buildDocument(quote, null, s).footer as (p: number, n: number) => unknown)(2, 3));
+    expect(footer({ company_logo: logo })).toContain(logo);
+    expect(footer({ company_name: "GROUPE CAHORS" })).toContain("GROUPE CAHORS");
+    expect(footer({})).toContain("2 / 3");
+  });
+
+  it("place les conditions générales de vente en bas à gauche, à côté des totaux", () => {
+    const content = buildDocument(quote, null, {}).content as unknown as Record<string, unknown>[];
+    const bottom = content[content.length - 1] as { columns: unknown[]; unbreakable: boolean };
+    expect(bottom.unbreakable).toBe(true);
+    expect(texts(bottom.columns[0])).toContain("CONDITIONS GÉNÉRALES DE VENTE");
+    expect(texts(bottom.columns[1])).toContain("TOTAL HT");
   });
 
   it("n'imprime pas le nom de la société sous le logo", () => {
