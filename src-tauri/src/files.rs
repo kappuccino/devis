@@ -128,6 +128,47 @@ impl FileAccess {
     }
 }
 
+/// Tailles maximales des fichiers lus : au-delà, c'est une erreur de choix de fichier (ou un
+/// fichier piégé), et l'appli refuse au lieu de saturer la mémoire.
+pub const MB: u64 = 1024 * 1024;
+/// PDF de la documentation, documents joints aux devis, PDF des CGV.
+pub const MAX_DOC: u64 = 300 * MB;
+/// Classeur des tarifs (LPN) importé.
+pub const MAX_IMPORT: u64 = 200 * MB;
+/// Gabarit de l'export Excel.
+pub const MAX_TEMPLATE: u64 = 20 * MB;
+/// Copie de la base restaurée.
+pub const MAX_BACKUP: u64 = 1024 * MB;
+
+/// Erreur si le fichier dépasse `max` octets (ou n'est pas lisible).
+pub fn check_size(path: &Path, max: u64) -> CmdResult<()> {
+    let len = std::fs::metadata(path).map_err(|e| format!("Lecture de « {} » : {e}", path.display()))?.len();
+    if len > max {
+        return Err(format!(
+            "Fichier trop volumineux : « {} » ({} Mo, au plus {} Mo).",
+            path.display(),
+            len.div_ceil(MB),
+            max / MB
+        ));
+    }
+    Ok(())
+}
+
+/// Contenu d'un fichier, s'il ne dépasse pas `max` octets.
+pub fn read_limited(path: &Path, max: u64) -> CmdResult<Vec<u8>> {
+    use std::io::Read;
+    check_size(path, max)?;
+    // Le fichier peut grossir entre-temps : la lecture s'arrête quand même à `max`.
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .and_then(|f| f.take(max + 1).read_to_end(&mut bytes))
+        .map_err(|e| format!("Lecture de « {} » : {e}", path.display()))?;
+    if bytes.len() as u64 > max {
+        return Err(format!("Fichier trop volumineux : « {} ».", path.display()));
+    }
+    Ok(bytes)
+}
+
 /// Chemin absolu sans `.` ni `..`, liens résolus quand le fichier (ou son dossier) existe, pour
 /// comparer des chemins écrits différemment.
 pub fn normalize(path: &Path) -> PathBuf {
@@ -288,6 +329,16 @@ mod tests {
         std::fs::write(d.join("docs/sous/a.pdf"), b"%PDF").unwrap();
         std::fs::write(d.join("secret.txt"), b"x").unwrap();
         d
+    }
+
+    #[test]
+    fn refuses_files_over_the_size_limit() {
+        let d = temp_dir("size");
+        let f = d.join("gros.pdf");
+        std::fs::write(&f, vec![0u8; 2048]).unwrap();
+        assert_eq!(read_limited(&f, 4096).unwrap().len(), 2048);
+        assert!(read_limited(&f, 1024).unwrap_err().contains("trop volumineux"));
+        assert!(check_size(&d.join("absent.pdf"), 1024).is_err());
     }
 
     #[test]

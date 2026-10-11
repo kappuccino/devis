@@ -371,7 +371,8 @@ pub fn export_price_list(
     let template = setting(&conn, "price_list_template")?
         .filter(|p| !p.trim().is_empty())
         .ok_or("Choisissez d'abord le gabarit Excel dans Réglages → Config PDF → Export Excel.")?;
-    let template = std::fs::read(&template).map_err(|e| format!("Gabarit « {template} » : {e}"))?;
+    let template = crate::files::read_limited(std::path::Path::new(&template), crate::files::MAX_TEMPLATE)
+        .map_err(|e| format!("Gabarit Excel : {e}"))?;
     let client_name: String = conn
         .query_row("SELECT name FROM clients WHERE code = ?1", [&client_code], |r| r.get(0))
         .optional()
@@ -1168,6 +1169,7 @@ pub async fn import_lpn(
     files.check_opened(&path)?;
     let db = state.db.clone();
     tauri::async_runtime::spawn_blocking(move || {
+    crate::files::check_size(std::path::Path::new(&path), crate::files::MAX_IMPORT)?;
         let mut conn = db.lock().map_err(err)?;
         import::import_lpn(&mut conn, &PathBuf::from(path))
     })

@@ -214,7 +214,7 @@ pub async fn read_file(
 ) -> CmdResult<Response> {
     files.check_read(&state.conn(), &path, &docs.drag_dir)?;
     tauri::async_runtime::spawn_blocking(move || {
-        std::fs::read(&path).map(Response::new).map_err(|e| format!("Lecture de « {path} » : {e}"))
+        crate::files::read_limited(Path::new(&path), crate::files::MAX_DOC).map(Response::new)
     })
     .await
     .map_err(err)?
@@ -258,7 +258,8 @@ pub fn write_drag_file(state: State<'_, DocsState>, name: String, contents: Vec<
 #[tauri::command]
 pub fn docs_legacy_folder(app: AppHandle, files: State<'_, FileAccess>) -> Option<String> {
     let settings = app.path().data_dir().ok()?.join("org.kappuccino.pdfref").join("settings.json");
-    let json: Json = serde_json::from_str(&std::fs::read_to_string(settings).ok()?).ok()?;
+    let bytes = crate::files::read_limited(&settings, crate::files::MB).ok()?;
+    let json: Json = serde_json::from_slice(&bytes).ok()?;
     let dir = json.get("pdfDir")?.as_str()?.to_string();
     // Choisi par l'utilisateur dans PDF Finder : repris comme s'il venait d'être choisi ici.
     Path::new(&dir).is_dir().then(|| files.allow_opened(Path::new(&dir)))?;
