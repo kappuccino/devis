@@ -98,6 +98,7 @@ pub fn run() {
             commands::delete_quote,
             commands::duplicate_quote,
             commands::set_quote_won,
+            commands::set_quote_comment,
             commands::new_quote_version,
             commands::list_quote_templates,
             commands::save_as_template,

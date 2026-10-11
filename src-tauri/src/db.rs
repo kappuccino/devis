@@ -116,7 +116,9 @@ CREATE TABLE IF NOT EXISTS quotes (
     is_template   INTEGER NOT NULL DEFAULT 0,
     template_name TEXT NOT NULL DEFAULT '',
     -- Nom de l'affaire (chantier, opération…), imprimé sur le PDF.
-    project_name  TEXT NOT NULL DEFAULT ''
+    project_name  TEXT NOT NULL DEFAULT '',
+    -- Commentaire de suivi, saisi dans la liste des devis (non imprimé).
+    comment       TEXT NOT NULL DEFAULT ''
 );
 
 {QUOTE_LINES}
@@ -210,6 +212,8 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     add_column(conn, "quotes", "template_name", "TEXT NOT NULL DEFAULT ''")?;
     // Nom de l'affaire.
     add_column(conn, "quotes", "project_name", "TEXT NOT NULL DEFAULT ''")?;
+    // Commentaire de suivi (liste des devis).
+    add_column(conn, "quotes", "comment", "TEXT NOT NULL DEFAULT ''")?;
     Ok(())
 }
 

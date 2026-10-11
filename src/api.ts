@@ -178,6 +178,8 @@ export interface QuoteSummary {
   superseded: boolean;
   /** Nom de l'affaire. */
   project_name: string;
+  /** Commentaire de suivi (non imprimé). */
+  comment: string;
 }
 
 /**
@@ -345,6 +347,7 @@ export const api = {
   newQuoteVersion: (id: number, date: string) => invoke<Quote>("new_quote_version", { id, date }),
   /** Renvoie la date du marquage (null : affaire remise en attente). */
   setQuoteWon: (id: number, won: boolean) => invoke<string | null>("set_quote_won", { id, won }),
+  setQuoteComment: (id: number, comment: string) => invoke<void>("set_quote_comment", { id, comment }),
 
   getQuoteAttachments: (quoteId: number) => invoke<QuoteAttachment[]>("get_quote_attachments", { quoteId }),
   saveQuoteAttachments: (quoteId: number, attachments: QuoteAttachment[]) =>

@@ -72,7 +72,7 @@ const filtered = computed(() => {
   return quotes.value.filter(
     (d) =>
       (status.value === "all" || (status.value === "won") === !!d.won_at) &&
-      (!q || [d.number, d.client_name, d.client_code ?? "", d.project_name].some((v) => v.toLowerCase().includes(q))),
+      (!q || [d.number, d.client_name, d.client_code ?? "", d.project_name, d.comment].some((v) => v.toLowerCase().includes(q))),
   );
 });
 
@@ -83,6 +83,15 @@ async function setWon(q: QuoteSummary, won: boolean) {
     quotes.value = await api.listQuotes();
   } catch (e) {
     toast.add({ severity: "error", summary: "Affaire obtenue", detail: errorMessage(e) });
+  }
+}
+
+/** Enregistre le commentaire quand on quitte le champ (ou Entrée). */
+async function saveComment(q: QuoteSummary) {
+  try {
+    await api.setQuoteComment(q.id, q.comment);
+  } catch (e) {
+    toast.add({ severity: "error", summary: "Commentaire", detail: errorMessage(e) });
   }
 }
 
@@ -203,16 +212,15 @@ onMounted(() => {
               v-tooltip.top="'Nouveau devis à partir de ce type (prix calculés pour le client choisi)'"
               label="Créer un devis"
               icon="pi pi-file-plus"
-              text
-              size="small"
+              outlined
+              rounded
               @click="router.push({ path: '/devis/nouveau', query: { type: data.id } })"
             />
             <Button
               v-tooltip.top="'Supprimer'"
               icon="pi pi-trash"
-              text
+              outlined
               rounded
-              size="small"
               severity="danger"
               @click="removeTemplate(data)"
             />
@@ -258,13 +266,9 @@ onMounted(() => {
           <div v-if="data.project_name" class="muted project">{{ data.project_name }}</div>
         </template>
       </Column>
-      <Column field="line_count" header="Lignes" class="num" />
       <Column field="total_net" header="Total HT" sortable class="num">
         <template #body="{ data }">
           <strong>{{ formatEuro(data.total_net) }}</strong>
-          <span v-if="data.total_net !== data.total_ht" v-tooltip.top="'Avant remise globale'" class="muted strike">
-            {{ formatEuro(data.total_ht) }}
-          </span>
         </template>
       </Column>
       <Column field="won_at" header="Obtenue" sortable style="width: 90px">
@@ -278,32 +282,44 @@ onMounted(() => {
           />
         </template>
       </Column>
-      <Column header="" style="width: 180px">
+      <Column field="comment" header="Commentaire" style="min-width: 200px">
+        <template #body="{ data }">
+          <InputText
+            v-model="data.comment"
+            class="comment"
+            size="small"
+            placeholder="…"
+            :aria-label="`Commentaire : ${data.number}`"
+            @change="saveComment(data)"
+            @keydown.enter="($event.target as HTMLInputElement).blur()"
+          />
+        </template>
+      </Column>
+      <Column header="" style="width: 210px">
         <template #body="{ data }">
           <div class="row-actions">
-            <Button v-tooltip.top="'PDF'" icon="pi pi-file-pdf" text rounded size="small" @click="pdf(data)" />
+            <Button v-tooltip.top="'PDF'" icon="pi pi-file-pdf" outlined rounded severity="info" @click="pdf(data)" />
             <Button
               v-tooltip.top="'Nouvelle version (même numéro, suffixe -V2, -V3…)'"
               icon="pi pi-history"
-              text
+              outlined
+              severity="help"
               rounded
-              size="small"
               @click="newVersion(data)"
             />
             <Button
               v-tooltip.top="'Dupliquer (nouveau devis, nouveau numéro)'"
               icon="pi pi-copy"
-              text
+              outlined
+              severity="secondary"
               rounded
-              size="small"
               @click="duplicate(data)"
             />
             <Button
               v-tooltip.top="'Supprimer'"
               icon="pi pi-trash"
-              text
+              outlined
               rounded
-              size="small"
               severity="danger"
               @click="remove(data)"
             />
@@ -356,12 +372,6 @@ onMounted(() => {
   font-size: 0.85em;
 }
 
-.strike {
-  margin-left: 0.4rem;
-  text-decoration: line-through;
-  font-size: 0.9em;
-}
-
 .old {
   margin-left: 0.4rem;
   font-size: 0.8em;
@@ -376,8 +386,22 @@ onMounted(() => {
   color: inherit;
 }
 
+.comment {
+  width: 100%;
+}
+
 .row-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.row-actions :deep(.p-button-icon-only) {
+  width: 2.3rem;
+  height: 2.3rem;
+}
+
+.row-actions :deep(.p-button-icon) {
+  font-size: 1.1rem;
 }
 </style>

@@ -92,7 +92,12 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Liste des devis",
-        text: "Recherche par numéro ou client, filtre « Affaires obtenues / En attente », et pour chaque devis : PDF, nouvelle version, dupliquer (nouveau devis, nouveau numéro), supprimer.",
+        text: "Le total affiché est le montant final HT du devis (après remise globale, frais compris, options exclues). Recherche par numéro ou client, filtre « Affaires obtenues / En attente », et pour chaque devis : PDF, nouvelle version, dupliquer (nouveau devis, nouveau numéro), supprimer.",
+      },
+      {
+        title: "Commentaire",
+        text: "Colonne « Commentaire » de la liste des devis : un petit texte libre de suivi (relance, interlocuteur…), enregistré dès qu'on quitte le champ ou qu'on appuie sur Entrée. Il n'est pas imprimé sur le PDF et la recherche le prend en compte.",
+        keys: ["Entrée"],
       },
       {
         title: "Numérotation",

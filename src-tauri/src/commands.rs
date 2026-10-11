@@ -460,6 +460,8 @@ pub struct QuoteSummary {
     pub superseded: bool,
     /// Nom de l'affaire.
     pub project_name: String,
+    /// Commentaire de suivi (non imprimé).
+    pub comment: String,
 }
 
 #[tauri::command]
@@ -472,7 +474,7 @@ pub fn list_quotes(state: State<AppState>) -> CmdResult<Vec<QuoteSummary>> {
                 q.version,
                 EXISTS (SELECT 1 FROM quotes v WHERE COALESCE(v.version_of, v.id) = COALESCE(q.version_of, q.id)
                                                  AND v.version > q.version),
-                q.project_name
+                q.project_name, q.comment
          FROM quotes q WHERE q.is_template = 0 ORDER BY q.date DESC, q.id DESC",
         [],
         |r| {
@@ -489,6 +491,7 @@ pub fn list_quotes(state: State<AppState>) -> CmdResult<Vec<QuoteSummary>> {
                 version: r.get(9)?,
                 superseded: r.get(10)?,
                 project_name: r.get(11)?,
+                comment: r.get(12)?,
             })
         },
     )
@@ -881,6 +884,16 @@ pub fn store_quote(conn: &mut Connection, mut quote: Quote) -> CmdResult<Quote> 
 #[tauri::command]
 pub fn delete_quote(state: State<AppState>, id: i64) -> CmdResult<()> {
     state.conn().execute("DELETE FROM quotes WHERE id = ?1", [id]).map(|_| ()).map_err(err)
+}
+
+/// Suivi : commentaire libre d'un devis, saisi dans la liste des devis.
+#[tauri::command]
+pub fn set_quote_comment(state: State<AppState>, id: i64, comment: String) -> CmdResult<()> {
+    state
+        .conn()
+        .execute("UPDATE quotes SET comment = ?2 WHERE id = ?1", params![id, comment.trim()])
+        .map_err(err)?;
+    Ok(())
 }
 
 /// Suivi : marque l'affaire obtenue (date du jour) ou la remet en attente.
