@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
-const { buildDocument, HEAD_OFFICE } = await import("./usePdf");
+const { buildDocument, DEFAULT_VALIDITY, HEAD_OFFICE } = await import("./usePdf");
 import type { Quote } from "../api";
 import { formatEuro } from "../format";
 
@@ -25,6 +25,13 @@ describe("PDF du devis", () => {
     expect(footer).toContain("1 / 1");
     expect(footer.join(" ")).not.toContain("Jean Dupont");
     expect(texts(doc.content)).not.toContain(HEAD_OFFICE[0]);
+  });
+
+  it("imprime la validité des Réglages, 90 jours par défaut", () => {
+    expect(DEFAULT_VALIDITY).toBe("90 jours");
+    expect(texts(buildDocument(quote, null, {}).content)).toContain("90 jours");
+    expect(texts(buildDocument(quote, null, { quote_validity: " " }).content)).toContain("90 jours");
+    expect(texts(buildDocument(quote, null, { quote_validity: "60 jours" }).content)).toContain("60 jours");
   });
 
   it("met le logo dans le pied de page (sinon le nom de la société)", () => {

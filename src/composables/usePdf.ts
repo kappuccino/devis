@@ -23,6 +23,9 @@ export const HEAD_OFFICE = [
   "ENVOI DES COMMANDES à maec-commande@groupe-cahors.com",
 ];
 
+/** Validité imprimée quand le réglage est vide. */
+export const DEFAULT_VALIDITY = "90 jours";
+
 const MUTED = "#6b7280";
 const TEXT = "#1f2328";
 const BORDER = "#e3e6ea";
@@ -152,7 +155,7 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
   // Date, validité, commercial : libellés à gauche, valeurs à droite, sans cadre.
   const meta: [string, string][] = [
     ["En date du :", formatDate(quote.date)],
-    ...(s.quote_validity ? [["Validité :", s.quote_validity] as [string, string]] : []),
+    ["Validité :", s.quote_validity?.trim() || DEFAULT_VALIDITY],
     ...(quote.sales_rep ? [["Commercial :", quote.sales_rep] as [string, string]] : []),
   ];
   // Rédacteur du devis (Réglages) : sous le logo, en petit ; le client est à part, dans un cadre gris.

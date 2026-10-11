@@ -214,6 +214,14 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     add_column(conn, "quotes", "project_name", "TEXT NOT NULL DEFAULT ''")?;
     // Commentaire de suivi (liste des devis).
     add_column(conn, "quotes", "comment", "TEXT NOT NULL DEFAULT ''")?;
+    // Validité par défaut passée de 30 à 90 jours : l'ancienne valeur suit, une seule fois
+    // (on peut ensuite la remettre à 30 jours dans les Réglages).
+    if conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('migrated_validity_90', '1')", [])? == 1 {
+        conn.execute(
+            "UPDATE settings SET value = '90 jours' WHERE key = 'quote_validity' AND trim(value) = '30 jours'",
+            [],
+        )?;
+    }
     Ok(())
 }
 
@@ -307,6 +315,22 @@ mod tests {
             .unwrap();
         assert_eq!((cfa, cfo), (57.5, 60.0));
         assert_eq!(lists.split(',').count(), 2);
+    }
+
+    #[test]
+    fn moves_old_30_day_validity_to_90_once() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
+                            INSERT INTO settings VALUES ('quote_validity', '30 jours');").unwrap();
+        init(&conn).unwrap();
+        let validity = |c: &Connection| -> String {
+            c.query_row("SELECT value FROM settings WHERE key = 'quote_validity'", [], |r| r.get(0)).unwrap()
+        };
+        assert_eq!(validity(&conn), "90 jours");
+        // Remise à 30 jours dans les Réglages : ce choix est gardé.
+        conn.execute("UPDATE settings SET value = '30 jours' WHERE key = 'quote_validity'", []).unwrap();
+        init(&conn).unwrap();
+        assert_eq!(validity(&conn), "30 jours");
     }
 
     #[test]

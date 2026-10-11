@@ -207,7 +207,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Config PDF",
-        text: "Société et logo, rédacteur du devis (nom, adresse, téléphone, email, imprimés sous le logo), version complète des conditions générales de vente (PDF ajouté en dernière page ; le texte en bas du devis est fixe), préfixe et dernier numéro de devis, commerciaux, gabarit de l'export Excel, frais automatiques (franco de port, minimum de facturation).",
+        text: "Société et logo, rédacteur du devis (nom, adresse, téléphone, email, imprimés sous le logo), version complète des conditions générales de vente (PDF ajouté en dernière page ; le texte en bas du devis est fixe), préfixe et dernier numéro de devis, validité du devis (90 jours par défaut, imprimée sur le PDF), commerciaux, gabarit de l'export Excel, frais automatiques (franco de port, minimum de facturation).",
       },
       {
         title: "Sauvegarde",

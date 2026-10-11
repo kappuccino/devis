@@ -20,7 +20,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { checkForUpdate, installUpdate, updater, updatesSupported } from "../updater";
 import { FEE_SETTINGS } from "../fees";
 import { salesRepList, salesRepSetting, SALES_REPS_KEY } from "../salesReps";
-import { CGV_PDF_KEY, HEAD_OFFICE } from "../composables/usePdf";
+import { CGV_PDF_KEY, DEFAULT_VALIDITY, HEAD_OFFICE } from "../composables/usePdf";
 import { FAVORITE_LISTS_KEY, favoriteLists } from "../favorites";
 import { errorMessage, formatNumber } from "../format";
 import BackupSettings from "../components/BackupSettings.vue";
@@ -102,7 +102,7 @@ const authorFields: Field[] = [
 ];
 const quoteFields: Field[] = [
   { key: "quote_prefix", label: "Préfixe des n° de devis", placeholder: "JMOS → 26-JMOS-0001" },
-  { key: "quote_validity", label: "Validité", placeholder: "ex. 30 jours" },
+  { key: "quote_validity", label: "Validité", placeholder: `${DEFAULT_VALIDITY} (par défaut)` },
 ];
 
 /**
