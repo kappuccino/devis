@@ -36,6 +36,10 @@ const BORDER = "#e3e6ea";
 const GREY_FILL = "#eeeff1";
 /** Largeur utile de la page A4 (595 pt − marges de 40 pt). */
 const PAGE_WIDTH = 515;
+/** Bas du devis : colonne des totaux à droite, conditions générales à gauche. */
+const TOTALS_WIDTH = 210;
+const BOTTOM_GAP = 16;
+const CONDITIONS_WIDTH = PAGE_WIDTH - TOTALS_WIDTH - BOTTOM_GAP;
 
 /** Petit titre de section en capitales rouges (NOTES, CONDITIONS GÉNÉRALES DE VENTE). */
 const sectionLabel = (text: string, margin: [number, number, number, number] = [0, 0, 0, 3]): Content => ({
@@ -58,6 +62,34 @@ const softBox = (content: Content, padding = 8): Content => ({
     paddingBottom: () => padding,
   },
 });
+
+/** Rayon des coins arrondis (cadre client, conditions générales de vente). */
+const RADIUS = 3;
+type Corner = "tl" | "tr" | "bl" | "br";
+/**
+ * Coin arrondi d'un fond de cellule : pdfmake ne remplit les cellules qu'en rectangle ; un petit
+ * masque blanc (le coin moins le quart de cercle) posé sur l'angle l'arrondit. (x, y) : position
+ * de l'angle par rapport au début du contenu de la cellule, sans effet sur la mise en page.
+ */
+function cornerMask(corner: Corner, x: number, y: number, r = RADIUS): Content {
+  const sx = corner === "tr" || corner === "br" ? -1 : 1;
+  const sy = corner === "bl" || corner === "br" ? -1 : 1;
+  const e = 0.4; // déborde un peu vers l'extérieur : aucun liseré de fond ne dépasse
+  const arc = Array.from({ length: 9 }, (_, k) => {
+    const t = Math.PI * (1 + k / 16);
+    return [r + r * Math.cos(t), r + r * Math.sin(t)];
+  });
+  const pts = [[-e, -e], [-e, r], ...arc, [r, -e]].map(([px, py]) => ({ x: px * sx, y: py * sy }));
+  return { relativePosition: { x, y }, alignment: "left", canvas: [{ type: "polyline", points: pts, closePath: true, color: "#fff", lineWidth: 0 }] } as unknown as Content;
+}
+/**
+ * Contenu d'une cellule remplie, coins arrondis : `width` = largeur totale du fond, `pad` = écarts
+ * [gauche, haut, bas] entre le bord du fond et le contenu.
+ */
+function rounded(content: Content[], width: number, [left, top, bottom]: [number, number, number], corners: Corner[] = ["tl", "tr", "bl", "br"]): Content[] {
+  const at = (c: Corner, x: number, y: number) => (corners.includes(c) ? [cornerMask(c, x, y)] : []);
+  return [...at("tl", -left, -top), ...at("tr", width - left, -top), ...content, ...at("bl", -left, bottom), ...at("br", width - left, bottom)];
+}
 
 /** Hauteur de la page A4 et marge du bas (place du pied de page). */
 const PAGE_HEIGHT = 842;
@@ -87,11 +119,17 @@ function conditionsBlock(): Content {
         [
           {
             style: "conditions",
-            stack: [
-              { text: "CONDITIONS GÉNÉRALES DE VENTE", style: "sectionLabel", margin: [0, 0, 0, 4] },
-              ...paragraphs.map((p, i) => ({ stack: p, margin: [0, i ? 3 : 0, 0, 0] })),
-              ...(last.length ? [{ stack: last, italics: true, margin: [0, 4, 0, 0] }] : []),
-            ],
+            // Coins arrondis à droite ; à gauche, le filet rouge.
+            stack: rounded(
+              [
+                { text: "CONDITIONS GÉNÉRALES DE VENTE", style: "sectionLabel", margin: [0, 0, 0, 4] },
+                ...paragraphs.map((p, i) => ({ stack: p, margin: [0, i ? 3 : 0, 0, 0] })),
+                ...(last.length ? [{ stack: last, italics: true, margin: [0, 4, 0, 0] }] : []),
+              ] as Content[],
+              CONDITIONS_WIDTH,
+              [2.5 + 8, 6, 6],
+              ["tr", "br"],
+            ),
           },
         ],
       ],
@@ -242,12 +280,23 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
         },
       } as TableCell
     : { text: "" };
+  const CLIENT_WIDTH = 250;
   const projectBlock: Content = {
     margin: [0, 14, 0, 16],
     table: {
       // Colonne vide de 20 pt entre les deux (le fond gris ne doit couvrir que le client).
-      widths: ["*", 20, 250],
-      body: [[projectCell, { text: "" }, { stack: clientDetails, fillColor: GREY_FILL, margin: [6, 4, 6, 4] }]],
+      widths: ["*", 20, CLIENT_WIDTH],
+      body: [
+        [
+          projectCell,
+          { text: "" },
+          // Cadre gris à coins arrondis, de la hauteur des coordonnées du client.
+          {
+            table: { widths: ["*"], body: [[{ stack: rounded(clientDetails, CLIENT_WIDTH, [6, 4, 4]), fillColor: GREY_FILL }]] },
+            layout: { hLineWidth: () => 0, vLineWidth: () => 0, paddingLeft: () => 6, paddingRight: () => 6, paddingTop: () => 4, paddingBottom: () => 4 },
+          },
+        ],
+      ],
     },
     layout: { defaultBorder: false, paddingLeft: () => 0, paddingRight: () => 0, paddingTop: () => 0, paddingBottom: () => 0 },
   };
@@ -265,6 +314,17 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     alignment: "right" as const,
     ...style,
   });
+  // Largeurs sans les marges des cellules (3 pt de chaque côté) : le tout tient dans la page.
+  const widths: (number | "*")[] = [
+    ...(withEnedis ? [36] : []),
+    withEnedis ? 44 : 52,
+    "*",
+    20,
+    ...(withPublic ? [44] : []),
+    withPublic ? 44 : 52,
+    30,
+    48,
+  ];
   const empties = (n: number) => Array.from({ length: n }, () => ({}));
   const body: TableCell[][] = [
     [
@@ -327,17 +387,7 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     fontSize: 7,
     table: {
       headerRows: 1,
-      // Largeurs sans les marges des cellules (3 pt de chaque côté) : le tout tient dans la page.
-      widths: [
-        ...(withEnedis ? [36] : []),
-        withEnedis ? 44 : 52,
-        "*",
-        20,
-        ...(withPublic ? [44] : []),
-        withPublic ? 44 : 52,
-        30,
-        48,
-      ],
+      widths,
       body,
       dontBreakRows: true,
     },
@@ -441,9 +491,9 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     unbreakable: true,
     columns: [
       { width: "*", stack: left },
-      { width: 210, stack: right },
+      { width: TOTALS_WIDTH, stack: right },
     ],
-    columnGap: 16,
+    columnGap: BOTTOM_GAP,
   };
 
   return {
