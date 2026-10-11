@@ -97,8 +97,10 @@
     sur l'index de la documentation.
   - [ ] CI : signer les mises à jour dans une étape à part (tags seulement), actions épinglées par
     SHA, `permissions: contents: read` par défaut, Node LTS.
-  - [ ] Points faibles : base restaurée vérifiée (integrity_check, pas de trigger), gabarit Excel
-    malformé sans plantage, taille maximale des fichiers lus.
+  - [x] Points faibles : base restaurée vérifiée (integrity_check, pas de trigger ni de vue),
+    gabarit Excel malformé sans plantage (testé sur des gabarits abîmés, filet de sécurité aussi
+    sur l'import), taille maximale des fichiers lus (documents 300 Mo, import 200 Mo, gabarit
+    20 Mo et 100 Mo par fichier décompressé, sauvegarde 1 Go).
 
 - [x] Sauvegarde des données
   - [x] Sauvegarde (backup) de la base des devis (Réglages → Sauvegarde : copies datées,

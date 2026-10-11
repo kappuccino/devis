@@ -31,6 +31,11 @@ pub struct Row {
     pub price: f64,
 }
 
+/// Dernière ligne d'une feuille Excel.
+const MAX_ROW: u32 = 1_048_576;
+/// Taille maximale d'un fichier du classeur une fois décompressé (protège des « bombes zip »).
+const MAX_ENTRY: u64 = 100 * 1024 * 1024;
+
 const COLUMNS: [&str; 4] = ["Désignation", "Nom. Enedis", "Référence", "Prix LPN HT"];
 
 type Result<T> = std::result::Result<T, String>;
@@ -44,6 +49,7 @@ pub fn fill_template(template: &[u8], header: &Header, rows: &[Row]) -> Result<V
     let mut zip = ZipArchive::new(Cursor::new(template)).map_err(|e| format!("Gabarit illisible : {e}"))?;
     let read = |zip: &mut ZipArchive<Cursor<&[u8]>>, name: &str| -> Result<Option<String>> {
         match zip.by_name(name) {
+            Ok(f) if f.size() > MAX_ENTRY => Err(format!("Gabarit : « {name} » trop volumineux")),
             Ok(mut f) => {
                 let mut s = String::new();
                 f.read_to_string(&mut s).map_err(err)?;
@@ -77,6 +83,9 @@ pub fn fill_template(template: &[u8], header: &Header, rows: &[Row]) -> Result<V
         let name = file.name().to_string();
         if name == "xl/calcChain.xml" || file.is_dir() {
             continue;
+        }
+        if file.size() > MAX_ENTRY {
+            return Err(format!("Gabarit : « {name} » trop volumineux"));
         }
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes).map_err(err)?;
@@ -140,10 +149,10 @@ fn rewrite_sheet(
     let start = sheet.find("<sheetData").ok_or("Gabarit : feuille sans données")?;
     let open_end = start + sheet[start..].find('>').ok_or("Gabarit : feuille illisible")? + 1;
     let (before, rest) = (&sheet[..start], &sheet[open_end..]);
-    let close = rest.find("</sheetData>").unwrap_or(0);
     let (data, after) = if sheet[start..open_end].ends_with("/>") {
         ("", rest)
     } else {
+        let close = rest.find("</sheetData>").ok_or("Gabarit : feuille illisible")?;
         (&rest[..close], &rest[close + "</sheetData>".len()..])
     };
 
@@ -152,7 +161,7 @@ fn rewrite_sheet(
         .skip(1)
         .filter_map(|r| {
             let r = r.split("</row>").next().unwrap_or(r);
-            Some((attr(r, "r")?.parse().ok()?, r))
+            Some((attr(r, "r")?.parse().ok().filter(|n| (1..=MAX_ROW).contains(n))?, r))
         })
         .collect();
 
@@ -163,6 +172,9 @@ fn rewrite_sheet(
         .map(|(n, _)| *n);
     let last_template_row = template_rows.last().map(|(n, _)| *n).unwrap_or(0);
     let h = header_row.unwrap_or(last_template_row + 2);
+    if u64::from(h) + rows.len() as u64 > u64::from(MAX_ROW) {
+        return Err("Gabarit : trop de lignes pour une feuille Excel".into());
+    }
 
     // Styles : ceux de l'en-tête du gabarit, et de la première ligne produit (référence en C).
     let style_of = |n: u32, col: &str| {
@@ -376,7 +388,11 @@ mod tests {
     /// Gabarit minimal : titre, marqueurs, en-tête « Désignation » en ligne 4, 2 anciennes lignes,
     /// une fusion dans le haut et une dans les données, filtre, chaîne de calcul.
     fn template() -> Vec<u8> {
-        let files: [(&str, &str); 7] = [
+        zip_files(&template_files().map(|(n, b)| (n, b.to_string())))
+    }
+
+    fn template_files() -> [(&'static str, &'static str); 7] {
+        [
             ("xl/styles.xml", r#"<styleSheet><cellXfs count="16"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf/><xf/><xf/><xf/><xf/><xf/><xf/><xf/><xf/><xf/><xf/><xf/><xf/><xf/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center"/></xf></cellXfs></styleSheet>"#),
             ("[Content_Types].xml", r#"<Types><Override PartName="/xl/calcChain.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml"/></Types>"#),
             ("xl/workbook.xml", r#"<workbook><sheets><sheet name="Références" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">Références!$A$4:$F$6</definedName></definedNames></workbook>"#),
@@ -392,10 +408,13 @@ mod tests {
                 r#"</sheetData><autoFilter ref="A4:F6"/><mergeCells count="2"><mergeCell ref="A1:F1"/><mergeCell ref="A5:C5"/></mergeCells><drawing r:id="rId1"/></worksheet>"#,
             )),
             ("xl/calcChain.xml", r#"<calcChain><c r="E6" i="1"/></calcChain>"#),
-        ];
+        ]
+    }
+
+    fn zip_files(files: &[(&str, String)]) -> Vec<u8> {
         let mut w = ZipWriter::new(Cursor::new(Vec::new()));
         for (name, body) in files {
-            w.start_file(name, SimpleFileOptions::default()).unwrap();
+            w.start_file(*name, SimpleFileOptions::default()).unwrap();
             w.write_all(body.as_bytes()).unwrap();
         }
         w.finish().unwrap().into_inner()
@@ -445,5 +464,37 @@ mod tests {
         assert!(!out.contains_key("xl/calcChain.xml"));
         assert!(!out["xl/_rels/workbook.xml.rels"].contains("calcChain"));
         assert!(!out["[Content_Types].xml"].contains("calcChain"));
+    }
+
+    /// Gabarit abîmé (chaque fichier coupé à chaque position, balises cassées, n° de ligne
+    /// démesuré) : une erreur, jamais un plantage.
+    #[test]
+    fn damaged_template_never_panics() {
+        let rows = [Row { designation: "A".into(), enedis_code: String::new(), product_ref: "R".into(), price: 1.0 }];
+        let base = template_files();
+        let mut variants: Vec<Vec<(&str, String)>> = vec![vec![], vec![("x", "y".into())]];
+        for i in 0..base.len() {
+            let body = base[i].1;
+            let mut alter = |f: &dyn Fn(&str) -> String| {
+                let mut v: Vec<(&str, String)> = base.iter().map(|(n, b)| (*n, b.to_string())).collect();
+                v[i].1 = f(body);
+                variants.push(v);
+            };
+            for (cut, c) in body.char_indices() {
+                alter(&|b| b[..cut].to_string());
+                if c == '>' || c == '"' || c == '<' {
+                    alter(&|b| format!("{}{}", &b[..cut], &b[cut + 1..]));
+                }
+            }
+            alter(&|b| b.replace(r#"r="4""#, r#"r="4294967295""#).replace(r#"r="6""#, r#"r="99999999999""#));
+            alter(&|_| String::new());
+        }
+        for files in variants {
+            let bytes = zip_files(&files);
+            let result = std::panic::catch_unwind(|| fill_template(&bytes, &Header::default(), &rows));
+            assert!(result.is_ok(), "plantage avec {:?}", files.iter().map(|(n, b)| (n, b.len())).collect::<Vec<_>>());
+        }
+        // Pas un zip du tout.
+        assert!(fill_template(b"pas un classeur", &Header::default(), &rows).is_err());
     }
 }

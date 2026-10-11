@@ -386,7 +386,9 @@ pub fn export_price_list(
         last_name: contact.last_name,
         first_name: contact.first_name,
     };
-    let bytes = crate::xlsx_export::fill_template(&template, &header, &rows)?;
+    // Filet de sécurité : un gabarit imprévu donne une erreur, jamais un plantage de l'appli.
+    let bytes = std::panic::catch_unwind(|| crate::xlsx_export::fill_template(&template, &header, &rows))
+        .map_err(|_| "Gabarit Excel illisible : choisissez un autre fichier dans les Réglages.".to_string())??;
     std::fs::write(&target, bytes).map_err(|e| format!("Enregistrement de « {path} » : {e}"))?;
     files.mark_written(&target);
     Ok(())
@@ -1167,11 +1169,13 @@ pub async fn import_lpn(
     path: String,
 ) -> CmdResult<ImportReport> {
     files.check_opened(&path)?;
+    crate::files::check_size(std::path::Path::new(&path), crate::files::MAX_IMPORT)?;
     let db = state.db.clone();
     tauri::async_runtime::spawn_blocking(move || {
-    crate::files::check_size(std::path::Path::new(&path), crate::files::MAX_IMPORT)?;
         let mut conn = db.lock().map_err(err)?;
-        import::import_lpn(&mut conn, &PathBuf::from(path))
+        // Filet de sécurité : un classeur abîmé donne une erreur, jamais un plantage de l'appli.
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| import::import_lpn(&mut conn, &PathBuf::from(path))))
+            .map_err(|_| "Classeur illisible : vérifiez le fichier choisi.".to_string())?
     })
     .await
     .map_err(err)?
