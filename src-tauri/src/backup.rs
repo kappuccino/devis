@@ -149,14 +149,32 @@ fn prune(dir: &Path, keep: usize) -> Result<()> {
     Ok(())
 }
 
-/// Remplace la base par la copie `file` (après une copie de sécurité de la base actuelle).
-pub fn restore(conn: &mut Connection, db_path: &Path, file: &Path) -> Result<PathBuf> {
-    // La copie doit être une base de devis lisible.
+/// La copie doit être une base de devis lisible, intacte, et sans trigger ni vue : l'appli n'en
+/// crée jamais, et un trigger caché s'exécuterait à chaque enregistrement.
+fn check_copy(file: &Path) -> Result<()> {
+    crate::files::check_size(file, crate::files::MAX_BACKUP)?;
     let src = Connection::open_with_flags(file, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|e| format!("Copie illisible : {e}"))?;
     src.query_row("SELECT COUNT(*) FROM quotes", [], |r| r.get::<_, i64>(0))
         .map_err(|_| "Ce fichier n'est pas une sauvegarde de l'appli Devis.".to_string())?;
-    drop(src);
+    let integrity: String = src
+        .query_row("PRAGMA integrity_check(1)", [], |r| r.get(0))
+        .map_err(|e| format!("Copie endommagée : {e}"))?;
+    if integrity != "ok" {
+        return Err(format!("Copie endommagée, restauration annulée : {integrity}"));
+    }
+    let extra: i64 = src
+        .query_row("SELECT COUNT(*) FROM sqlite_master WHERE type IN ('trigger', 'view')", [], |r| r.get(0))
+        .map_err(err)?;
+    if extra > 0 {
+        return Err("Cette copie contient des éléments que l'appli ne crée jamais (triggers ou vues) : restauration refusée.".into());
+    }
+    Ok(())
+}
+
+/// Remplace la base par la copie `file` (après une copie de sécurité de la base actuelle).
+pub fn restore(conn: &mut Connection, db_path: &Path, file: &Path) -> Result<PathBuf> {
+    check_copy(file)?;
 
     let safety = copy_to(conn, &dir(conn, db_path)?, SAFETY_PREFIX)?;
     conn.restore(MAIN_DB, file, None::<fn(rusqlite::backup::Progress)>)
@@ -222,6 +240,28 @@ mod tests {
         conn.execute("INSERT INTO settings (key, value) VALUES ('backup_auto', '0')", []).unwrap();
         std::fs::remove_dir_all(default_dir(&db_path)).unwrap();
         assert!(auto_backup(&conn, &db_path).unwrap().is_none(), "désactivée");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn restore_refuses_a_copy_with_a_trigger_or_damaged() {
+        let root = temp_dir("trigger");
+        let db_path = root.join("devis.db");
+        let mut conn = crate::db::open(&db_path).unwrap();
+        let copy = backup_now(&conn, &db_path).unwrap();
+        Connection::open(&copy)
+            .unwrap()
+            .execute_batch("CREATE TRIGGER t AFTER INSERT ON quotes BEGIN DELETE FROM clients; END;")
+            .unwrap();
+        assert!(restore(&mut conn, &db_path, &copy).unwrap_err().contains("triggers ou vues"));
+
+        // Fichier tronqué : refusé, la base en place n'est pas touchée.
+        conn.execute("INSERT INTO quotes (number, client_code, date) VALUES ('26-A-0001', '', '2026-10-10')", []).unwrap();
+        let copy = backup_now(&conn, &db_path).unwrap();
+        let bytes = std::fs::read(&copy).unwrap();
+        std::fs::write(&copy, &bytes[..bytes.len() / 2]).unwrap();
+        assert!(restore(&mut conn, &db_path, &copy).is_err());
+        assert_eq!(quote_count(&conn), 1);
         let _ = std::fs::remove_dir_all(&root);
     }
 

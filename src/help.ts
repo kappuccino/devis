@@ -211,7 +211,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Sauvegarde",
-        text: "Copies datées de la base des devis : automatiques au démarrage (au plus une par jour), à la demande, n dernières gardées, dans le dossier choisi. Restauration d'une copie (la base actuelle est d'abord copiée).",
+        text: "Copies datées de la base des devis : automatiques au démarrage (au plus une par jour), à la demande, n dernières gardées, dans le dossier choisi. Restauration d'une copie (la base actuelle est d'abord copiée) ; une copie endommagée ou modifiée hors de l'appli est refusée.",
       },
       {
         title: "Interface et mises à jour",
