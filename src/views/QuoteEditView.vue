@@ -2751,7 +2751,8 @@ tr:hover .drag-handle i {
 /* Titre : gras, rouge, taille courante (taille 12 sur le PDF). */
 .lines .title-row :deep(.title-line) {
   font-weight: 700;
-  color: var(--app-accent);
+  /* Noir comme sur le PDF. */
+  color: var(--app-text);
   border-color: transparent;
   background: transparent;
   box-shadow: none;
