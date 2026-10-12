@@ -7,19 +7,25 @@ import { createSigner } from "./ticket.js";
 
 const config = loadConfig();
 const signer = createSigner(config.privateKey);
-const store = createPocketBase({ url: config.pbUrl, email: config.pbEmail, password: config.pbPassword });
+const store = createPocketBase({ url: config.pbUrl, email: config.pbEmail, password: config.pbPassword, apiToken: config.pbToken });
 
-// PocketBase peut démarrer après le service : on réessaie pendant 2 minutes.
-for (let attempt = 1; ; attempt++) {
-  try {
-    await store.ensureSchema();
-    break;
-  } catch (e) {
-    if (attempt >= 24) throw e;
-    console.warn(`PocketBase injoignable (${e.message}), nouvel essai dans 5 s…`);
-    await new Promise((r) => setTimeout(r, 5000));
+// Le service écoute tout de suite ; les tables PocketBase sont créées dès que PocketBase répond
+// (nouvel essai toutes les 10 s, motif dans les journaux et sur /health).
+const state = { ready: false, error: null };
+(async function prepare() {
+  for (;;) {
+    try {
+      await store.ensureSchema();
+      Object.assign(state, { ready: true, error: null });
+      console.log("PocketBase prêt (tables à jour).");
+      return;
+    } catch (e) {
+      if (e.message !== state.error) console.warn(`PocketBase indisponible : ${e.message}. Nouvel essai toutes les 10 s.`);
+      state.error = e.message;
+      await new Promise((r) => setTimeout(r, 10_000));
+    }
   }
-}
+})();
 
 const app = createApp({
   licence: createLicenceService({
@@ -31,6 +37,7 @@ const app = createApp({
   releases: createReleases(config.dataDir),
   signer,
   releaseToken: config.releaseToken,
+  status: () => state,
 });
 
 const server = app.listen(config.port, () => {

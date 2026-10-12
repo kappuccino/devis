@@ -22,7 +22,7 @@ const sameSecret = (a, b) => {
  * - `GET /updates/...` : mises à jour, réservées aux postes munis d'un ticket valide ;
  * - `GET /health` : contrôle de santé (Docker, Coolify).
  */
-export function createApp({ licence, releases, signer, releaseToken, trustProxy = 1, now = () => Date.now() }) {
+export function createApp({ licence, releases, signer, releaseToken, trustProxy = 1, now = () => Date.now(), status = () => ({ ready: true }) }) {
   const app = express();
   app.disable("x-powered-by");
   // Derrière le proxy de Coolify : adresse IP du client pour la limite de tentatives.
@@ -32,7 +32,14 @@ export function createApp({ licence, releases, signer, releaseToken, trustProxy 
     next();
   });
 
-  app.get("/health", (_req, res) => res.json({ ok: true }));
+  // Tant que PocketBase n'est pas prêt (tables créées), le service répond 503 (motif dans les journaux).
+  app.get("/health", (_req, res) => {
+    const { ready } = status();
+    res.status(ready ? 200 : 503).json({ ok: ready });
+  });
+  app.use("/api/licence", (_req, _res, next) =>
+    next(status().ready ? undefined : new HttpError(503, "Service de licences momentanément indisponible. Réessayez plus tard.")),
+  );
   app.get("/api/public-key", (_req, res) => res.json({ algorithm: "Ed25519", key: signer.publicKey }));
 
   const json = express.json({ limit: "4kb" });

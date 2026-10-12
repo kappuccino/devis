@@ -78,6 +78,24 @@ test("mises à jour : dépôt par la CI, téléchargement réservé aux postes m
   assert.equal((await get("/updates/0.2.0/absent.exe", ticket)).status, 404);
 });
 
+test("PocketBase pas encore prêt : 503 sur /health et les licences", async () => {
+  const signer = testSigner();
+  const licence = createLicenceService({ store: memoryStore([julie()]), signer, licenceDays: 15, defaultMaxDevices: 2 });
+  const app = createApp({ licence, releases: createReleases(dir), signer, releaseToken: TOKEN, trustProxy: false, status: () => ({ ready: false, error: "MFA" }) });
+  const s = app.listen(0);
+  await new Promise((r) => s.once("listening", r));
+  const url = `http://127.0.0.1:${s.address().port}`;
+  try {
+    const health = await fetch(url + "/health");
+    assert.equal(health.status, 503);
+    assert.deepEqual(await health.json(), { ok: false }, "le motif reste dans les journaux");
+    const res = await fetch(url + "/api/licence/activate", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    assert.equal(res.status, 503);
+  } finally {
+    s.close();
+  }
+});
+
 test("trop de tentatives de connexion : 429", async () => {
   let last;
   for (let i = 0; i < 12; i++) last = await post("/api/licence/activate", { email: "x@y.fr", password: "z", machine_id: MACHINE });

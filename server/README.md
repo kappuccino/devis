@@ -47,7 +47,10 @@ décocher `active` pour couper l'accès (effectif au plus tard à l'expiration d
 1. Clé des tickets, une seule fois, hors du dépôt : `npm run keygen -- licence.pem`. La clé privée
    va dans Coolify (fichier monté ou variable `LICENCE_PRIVATE_KEY`), la clé publique dans l'appli.
    **Ne jamais la régénérer** : les postes ne pourraient plus vérifier leurs tickets.
-2. Superutilisateur PocketBase réservé au service.
+2. Superutilisateur PocketBase réservé au service. Le MFA s'appliquant à tous les superutilisateurs
+   (règle non modifiable sur `_superusers`), le service utilise un jeton fixe : interface PocketBase →
+   `_superusers` → compte du service → **Impersonate** (durée longue) → variable `PB_ADMIN_TOKEN`.
+   Changer le mot de passe de ce compte invalide le jeton.
 3. Variables : voir `.env.example`. Volume persistant sur `/data` (installeurs).
 4. Domaine `https://licence.cahors.kappuccino.net:3000`.
 

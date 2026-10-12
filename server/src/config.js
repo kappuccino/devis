@@ -25,8 +25,10 @@ export function loadConfig(env = process.env) {
   return {
     port: int("PORT", 3000),
     pbUrl: required("PB_URL").replace(/\/+$/, ""),
-    pbEmail: required("PB_ADMIN_EMAIL"),
-    pbPassword: required("PB_ADMIN_PASSWORD"),
+    // Jeton fixe du superutilisateur du service, sinon email + mot de passe.
+    pbToken: env.PB_ADMIN_TOKEN?.trim() || null,
+    pbEmail: env.PB_ADMIN_TOKEN?.trim() ? null : required("PB_ADMIN_EMAIL"),
+    pbPassword: env.PB_ADMIN_TOKEN?.trim() ? null : required("PB_ADMIN_PASSWORD"),
     privateKey,
     // Durée de validité d'un ticket : l'appli fonctionne hors ligne jusqu'à son expiration.
     licenceDays: int("LICENCE_DAYS", 15),

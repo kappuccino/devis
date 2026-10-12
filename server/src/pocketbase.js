@@ -19,8 +19,13 @@ export class PocketBaseError extends Error {
 /** Identifiant PocketBase (15 caractères a-z0-9), ou empreinte hexadécimale : sans danger dans un filtre. */
 const SAFE_ID = /^[a-z0-9]{1,64}$/;
 
-export function createPocketBase({ url, email, password, fetch = globalThis.fetch }) {
-  let token = null;
+/**
+ * Connexion : jeton fixe (`apiToken`, créé par « Impersonate » dans l'interface PocketBase : les
+ * superutilisateurs étant soumis au MFA, c'est la façon de laisser un service se connecter seul),
+ * ou email + mot de passe (sans MFA, ex. PocketBase de test).
+ */
+export function createPocketBase({ url, email, password, apiToken, fetch = globalThis.fetch }) {
+  let token = apiToken ?? null;
 
   async function call(method, path, body, { auth = true, retry = true } = {}) {
     if (auth && !token) await login();
@@ -32,6 +37,9 @@ export function createPocketBase({ url, email, password, fetch = globalThis.fetc
       },
       body: body ? JSON.stringify(body) : undefined,
     });
+    if (auth && res.status === 401 && apiToken) {
+      throw new PocketBaseError(401, "jeton PB_ADMIN_TOKEN refusé (expiré, ou mot de passe du compte changé) : en créer un nouveau");
+    }
     // Jeton expiré : une nouvelle connexion, une seule fois.
     if (auth && res.status === 401 && retry) {
       token = null;
@@ -39,7 +47,13 @@ export function createPocketBase({ url, email, password, fetch = globalThis.fetc
     }
     if (res.status === 204) return null;
     const data = await res.json().catch(() => null);
-    if (!res.ok) throw new PocketBaseError(res.status, data?.message || `PocketBase : erreur ${res.status}`);
+    if (!res.ok) {
+      // Mot de passe correct mais code par email exigé : le compte du service doit être exclu du MFA.
+      if (data?.mfaId) {
+        throw new PocketBaseError(res.status, "le compte du service est soumis à la double authentification (MFA) : utiliser un jeton PB_ADMIN_TOKEN (Impersonate)");
+      }
+      throw new PocketBaseError(res.status, data?.message || `PocketBase : erreur ${res.status}`);
+    }
     return data;
   }
 
