@@ -149,7 +149,7 @@
     sous-totaux en double.
   - Fait : bouton « Nettoyer (n) » sous les lignes, avec confirmation détaillée.
 
-- [ ] Dépôt du code en privé (mises à jour servies par le dépôt public `devis-release`)
+- [ ] Dépôt du code en privé (mises à jour servies par le service de licences)
   - [x] CI : versions officielles publiées aussi dans `devis-release` ; l'appli y cherche ses mises à jour.
   - [x] Créer `kappuccino/devis-release` (public, avec un README) et le secret `RELEASES_TOKEN`.
   - [x] Publier une version (0.1.11) : les postes l'installent depuis l'ancienne adresse et passent à la nouvelle.
@@ -166,8 +166,9 @@
   - [x] Appli : écran de connexion, vérification du ticket côté Rust, tolérance hors ligne, « Se déconnecter », page Aide.
   - [x] Appli : mises à jour cherchées sur le service, avec le ticket.
   - [ ] Transition : créer les comptes des postes existants avant de publier la version avec connexion.
-  - [ ] Publier la 0.2.0 (avec connexion) : dernière version aussi publiée dans `devis-release`.
-  - [ ] Quand tous les postes sont en 0.2.0 (`app_version` dans `devices`) : retirer `devis-release` de la CI, archiver le dépôt, passer `kappuccino/devis` en privé.
+  - [x] Publier la 0.2.0 (avec connexion) : dernière version aussi publiée dans `devis-release`.
+  - [x] `devis-release` supprimé et retiré de la CI.
+  - [ ] Passer `kappuccino/devis` en privé (tant qu'il est public, un poste resté en 0.1.x peut installer la 0.2.0 depuis ses releases).
   - [ ] Plus tard : sauvegarde en ligne chiffrée, diffusion du classeur des tarifs.
 
 - [ ] Export / import d'un devis (fichier), pour partager un devis type entre collègues.

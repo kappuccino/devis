@@ -119,10 +119,9 @@ jobs:
     # Une pré-version par commit poussé sur main (tag build-N), jamais proposée en mise à jour ;
     # une release « officielle » par tag v*, avec latest.json lu par l'appli pour se mettre à jour.
     #
-    # Les versions officielles sont déposées sur le service de licences (SERVICE_URL), où l'appli
-    # (0.2 et suivantes) cherche ses mises à jour avec son ticket de licence. Transition : elles sont
-    # aussi publiées dans le dépôt public RELEASES_REPO, où les postes plus anciens les trouvent.
-    # Les pré-versions restent dans le dépôt du code.
+    # Les versions officielles sont aussi déposées sur le service de licences (SERVICE_URL), où
+    # l'appli cherche ses mises à jour avec son ticket de licence. Les pré-versions restent dans le
+    # dépôt du code.
     name: Release
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     needs: build
@@ -130,7 +129,6 @@ jobs:
     permissions:
       contents: write
     env:
-      RELEASES_REPO: kappuccino/devis-release
       SERVICE_URL: https://licence.cahors.kappuccino.net
     steps:
       - uses: actions/checkout@v4
@@ -183,7 +181,6 @@ jobs:
         shell: bash
         env:
           TAG: ${{ steps.meta.outputs.tag }}
-          REPO: ${{ env.RELEASES_REPO }}
           SERVICE: ${{ env.SERVICE_URL }}
           NOTES: ${{ steps.meta.outputs.body }}
         run: |
@@ -193,25 +190,22 @@ jobs:
           tag = os.environ["TAG"]
           if tag != f"v{version}":
               sys.exit(f"::error::Le tag {tag} ne correspond pas à la version {version} de tauri.conf.json")
-          def manifest(base, target):
-              files = [f for f in glob.glob("out/*-setup.exe")]
-              if len(files) != 1:
-                  sys.exit(f"::error::Installeur introuvable ou ambigu : {files}")
-              f = files[0]
-              json.dump({
-                  "version": version,
-                  "notes": os.environ.get("NOTES", "").strip(),
-                  "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                  # Windows seulement : la version Mac est construite en local, sans mise à jour automatique.
-                  "platforms": {"windows-x86_64": {
-                      "signature": open(f + ".sig").read().strip(),
-                      "url": base + os.path.basename(f),
-                  }},
-              }, open(target, "w"), indent=2)
-              print(open(target).read())
-          # Releases GitHub (postes antérieurs à la 0.2), et service de licences (hors de out/).
-          manifest(f"https://github.com/{os.environ['REPO']}/releases/download/{tag}/", "out/latest.json")
-          manifest(f"{os.environ['SERVICE']}/updates/{version}/", "service-latest.json")
+          files = glob.glob("out/*-setup.exe")
+          if len(files) != 1:
+              sys.exit(f"::error::Installeur introuvable ou ambigu : {files}")
+          f = files[0]
+          # Hors de out/ : déposé sur le service seulement, pas dans la release GitHub.
+          json.dump({
+              "version": version,
+              "notes": os.environ.get("NOTES", "").strip(),
+              "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              # Windows seulement : la version Mac est construite en local, sans mise à jour automatique.
+              "platforms": {"windows-x86_64": {
+                  "signature": open(f + ".sig").read().strip(),
+                  "url": f"{os.environ['SERVICE']}/updates/{version}/{os.path.basename(f)}",
+              }},
+          }, open("service-latest.json", "w"), indent=2)
+          print(open("service-latest.json").read())
           PY
       - uses: softprops/action-gh-release@v2
         with:
@@ -219,33 +213,8 @@ jobs:
           name: ${{ steps.meta.outputs.name }}
           body: ${{ steps.meta.outputs.body }}
           target_commitish: ${{ github.sha }}
-          # Seules les releases officielles sont « latest » : c'est là que l'appli cherche latest.json.
           prerelease: ${{ steps.meta.outputs.official != 'true' }}
           make_latest: ${{ steps.meta.outputs.official == 'true' }}
-          fail_on_unmatched_files: true
-          files: out/*
-
-      # Jeton à accès limité au dépôt public des releases (Contents : lecture et écriture).
-      - name: Vérifier le jeton du dépôt des releases
-        if: steps.meta.outputs.official == 'true'
-        shell: bash
-        env:
-          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-        run: |
-          if [ -z "$RELEASES_TOKEN" ]; then
-            echo "::error::Secret RELEASES_TOKEN absent : la version ne serait pas publiée dans $RELEASES_REPO (Settings → Secrets and variables → Actions)"; exit 1
-          fi
-      - uses: softprops/action-gh-release@v2
-        if: steps.meta.outputs.official == 'true'
-        with:
-          repository: ${{ env.RELEASES_REPO }}
-          token: ${{ secrets.RELEASES_TOKEN }}
-          tag_name: ${{ steps.meta.outputs.tag }}
-          name: ${{ steps.meta.outputs.name }}
-          body: ${{ steps.meta.outputs.body }}
-          # Le dépôt des releases n'a pas ce commit : le tag y est posé sur sa branche principale.
-          target_commitish: main
-          make_latest: true
           fail_on_unmatched_files: true
           files: out/*
 
@@ -263,7 +232,6 @@ jobs:
           fi
           version="${TAG#v}"
           for f in out/*; do
-            [ "$(basename "$f")" = latest.json ] && continue
             echo "→ $(basename "$f")"
             curl -fsS --retry 3 -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/octet-stream" \
               --data-binary "@$f" "$SERVICE_URL/api/releases/$version/$(basename "$f")"
