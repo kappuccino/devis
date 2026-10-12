@@ -18,6 +18,7 @@ import SelectButton from "primevue/selectbutton";
 import { getTheme, setTheme, type ThemeMode } from "../theme";
 import { getVersion } from "@tauri-apps/api/app";
 import { checkForUpdate, installUpdate, updater, updatesSupported } from "../updater";
+import { licence, logout } from "../licence";
 import { FEE_SETTINGS } from "../fees";
 import { salesRepList, salesRepSetting, SALES_REPS_KEY } from "../salesReps";
 import { CGV_PDF_KEY, DEFAULT_VALIDITY, HEAD_OFFICE } from "../composables/usePdf";
@@ -135,6 +136,23 @@ const themeOptions = [
   { value: "dark", label: "Sombre", icon: "pi pi-moon" },
 ];
 watch(theme, (mode) => setTheme(mode));
+
+// Compte : licence de ce poste.
+const licenceUntil = computed(() =>
+  licence.status.expires_at ? new Date(licence.status.expires_at * 1000).toLocaleDateString("fr-FR", { dateStyle: "long" }) : "",
+);
+function confirmLogout() {
+  confirm.require({
+    header: "Se déconnecter",
+    message:
+      "L'appli ne sera plus utilisable sur cet ordinateur jusqu'à la prochaine connexion (email et mot de passe). " +
+      "Les devis et les données restent sur l'ordinateur.",
+    icon: "pi pi-sign-out",
+    rejectProps: { label: "Annuler", severity: "secondary", text: true },
+    acceptProps: { label: "Se déconnecter", severity: "danger" },
+    accept: () => logout(),
+  });
+}
 
 // À propos : version installée.
 const appVersion = ref("");
@@ -394,7 +412,7 @@ onMounted(async () => {
           Version Mac construite en local : pas de mise à jour automatique (elles sont publiées pour Windows).
         </p>
         <p v-else class="muted">
-          Les mises à jour sont publiées sur GitHub ; l'application les cherche à chaque démarrage.
+          L'application cherche les mises à jour à chaque démarrage (réservées aux postes connectés).
         </p>
         <div v-if="updatesSupported" class="update-row">
           <Button
@@ -417,6 +435,22 @@ onMounted(async () => {
           L'application est à jour.
         </Message>
         <Message v-if="updater.error" severity="error" :closable="false" class="notice">{{ updater.error }}</Message>
+
+        <h2 class="account-title">Compte</h2>
+        <p v-if="licence.status.bypass" class="muted">Développement : licence non vérifiée.</p>
+        <template v-else>
+          <p>
+            Connecté : <strong>{{ licence.status.name || licence.status.email }}</strong>
+            <span v-if="licence.status.name" class="muted"> ({{ licence.status.email }})</span>
+          </p>
+          <p class="muted">
+            Licence valable jusqu'au {{ licenceUntil }}, renouvelée automatiquement à chaque lancement avec internet.
+            <template v-if="licence.status.offline"> Service injoignable au dernier essai : l'appli fonctionne hors ligne jusqu'à cette date.</template>
+          </p>
+          <div>
+            <Button label="Se déconnecter de cet ordinateur" icon="pi pi-sign-out" severity="secondary" @click="confirmLogout" />
+          </div>
+        </template>
       </section>
 
       <!-- Favoris -->
@@ -790,6 +824,10 @@ onMounted(async () => {
 .update-row {
   display: flex;
   gap: 0.5rem;
+}
+
+.account-title {
+  margin-top: 1.75rem;
 }
 
 .notice {

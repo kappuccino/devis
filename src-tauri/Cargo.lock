@@ -814,8 +814,13 @@ dependencies = [
 name = "devis"
 version = "0.1.14"
 dependencies = [
+ "base64 0.22.1",
  "calamine",
+ "machine-uid",
+ "reqwest",
+ "ring",
  "rusqlite",
+ "rustls",
  "serde",
  "serde_json",
  "tauri",
@@ -2242,6 +2247,17 @@ name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
+
+[[package]]
+name = "machine-uid"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d7217d573cdb141d6da43113b098172e057d39915d79c4bdedbc3aacd46bd96"
+dependencies = [
+ "libc",
+ "windows-registry",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "markup5ever"

@@ -3,6 +3,8 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { indexing, startDocs } from "./docs/store";
 import UpdateDialog from "./components/UpdateDialog.vue";
 import { checkForUpdate, updatesSupported } from "./updater";
+import { licence, startLicence } from "./licence";
+import LoginScreen from "./components/LoginScreen.vue";
 import Toast from "primevue/toast";
 import ConfirmDialog from "primevue/confirmdialog";
 import { useRoute } from "vue-router";
@@ -50,17 +52,30 @@ function onKeydown(e: KeyboardEvent) {
 }
 onMounted(() => {
   window.addEventListener("keydown", onKeydown);
-  // Index de la documentation mis à jour en tâche de fond, sans bloquer l'appli.
-  startDocs();
-  // Nouvelle version ? Vérifié discrètement quelques secondes après le lancement
-  // (application installée sous Windows ; la version Mac est construite en local, sans mise à jour).
-  if (import.meta.env.PROD && updatesSupported) setTimeout(() => checkForUpdate(true), 5000);
+  startLicence();
 });
+// Une fois la licence valide (au lancement ou après connexion), une seule fois :
+let started = false;
+watch(
+  () => licence.status.valid,
+  (valid) => {
+    if (!valid || started) return;
+    started = true;
+    // Index de la documentation mis à jour en tâche de fond, sans bloquer l'appli.
+    startDocs();
+    // Nouvelle version ? Vérifié discrètement quelques secondes après le lancement
+    // (application installée sous Windows ; la version Mac est construite en local, sans mise à jour).
+    if (import.meta.env.PROD && updatesSupported) setTimeout(() => checkForUpdate(true), 5000);
+  },
+);
 onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 </script>
 
 <template>
-  <div class="layout">
+  <!-- Sans licence valide : écran de connexion seulement (rien d'autre ne fonctionnerait). -->
+  <div v-if="!licence.ready" class="layout" />
+  <LoginScreen v-else-if="!licence.status.valid" />
+  <div v-else class="layout">
     <nav class="sidebar" :class="{ collapsed }">
       <div class="top">
         <span class="brand label">
@@ -135,10 +150,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
     <main class="content">
       <RouterView />
     </main>
-    <Toast position="bottom-right" />
-    <ConfirmDialog />
     <UpdateDialog />
   </div>
+  <Toast position="bottom-right" />
+  <ConfirmDialog />
 </template>
 
 <style scoped>

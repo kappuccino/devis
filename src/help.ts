@@ -217,6 +217,10 @@ export const HELP: HelpSection[] = [
         title: "Interface et mises à jour",
         text: "Thème clair, sombre ou automatique. Les nouvelles versions sont proposées au démarrage (Windows) et s'installent en un clic ; « À propos » donne la version.",
       },
+      {
+        title: "Compte",
+        text: "Réglages → À propos → Compte : le compte connecté sur cet ordinateur, la date jusqu'à laquelle l'appli fonctionne sans internet, et « Se déconnecter de cet ordinateur » (libère la place du poste sur le compte ; les devis restent sur l'ordinateur).",
+      },
     ],
   },
   {
@@ -228,6 +232,10 @@ export const HELP: HelpSection[] = [
         title: "Barre latérale",
         text: "Le bouton en haut de la barre latérale la replie (icônes seules) ou la déplie ; l'état est gardé d'un lancement à l'autre.",
         keys: [`${MOD}B`],
+      },
+      {
+        title: "Connexion",
+        text: "Au premier lancement, l'appli demande l'email et le mot de passe du compte fourni par l'administrateur (internet nécessaire). Ensuite elle s'ouvre directement : la licence se renouvelle à chaque lancement avec internet, et sans internet l'appli fonctionne encore 15 jours. Un compte est limité à quelques ordinateurs ; s'il est désactivé, l'appli revient à l'écran de connexion.",
       },
       {
         title: "Fichiers et sécurité",

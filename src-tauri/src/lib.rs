@@ -4,6 +4,7 @@ mod db;
 mod docs;
 mod files;
 mod import;
+mod licence;
 mod pricing;
 mod stats;
 mod xlsx_export;
@@ -21,6 +22,22 @@ pub struct AppState {
 impl AppState {
     pub fn conn(&self) -> MutexGuard<'_, Connection> {
         self.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+/// Sans licence valide pour ce poste, seules les commandes `licence_*` (écran de connexion) sont
+/// acceptées ; les autres sont refusées avant d'atteindre la base.
+fn licensed<R: tauri::Runtime>(
+    handler: impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static,
+) -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+    move |invoke| {
+        let allowed = invoke.message.command().starts_with("licence_")
+            || invoke.message.webview().state::<licence::Licence>().is_valid();
+        if !allowed {
+            invoke.resolver.reject("Licence requise : reconnectez-vous.");
+            return true;
+        }
+        handler(invoke)
     }
 }
 
@@ -54,13 +71,20 @@ pub fn run() {
                 });
             }
             app.manage(AppState { db, db_path });
+            // Licence du poste (ticket enregistré dans le même dossier).
+            app.manage(licence::Licence::open(&dir));
             // Chemins choisis par l'utilisateur pendant la session (seuls accessibles depuis la page).
             app.manage(files::FileAccess::default());
             // Index de la documentation technique (base séparée, reconstructible).
             app.manage(docs::open(app.handle())?);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(licensed(tauri::generate_handler![
+            licence::licence_status,
+            licence::licence_ticket,
+            licence::licence_login,
+            licence::licence_refresh,
+            licence::licence_logout,
             docs::docs_db_exec,
             docs::docs_db_run,
             docs::docs_db_all,
@@ -107,7 +131,7 @@ pub fn run() {
             commands::db_stats,
             commands::import_lpn,
             commands::save_file,
-        ])
+        ]))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

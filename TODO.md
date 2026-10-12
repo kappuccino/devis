@@ -156,15 +156,18 @@
   - [ ] Quand tous les postes sont en 0.1.11 ou plus : passer `kappuccino/devis` en privé.
 
 - [ ] Service de licences et de mises à jour : `licence.cahors.kappuccino.net` (dossier `server/`, Node 26, JavaScript, Express + PocketBase)
-  - [ ] Installation en ligne de PocketBase et de Node (par Benjamin), accès transmis.
+  - [x] Installation en ligne de PocketBase et de Node (par Benjamin), accès transmis.
   - [x] PocketBase : tables utilisateurs (actif, nombre de postes) et postes (machine, dernière connexion, révoqué).
   - [x] Express : connexion, enregistrement du poste, ticket signé (clé privée sur le serveur seulement), renouvellement.
   - [x] Express : mises à jour servies par le service (`latest.json` et installeurs), réservées aux postes munis d'un ticket.
-  - [ ] Déploiement Coolify (Dockerfile prêt) : clé des tickets, variables, volume `/data`, liaison avec PocketBase.
-  - [ ] CI : déposer les versions sur le service (secret `RELEASE_UPLOAD_TOKEN`).
-  - [ ] Appli : écran de connexion, vérification du ticket côté Rust, tolérance hors ligne, « Se déconnecter », page Aide.
+  - [x] Déploiement Coolify (Dockerfile prêt) : clé des tickets, variables, volume `/data`, liaison avec PocketBase.
+  - [x] CI : déposer les versions sur le service (aussi dans `devis-release` pendant la transition).
+  - [x] Secret GitHub `RELEASE_UPLOAD_TOKEN` (contenu de `~/release-token-devis.txt`).
+  - [x] Appli : écran de connexion, vérification du ticket côté Rust, tolérance hors ligne, « Se déconnecter », page Aide.
+  - [x] Appli : mises à jour cherchées sur le service, avec le ticket.
   - [ ] Transition : créer les comptes des postes existants avant de publier la version avec connexion.
-  - [ ] Ensuite : plus rien sur GitHub (abandon de `devis-release` et de la double publication).
+  - [ ] Publier la 0.2.0 (avec connexion) : dernière version aussi publiée dans `devis-release`.
+  - [ ] Quand tous les postes sont en 0.2.0 (`app_version` dans `devices`) : retirer `devis-release` de la CI, archiver le dépôt, passer `kappuccino/devis` en privé.
   - [ ] Plus tard : sauvegarde en ligne chiffrée, diffusion du classeur des tarifs.
 
 - [ ] Export / import d'un devis (fichier), pour partager un devis type entre collègues.

@@ -31,6 +31,13 @@ tauri-plugin-window-state = "2"
 tauri-plugin-drag = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# Licence : appels au service de licences (même TLS que le module de mise à jour : rustls + ring),
+# vérification Ed25519 des tickets (ring), identifiant de la machine.
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "system-proxy"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+ring = "0.17"
+base64 = "0.22"
+machine-uid = "0.5"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

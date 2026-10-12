@@ -1,7 +1,15 @@
-// Mises à jour de l'application depuis les releases GitHub (signées avec la clé du projet).
+// Mises à jour de l'application depuis le service de licences (installeurs signés avec la clé du
+// projet), réservées aux postes munis d'une licence : le ticket accompagne chaque demande.
 import { markRaw, reactive } from "vue";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { licenceTicket } from "./licence";
+
+/** En-tête de licence (vérification et téléchargement). */
+async function licenceHeaders(): Promise<Record<string, string>> {
+  const ticket = await licenceTicket();
+  return ticket ? { Authorization: `Bearer ${ticket}` } : {};
+}
 
 /** Mises à jour publiées pour Windows seulement (la version Mac est construite en local). */
 export const updatesSupported = !navigator.userAgent.includes("Mac");
@@ -27,7 +35,7 @@ export async function checkForUpdate(silent = false) {
   try {
     // markRaw : l'objet Update a des champs privés (#rid) qu'un Proxy réactif de Vue
     // rend illisibles (« Cannot read private member… » au téléchargement).
-    const update = await check();
+    const update = await check({ headers: await licenceHeaders() });
     updater.available = update ? markRaw(update) : null;
     updater.upToDate = !update;
   } catch (e) {
@@ -48,13 +56,14 @@ export async function installUpdate() {
   let total = 0;
   let received = 0;
   try {
+    const headers = await licenceHeaders();
     await update.downloadAndInstall((event) => {
       if (event.event === "Started") total = event.data.contentLength ?? 0;
       else if (event.event === "Progress") {
         received += event.data.chunkLength;
         updater.progress = total ? Math.min(100, Math.round((100 * received) / total)) : null;
       }
-    });
+    }, { headers });
     await relaunch();
   } catch (e) {
     updater.error = e instanceof Error ? e.message : String(e);
