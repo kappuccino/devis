@@ -101,7 +101,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Numérotation",
-        text: "Année sur 2 chiffres, préfixe et compteur : 26-JMOS-0001. Le compteur repart à 1 chaque année et peut prendre la suite des devis faits hors de l'appli (Réglages → Config PDF → « Dernier n° déjà utilisé »).",
+        text: "Année sur 2 chiffres, préfixe et compteur (ex. 26-ABCD-0001). Le préfixe se saisit dans Réglages → Config PDF → « Préfixe des n° de devis » : tant qu'il est vide, le champ est encadré en rouge et les devis sont numérotés 26-DEV-…. Le compteur repart à 1 chaque année et peut prendre la suite des devis faits hors de l'appli (Réglages → Config PDF → « Dernier n° déjà utilisé »).",
       },
     ],
   },

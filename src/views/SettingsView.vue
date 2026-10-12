@@ -100,8 +100,10 @@ const authorFields: Field[] = [
   { key: "author_phone", label: "Téléphone" },
   { key: "author_email", label: "Email" },
 ];
+/** Préfixe des n° de devis : champ à part (message tant qu'il est vide). */
+const PREFIX_KEY = "quote_prefix";
 const quoteFields: Field[] = [
-  { key: "quote_prefix", label: "Préfixe des n° de devis", placeholder: "JMOS → 26-JMOS-0001" },
+  { key: PREFIX_KEY, label: "Préfixe des n° de devis" },
   { key: "quote_validity", label: "Validité", placeholder: `${DEFAULT_VALIDITY} (par défaut)` },
 ];
 
@@ -110,7 +112,8 @@ const quoteFields: Field[] = [
  * (seulement s'il porte l'année en cours et le préfixe actuel).
  */
 const LAST_NUMBER_KEY = "quote_last_number";
-const numberStem = computed(() => `${String(new Date().getFullYear()).slice(2)}-${(settings.value.quote_prefix ?? "").trim() || "DEV"}-`);
+const prefixEmpty = computed(() => !(settings.value[PREFIX_KEY] ?? "").trim());
+const numberStem = computed(() => `${String(new Date().getFullYear()).slice(2)}-${(settings.value[PREFIX_KEY] ?? "").trim() || "DEV"}-`);
 const lastNumberIgnored = computed(() => {
   const v = (settings.value[LAST_NUMBER_KEY] ?? "").trim();
   return v !== "" && !(v.startsWith(numberStem.value) && /^\d+$/.test(v.slice(numberStem.value.length)));
@@ -526,8 +529,15 @@ onMounted(async () => {
           <h2>Devis</h2>
           <div class="form-grid">
             <template v-for="f in quoteFields" :key="f.key">
-              <label :for="f.key">{{ f.label }}</label>
-              <Textarea v-if="f.multiline" :id="f.key" v-model="settings[f.key]" rows="3" auto-resize />
+              <label :for="f.key" :class="{ 'label-top': f.key === PREFIX_KEY }">{{ f.label }}</label>
+              <div v-if="f.key === PREFIX_KEY" class="last-number">
+                <InputText :id="f.key" v-model="settings[f.key]" placeholder="À remplir : tapez votre préfixe ici" :invalid="prefixEmpty" />
+                <small v-if="prefixEmpty" class="warn">
+                  Préfixe non renseigné : les devis sont numérotés {{ numberStem }}0001, {{ numberStem }}0002…
+                </small>
+                <small v-else class="muted">Vos devis seront numérotés {{ numberStem }}0001, {{ numberStem }}0002…</small>
+              </div>
+              <Textarea v-else-if="f.multiline" :id="f.key" v-model="settings[f.key]" rows="3" auto-resize />
               <InputText v-else :id="f.key" v-model="settings[f.key]" :placeholder="f.placeholder" />
             </template>
             <label for="last-number" class="label-top">Dernier n° déjà utilisé</label>

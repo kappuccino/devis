@@ -21,9 +21,9 @@
   - Sous la raison sociale du client : champs **nom du contact**, **email** et **téléphone**.
   - Propres au devis, et imprimés sur le PDF dans le bloc client.
 
-- [x] Nouvelle numérotation des devis : `26-JMOS-0001`, `26-JMOS-0002`…
+- [x] Nouvelle numérotation des devis : `26-ABCD-0001`, `26-ABCD-0002`…
   - Année sur 2 chiffres, puis préfixe (Réglages), puis compteur sur 4 chiffres.
-  - Aujourd'hui : `JMOS-2026-0001`. Décider si les devis existants sont renumérotés ou gardent leur numéro.
+  - Aujourd'hui : `ABCD-2026-0001`. Décider si les devis existants sont renumérotés ou gardent leur numéro.
 
 - [x] Commercial du client sur le PDF
   - Le commercial rattaché au client (colonne « commercial » du fichier LPN) apparaît sur le PDF généré.
@@ -72,8 +72,8 @@
 
 - [x] Numéro de devis de départ (Réglages → Config PDF → Devis → « Dernier n° déjà utilisé »)
   - Pouvoir indiquer dans les réglages un numéro minimum, pour que la numérotation de l'appli
-    prenne la suite des devis déjà faits hors de l'appli (ex. si le dernier est 26-JMOS-0140,
-    le prochain devis de l'appli est 26-JMOS-0141).
+    prenne la suite des devis déjà faits hors de l'appli (ex. si le dernier est 26-ABCD-0140,
+    le prochain devis de l'appli est 26-ABCD-0141).
 
 - [x] Détail d'une liste de prix dans le devis (tiroir latéral)
   - Clic sur le code d'une liste de prix (partie Client du devis) : ouvre un tiroir sur le côté

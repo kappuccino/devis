@@ -710,9 +710,9 @@ fn setting(conn: &Connection, key: &str) -> CmdResult<Option<String>> {
         .map_err(err)
 }
 
-/// Numéro suivant au format `<année sur 2 chiffres>-<préfixe>-<n° sur 4 chiffres>` (ex. `26-JMOS-0001`).
+/// Numéro suivant au format `<année sur 2 chiffres>-<préfixe>-<n° sur 4 chiffres>` (ex. `26-ABCD-0001`).
 /// Le compteur repart à 1 chaque année. Réglage `quote_last_number` : dernier numéro déjà utilisé
-/// hors de l'appli (ex. `26-JMOS-0140`) ; la numérotation en prend la suite, pour cette année et ce
+/// hors de l'appli (ex. `26-ABCD-0140`) ; la numérotation en prend la suite, pour cette année et ce
 /// préfixe seulement.
 fn next_number(conn: &Connection, date: &str) -> CmdResult<String> {
     let prefix = setting(conn, "quote_prefix")?
@@ -728,7 +728,7 @@ fn next_number(conn: &Connection, date: &str) -> CmdResult<String> {
         )
         .optional()
         .map_err(err)?;
-    // « 26-JMOS-0012-V2 » (nouvelle version) compte comme 0012.
+    // « 26-ABCD-0012-V2 » (nouvelle version) compte comme 0012.
     let counter = |number: &str| {
         number.strip_prefix(stem.as_str()).and_then(|n| n.split('-').next()).and_then(|n| n.trim().parse::<u32>().ok())
     };
@@ -947,7 +947,7 @@ fn create_version(conn: &mut Connection, id: i64, date: String) -> CmdResult<Quo
     store_quote(conn, quote)
 }
 
-/// Numéro sans le suffixe de version : « 26-JMOS-0012-V3 » → « 26-JMOS-0012 ».
+/// Numéro sans le suffixe de version : « 26-ABCD-0012-V3 » → « 26-ABCD-0012 ».
 fn version_base(number: &str) -> &str {
     match number.rsplit_once("-V") {
         Some((base, n)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => base,
@@ -1216,12 +1216,12 @@ mod tests {
     fn quote_numbers_are_year_prefix_counter() {
         let conn = Connection::open_in_memory().unwrap();
         crate::db::init(&conn).unwrap();
-        conn.execute("INSERT INTO settings (key, value) VALUES ('quote_prefix', 'JMOS')", []).unwrap();
-        assert_eq!(next_number(&conn, "2026-10-09").unwrap(), "26-JMOS-0001");
-        conn.execute("INSERT INTO quotes (number, client_code, date) VALUES ('26-JMOS-0007', '', '2026-10-09')", []).unwrap();
-        assert_eq!(next_number(&conn, "2026-12-31").unwrap(), "26-JMOS-0008");
+        conn.execute("INSERT INTO settings (key, value) VALUES ('quote_prefix', 'ABCD')", []).unwrap();
+        assert_eq!(next_number(&conn, "2026-10-09").unwrap(), "26-ABCD-0001");
+        conn.execute("INSERT INTO quotes (number, client_code, date) VALUES ('26-ABCD-0007', '', '2026-10-09')", []).unwrap();
+        assert_eq!(next_number(&conn, "2026-12-31").unwrap(), "26-ABCD-0008");
         // Nouvelle année : le compteur repart à 1.
-        assert_eq!(next_number(&conn, "2027-01-02").unwrap(), "27-JMOS-0001");
+        assert_eq!(next_number(&conn, "2027-01-02").unwrap(), "27-ABCD-0001");
     }
 
     #[test]
@@ -1248,14 +1248,14 @@ mod tests {
     fn quote_numbers_continue_after_last_number_used_outside() {
         let conn = Connection::open_in_memory().unwrap();
         crate::db::init(&conn).unwrap();
-        conn.execute("INSERT INTO settings (key, value) VALUES ('quote_prefix', 'JMOS')", []).unwrap();
-        conn.execute("INSERT INTO settings (key, value) VALUES ('quote_last_number', ' 26-JMOS-0140 ')", []).unwrap();
-        assert_eq!(next_number(&conn, "2026-10-09").unwrap(), "26-JMOS-0141");
+        conn.execute("INSERT INTO settings (key, value) VALUES ('quote_prefix', 'ABCD')", []).unwrap();
+        conn.execute("INSERT INTO settings (key, value) VALUES ('quote_last_number', ' 26-ABCD-0140 ')", []).unwrap();
+        assert_eq!(next_number(&conn, "2026-10-09").unwrap(), "26-ABCD-0141");
         // Les devis de l'appli au-delà priment.
-        conn.execute("INSERT INTO quotes (number, client_code, date) VALUES ('26-JMOS-0150', '', '2026-10-09')", []).unwrap();
-        assert_eq!(next_number(&conn, "2026-10-10").unwrap(), "26-JMOS-0151");
+        conn.execute("INSERT INTO quotes (number, client_code, date) VALUES ('26-ABCD-0150', '', '2026-10-09')", []).unwrap();
+        assert_eq!(next_number(&conn, "2026-10-10").unwrap(), "26-ABCD-0151");
         // Autre année ou autre préfixe : le réglage ne s'applique pas.
-        assert_eq!(next_number(&conn, "2027-01-02").unwrap(), "27-JMOS-0001");
+        assert_eq!(next_number(&conn, "2027-01-02").unwrap(), "27-ABCD-0001");
         conn.execute("UPDATE settings SET value = 'ABC' WHERE key = 'quote_prefix'", []).unwrap();
         assert_eq!(next_number(&conn, "2026-10-10").unwrap(), "26-ABC-0001");
     }
@@ -1264,30 +1264,30 @@ mod tests {
     fn new_versions_keep_the_original_number() {
         let mut conn = Connection::open_in_memory().unwrap();
         crate::db::init(&conn).unwrap();
-        conn.execute("INSERT INTO settings (key, value) VALUES ('quote_prefix', 'JMOS')", []).unwrap();
+        conn.execute("INSERT INTO settings (key, value) VALUES ('quote_prefix', 'ABCD')", []).unwrap();
         conn.execute(
             "INSERT INTO quotes (id, number, client_code, client_name, date, won_at)
-             VALUES (1, '26-JMOS-0012', 'C1', 'ALPHA', '2026-10-01', '2026-10-02')",
+             VALUES (1, '26-ABCD-0012', 'C1', 'ALPHA', '2026-10-01', '2026-10-02')",
             [],
         )
         .unwrap();
         let v2 = create_version(&mut conn, 1, "2026-10-09".into()).unwrap();
-        assert_eq!((v2.number.as_deref(), v2.version, v2.version_of), (Some("26-JMOS-0012-V2"), 2, Some(1)));
+        assert_eq!((v2.number.as_deref(), v2.version, v2.version_of), (Some("26-ABCD-0012-V2"), 2, Some(1)));
         assert_eq!(v2.date, "2026-10-09");
         // Depuis n'importe quelle version : la suivante après la dernière.
         let v3 = create_version(&mut conn, 1, "2026-10-10".into()).unwrap();
-        assert_eq!(v3.number.as_deref(), Some("26-JMOS-0012-V3"));
+        assert_eq!(v3.number.as_deref(), Some("26-ABCD-0012-V3"));
         let v4 = create_version(&mut conn, v2.id.unwrap(), "2026-10-10".into()).unwrap();
-        assert_eq!(v4.number.as_deref(), Some("26-JMOS-0012-V4"));
+        assert_eq!(v4.number.as_deref(), Some("26-ABCD-0012-V4"));
         // Le suivi « obtenue » ne suit pas ; chaque version connaît toutes les autres.
         let won: Option<String> =
             conn.query_row("SELECT won_at FROM quotes WHERE id = ?1", [v4.id.unwrap()], |r| r.get(0)).unwrap();
         assert_eq!(won, None);
         let numbers: Vec<String> = v4.versions.iter().map(|v| v.number.clone()).collect();
-        assert_eq!(numbers, ["26-JMOS-0012", "26-JMOS-0012-V2", "26-JMOS-0012-V3", "26-JMOS-0012-V4"]);
+        assert_eq!(numbers, ["26-ABCD-0012", "26-ABCD-0012-V2", "26-ABCD-0012-V3", "26-ABCD-0012-V4"]);
         // Les versions ne décalent pas la numérotation des nouveaux devis.
-        assert_eq!(next_number(&conn, "2026-10-10").unwrap(), "26-JMOS-0013");
-        assert_eq!(version_base("26-JMOS-0012-V12"), "26-JMOS-0012");
+        assert_eq!(next_number(&conn, "2026-10-10").unwrap(), "26-ABCD-0013");
+        assert_eq!(version_base("26-ABCD-0012-V12"), "26-ABCD-0012");
         assert_eq!(version_base("DEV-VERT"), "DEV-VERT");
     }
 
@@ -1295,10 +1295,10 @@ mod tests {
     fn templates_have_no_client_nor_prices_and_stay_out_of_numbering() {
         let mut conn = Connection::open_in_memory().unwrap();
         crate::db::init(&conn).unwrap();
-        conn.execute("INSERT INTO settings (key, value) VALUES ('quote_prefix', 'JMOS')", []).unwrap();
+        conn.execute("INSERT INTO settings (key, value) VALUES ('quote_prefix', 'ABCD')", []).unwrap();
         conn.execute_batch(
             "INSERT INTO quotes (id, number, client_code, client_name, date, discount_pct, price_lists, sales_rep)
-                 VALUES (1, '26-JMOS-0005', 'C1', 'ALPHA', '2026-10-01', 5, 'T1', 'Julie');
+                 VALUES (1, '26-ABCD-0005', 'C1', 'ALPHA', '2026-10-01', 5, 'T1', 'Julie');
              INSERT INTO quote_lines (quote_id, position, kind, product_ref, designation, quantity, unit_price, discount, lpn_price)
                  VALUES (1, 0, 'title', '', 'Branchements', 0, 0, 0, NULL),
                         (1, 1, 'item', 'P1', 'Coffret', 3, 120, 5, 100),
@@ -1318,7 +1318,7 @@ mod tests {
         assert_eq!(kept, [("title", 0.0, 0.0, 0.0), ("item", 3.0, 0.0, 0.0)]);
         assert_eq!(t.lines[1].lpn_price, None);
         // Hors numérotation et hors statistiques.
-        assert_eq!(next_number(&conn, "2026-10-10").unwrap(), "26-JMOS-0006");
+        assert_eq!(next_number(&conn, "2026-10-10").unwrap(), "26-ABCD-0006");
         assert_eq!(crate::stats::quote_stats(&conn, None).unwrap().count, 1);
     }
 
