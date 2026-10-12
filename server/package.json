@@ -1,0 +1,17 @@
+{
+  "name": "devis-licence",
+  "private": true,
+  "description": "Licences et mises à jour de l'appli Devis Groupe Cahors (licence.cahors.kappuccino.net)",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test test/*.test.js",
+    "keygen": "node scripts/keygen.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}

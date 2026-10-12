@@ -152,7 +152,19 @@
 - [ ] Dépôt du code en privé (mises à jour servies par le dépôt public `devis-release`)
   - [x] CI : versions officielles publiées aussi dans `devis-release` ; l'appli y cherche ses mises à jour.
   - [x] Créer `kappuccino/devis-release` (public, avec un README) et le secret `RELEASES_TOKEN`.
-  - [ ] Publier une version (0.1.11) : les postes l'installent depuis l'ancienne adresse et passent à la nouvelle.
+  - [x] Publier une version (0.1.11) : les postes l'installent depuis l'ancienne adresse et passent à la nouvelle.
   - [ ] Quand tous les postes sont en 0.1.11 ou plus : passer `kappuccino/devis` en privé.
+
+- [ ] Service de licences et de mises à jour : `licence.cahors.kappuccino.net` (dossier `server/`, Node 26, JavaScript, Express + PocketBase)
+  - [ ] Installation en ligne de PocketBase et de Node (par Benjamin), accès transmis.
+  - [x] PocketBase : tables utilisateurs (actif, nombre de postes) et postes (machine, dernière connexion, révoqué).
+  - [x] Express : connexion, enregistrement du poste, ticket signé (clé privée sur le serveur seulement), renouvellement.
+  - [x] Express : mises à jour servies par le service (`latest.json` et installeurs), réservées aux postes munis d'un ticket.
+  - [ ] Déploiement Coolify (Dockerfile prêt) : clé des tickets, variables, volume `/data`, liaison avec PocketBase.
+  - [ ] CI : déposer les versions sur le service (secret `RELEASE_UPLOAD_TOKEN`).
+  - [ ] Appli : écran de connexion, vérification du ticket côté Rust, tolérance hors ligne, « Se déconnecter », page Aide.
+  - [ ] Transition : créer les comptes des postes existants avant de publier la version avec connexion.
+  - [ ] Ensuite : plus rien sur GitHub (abandon de `devis-release` et de la double publication).
+  - [ ] Plus tard : sauvegarde en ligne chiffrée, diffusion du classeur des tarifs.
 
 - [ ] Export / import d'un devis (fichier), pour partager un devis type entre collègues.

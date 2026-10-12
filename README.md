@@ -51,6 +51,11 @@ Pour un client et une référence :
 
 Le prix reste modifiable sur la ligne. Un avertissement s'affiche s'il passe sous le prix seuil.
 
+## Service de licences
+
+Dossier [`server/`](server/README.md) : service Node + Express (`licence.cahors.kappuccino.net`), comptes et
+postes dans PocketBase, mises à jour réservées aux postes munis d'une licence. Déployé à part (Docker, Coolify).
+
 ## Tests
 
 ```sh
