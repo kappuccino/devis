@@ -339,6 +339,7 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     ],
   ];
   const titleRows = new Set<number>();
+  const subtotalRows = new Set<number>();
   const amounts = subtotals(quote.lines);
   for (const l of quote.lines) {
     if (l.kind === "title") {
@@ -355,6 +356,7 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
       // Sur les dernières colonnes (jusqu'à 4, en laissant au moins Référence et Désignation) :
       // un libellé long tient sur une ligne.
       const span = Math.min(4, cols - 2);
+      subtotalRows.add(body.length);
       body.push([
         { text: "", colSpan: cols - span },
         ...empties(cols - span - 1),
@@ -394,8 +396,10 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
     layout: {
       // Pas de quadrillage : en-tête plein, bandeaux de titre, simple filet sous le tableau.
       // Filet gris fin sous la dernière ligne (fin du devis, avant les totaux) ; un titre en
-      // première ligne est décollé de l'en-tête par une bande blanche.
-      hLineWidth: (i, node) => (i === node.table.body.length ? 0.8 : i === 1 && titleRows.has(1) ? 5 : 0),
+      // première ligne est décollé de l'en-tête par une bande blanche, un titre juste après un
+      // sous-total aussi (les deux fonds gris ne se touchent pas).
+      hLineWidth: (i, node) =>
+        i === node.table.body.length ? 0.8 : i === 1 && titleRows.has(1) ? 5 : titleRows.has(i) && subtotalRows.has(i - 1) ? 4 : 0,
       hLineColor: (i, node) => (i === node.table.body.length ? "#a9aeb5" : "#fff"),
       // Séparations verticales de la couleur du fond : sans elles, l'en-tête plein montre de
       // fins traits blancs entre les cellules.
