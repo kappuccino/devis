@@ -284,6 +284,8 @@ export interface QuoteAttachment {
 export interface ImportReport {
   products: number;
   clients: number;
+  /** Dont clients venus seulement de la feuille « CLIENTS IC ». */
+  clients_ic: number;
   price_lists: number;
   price_list_items: number;
   client_links: number;

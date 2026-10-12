@@ -310,7 +310,8 @@ onMounted(async () => {
           <ProgressBar v-if="importing" mode="indeterminate" style="height: 4px; margin-top: 0.75rem" />
           <div v-if="report" class="report">
             <Message severity="success" :closable="false">
-              {{ formatNumber(report.products) }} produits, {{ formatNumber(report.clients) }} clients,
+              {{ formatNumber(report.products) }} produits, {{ formatNumber(report.clients) }} clients
+              (dont {{ formatNumber(report.clients_ic) }} de « CLIENTS IC », sans remise ni liste),
               {{ formatNumber(report.price_lists) }} listes ({{ formatNumber(report.price_list_items) }} prix),
               {{ formatNumber(report.client_links) }} rattachements client → liste.
             </Message>

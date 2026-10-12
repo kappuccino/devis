@@ -146,7 +146,7 @@ export const HELP: HelpSection[] = [
     items: [
       {
         title: "Fiches clients",
-        text: "Clients importés du fichier LPN : code, raison sociale, groupe, commercial, remises CFA / CFO et listes de prix rattachées, modifiables (un réimport du fichier LPN les remplace).",
+        text: "Clients importés du fichier LPN : code, raison sociale, groupe, commercial, remises CFA / CFO et listes de prix rattachées, modifiables (un réimport du fichier LPN les remplace). Les clients présents seulement dans la feuille « CLIENTS IC » sont aussi importés, avec leur code et leur raison sociale uniquement (ni remise ni liste de prix) : sur leurs devis, forcer une liste de prix favorite.",
       },
       {
         title: "Export Excel des prix d'un client",
@@ -199,7 +199,7 @@ export const HELP: HelpSection[] = [
     items: [
       {
         title: "Import de données",
-        text: "Importer le fichier LPN (xlsx) : produits, clients et listes de prix sont remplacés ; les devis ne sont jamais touchés.",
+        text: "Importer le fichier LPN (xlsx) : produits, clients (feuilles « gestion tarifs », prioritaire, et « CLIENTS IC ») et listes de prix sont remplacés ; les devis ne sont jamais touchés.",
       },
       {
         title: "Favoris",

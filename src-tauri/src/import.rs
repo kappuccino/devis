@@ -1,5 +1,6 @@
 //! Import du classeur « LPN finale.xlsx » dans SQLite.
 //! Remplace produits, clients et listes de prix ; les devis ne sont jamais touchés.
+//! Les clients viennent de « gestion tarifs », complétés par « CLIENTS IC » (code et nom seulement).
 
 use calamine::{open_workbook, Data, Range, Reader, Xlsx};
 use rusqlite::{params, Connection};
@@ -10,11 +11,14 @@ use std::path::Path;
 const SHEET_PRODUCTS: &str = "DATA";
 const SHEET_CLIENTS: &str = "gestion tarifs";
 const SHEET_PRICES: &str = "fichier injection tarif";
+const SHEET_CLIENTS_IC: &str = "CLIENTS IC";
 
 #[derive(Debug, Default, Serialize)]
 pub struct ImportReport {
     pub products: usize,
     pub clients: usize,
+    /// Dont clients venus seulement de « CLIENTS IC » (ni remise ni liste de prix).
+    pub clients_ic: usize,
     pub price_lists: usize,
     pub price_list_items: usize,
     pub client_links: usize,
@@ -26,8 +30,19 @@ pub fn import_lpn(conn: &mut Connection, path: &Path) -> Result<ImportReport, St
     let products = sheet(&mut wb, SHEET_PRODUCTS)?;
     let clients = sheet(&mut wb, SHEET_CLIENTS)?;
     let prices = sheet(&mut wb, SHEET_PRICES)?;
+    let mut warnings = Vec::new();
+    let clients_ic = match sheet(&mut wb, SHEET_CLIENTS_IC) {
+        Ok(range) => Some(range),
+        Err(e) => {
+            warnings.push(e);
+            None
+        }
+    };
 
-    import_ranges(conn, &products, &clients, &prices).map_err(|e| e.to_string())
+    let mut report =
+        import_ranges(conn, &products, &clients, &prices, clients_ic.as_ref()).map_err(|e| e.to_string())?;
+    report.warnings.extend(warnings);
+    Ok(report)
 }
 
 /// Remplace produits, clients et listes de prix, en une transaction.
@@ -36,6 +51,7 @@ fn import_ranges(
     products: &Range<Data>,
     clients: &Range<Data>,
     prices: &Range<Data>,
+    clients_ic: Option<&Range<Data>>,
 ) -> rusqlite::Result<ImportReport> {
     let mut report = ImportReport::default();
     let tx = conn.transaction()?;
@@ -50,6 +66,9 @@ fn import_ranges(
     import_products(&tx, products, &mut report)?;
     import_price_lists(&tx, prices, &mut report)?;
     import_clients(&tx, clients, &mut report)?;
+    if let Some(range) = clients_ic {
+        import_clients_ic(&tx, range, &mut report)?;
+    }
 
     tx.commit()?;
     Ok(report)
@@ -251,9 +270,77 @@ fn import_clients(tx: &Connection, range: &Range<Data>, report: &mut ImportRepor
     Ok(())
 }
 
+/// Ajoute les clients de « CLIENTS IC » absents de « gestion tarifs » (prioritaire) :
+/// code et raison sociale seulement, sans remise ni liste de prix.
+fn import_clients_ic(tx: &Connection, range: &Range<Data>, report: &mut ImportReport) -> rusqlite::Result<()> {
+    // A code | B raison sociale
+    let mut stmt = tx.prepare("INSERT OR IGNORE INTO clients (code, name) VALUES (?1, ?2)")?;
+    for row in data_rows(range) {
+        let Some(code) = text(row, 0).map(|c| c.to_uppercase()) else { continue };
+        if code.chars().all(|c| c == '0') {
+            continue;
+        }
+        let inserted = stmt.execute(params![code, text(row, 1).unwrap_or_default()])?;
+        report.clients += inserted;
+        report.clients_ic += inserted;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn range(rows: &[&[&str]]) -> Range<Data> {
+        let width = rows.iter().map(|r| r.len()).max().unwrap_or(1).max(1);
+        let mut range = Range::new((0, 0), (rows.len() as u32 - 1, width as u32 - 1));
+        for (i, row) in rows.iter().enumerate() {
+            for (j, v) in row.iter().enumerate() {
+                if !v.is_empty() {
+                    range.set_value((i as u32, j as u32), Data::String(v.to_string()));
+                }
+            }
+        }
+        range
+    }
+
+    #[test]
+    fn clients_ic_completes_gestion_tarifs() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::db::init(&conn).unwrap();
+        let header: &[&str] = &["en-tête"];
+        let mut tarifs_row = vec![""; 18];
+        tarifs_row[0] = "CLIENT TARIF";
+        tarifs_row[1] = "001200";
+        tarifs_row[15] = "57,5";
+        tarifs_row[17] = "60";
+        let tarifs = range(&[header, &tarifs_row]);
+        let ic = range(&[
+            header,
+            &["001200", "NOM IC IGNORÉ"],
+            &["13770k", "CEF 13 AUBAGNE"],
+            &["000000", "ZÉRO"],
+            &["", "SANS CODE"],
+        ]);
+        let empty = range(&[header]);
+        let report = import_ranges(&mut conn, &empty, &tarifs, &empty, Some(&ic)).unwrap();
+        assert_eq!((report.clients, report.clients_ic), (2, 1));
+
+        let rows: Vec<(String, String, f64)> = conn
+            .prepare("SELECT code, name, discount_cfa FROM clients ORDER BY code")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                ("001200".into(), "CLIENT TARIF".into(), 57.5),
+                ("13770K".into(), "CEF 13 AUBAGNE".into(), 0.0),
+            ]
+        );
+    }
 
     /// `LPN_XLSX=chemin/vers/LPN.xlsx cargo test -- --ignored --nocapture`
     #[test]

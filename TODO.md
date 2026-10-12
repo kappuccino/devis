@@ -149,6 +149,10 @@
     sous-totaux en double.
   - Fait : bouton « Nettoyer (n) » sous les lignes, avec confirmation détaillée.
 
+- [x] Import LPN : clients de la feuille « CLIENTS IC » aussi importés (code et raison sociale seulement)
+  - « gestion tarifs » prioritaire si le code est dans les deux feuilles.
+  - Ces clients n'ont ni remise ni liste de prix : sur le devis, forcer une liste favorite.
+
 - [ ] Dépôt du code en privé (mises à jour servies par le service de licences)
   - [x] CI : versions officielles publiées aussi dans `devis-release` ; l'appli y cherche ses mises à jour.
   - [x] Créer `kappuccino/devis-release` (public, avec un README) et le secret `RELEASES_TOKEN`.
