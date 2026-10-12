@@ -172,3 +172,9 @@
   - [ ] Plus tard : sauvegarde en ligne chiffrée, diffusion du classeur des tarifs.
 
 - [ ] Export / import d'un devis (fichier), pour partager un devis type entre collègues.
+
+- [ ] (Idée, en attente) Import d'une étude Elium : le PDF (« Microsoft Print to PDF ») ne contient que
+  des images. Pistes : vérifier d'abord si Elium exporte la liste du matériel (PDF texte, Excel) ; sinon
+  LLM de vision via le service de licences (≈ 0,3 à 6 centimes par étude selon le modèle), avec
+  vérification des références par le catalogue et validation à l'écran. Question de confidentialité
+  (document envoyé à un tiers) à trancher.
