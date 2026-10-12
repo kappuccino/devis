@@ -545,7 +545,7 @@ onMounted(async () => {
               <InputText
                 id="last-number"
                 v-model="settings[LAST_NUMBER_KEY]"
-                :placeholder="`ex. ${numberStem}0140`"
+                placeholder="Facultatif : vide si tous vos devis sont faits dans l'appli"
                 :invalid="lastNumberIgnored"
               />
               <small v-if="lastNumberIgnored" class="warn">
