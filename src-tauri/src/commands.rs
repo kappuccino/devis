@@ -377,16 +377,15 @@ pub fn export_quote(state: State<AppState>, id: i64) -> CmdResult<crate::quote_f
     crate::quote_file::export(&state.conn(), id)
 }
 
-/// Ce qu'importeraient les fichiers .devis choisis (devis ajoutés ou écrasés), sans rien enregistrer.
+/// Ce qu'importeraient les fichiers choisis (.devis, ou .devistype si `templates`), sans rien enregistrer.
 #[tauri::command]
 pub fn preview_quote_files(
     state: State<AppState>,
     files: State<crate::files::FileAccess>,
     paths: Vec<String>,
     templates: bool,
-    date: String,
 ) -> CmdResult<Vec<crate::quote_file::ImportedQuote>> {
-    each_quote_file(&files, &paths, |bytes| crate::quote_file::preview(&state.conn(), bytes, templates, &date))
+    each_quote_file(&files, &paths, |bytes| crate::quote_file::preview(&state.conn(), bytes, templates))
 }
 
 fn each_quote_file(
@@ -404,19 +403,18 @@ fn each_quote_file(
     Ok(all)
 }
 
-/// Ajoute les devis des fichiers .devis choisis (`templates` : import depuis l'onglet « Devis types ») ;
-/// un devis de même numéro est écrasé.
+/// Importe les fichiers choisis : .devis dans la liste des devis (un devis de même numéro est écrasé),
+/// ou .devistype dans les devis types si `templates`.
 #[tauri::command]
 pub fn import_quotes(
     state: State<AppState>,
     files: State<crate::files::FileAccess>,
     paths: Vec<String>,
     templates: bool,
-    date: String,
 ) -> CmdResult<Vec<crate::quote_file::ImportedQuote>> {
-    // Tous les fichiers sont relus d'abord : un fichier illisible n'importe rien.
-    each_quote_file(&files, &paths, |bytes| crate::quote_file::preview(&state.conn(), bytes, templates, &date))?;
-    each_quote_file(&files, &paths, |bytes| crate::quote_file::import(&mut state.conn(), bytes, templates, &date))
+    // Tous les fichiers sont relus d'abord : un fichier illisible ou mal placé n'importe rien.
+    each_quote_file(&files, &paths, |bytes| crate::quote_file::preview(&state.conn(), bytes, templates))?;
+    each_quote_file(&files, &paths, |bytes| crate::quote_file::import(&mut state.conn(), bytes, templates))
 }
 
 /// Contact imprimé dans le haut de l'export Excel (saisi au moment de l'export).
@@ -1066,7 +1064,7 @@ pub fn save_as_template(state: State<AppState>, id: i64, name: String, date: Str
     store_quote(&mut conn, as_template(quote, name, date))
 }
 
-pub fn as_template(mut q: Quote, name: String, date: String) -> Quote {
+fn as_template(mut q: Quote, name: String, date: String) -> Quote {
     q.id = None;
     q.number = None;
     q.client_code = None;

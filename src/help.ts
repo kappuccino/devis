@@ -96,7 +96,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Exporter et importer un devis",
-        text: "Bouton flèche vers le bas d'un devis : enregistre un fichier « numéro - client.devis » (lignes, prix, client, contact, notes), à envoyer à un collègue ou à garder. « Importer… » en haut de la liste ajoute les devis d'un ou plusieurs fichiers .devis (sélection multiple) en gardant leur numéro. Si un devis existe déjà avec cette référence, il est écrasé par la version du fichier (son suivi, « Obtenue » et commentaire, est gardé) : une confirmation liste d'abord les devis concernés. Un devis type exporté revient dans les devis types.",
+        text: "Bouton flèche vers le bas d'un devis : enregistre un fichier « numéro - client.devis » (lignes, prix, client, contact, notes), à envoyer à un collègue ou à garder. « Importer… » en haut de la liste ajoute les devis d'un ou plusieurs fichiers .devis (sélection multiple) en gardant leur numéro. Si un devis existe déjà avec cette référence, il est écrasé par la version du fichier (son suivi, « Obtenue » et commentaire, est gardé) : une confirmation liste d'abord les devis concernés. Seuls les fichiers .devis s'importent ici (les devis types ont leurs propres fichiers .devistype).",
       },
       {
         title: "Commentaire",
@@ -128,7 +128,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Exporter et importer un devis type",
-        text: "Bouton flèche vers le bas d'un devis type : fichier « nom du type.devis », à partager entre collègues. « Importer… » dans l'onglet ajoute les devis types des fichiers choisis ; un devis importé ici devient un devis type (sans client, prix ni frais).",
+        text: "Bouton flèche vers le bas d'un devis type : fichier « nom du type.devistype », à partager entre collègues. « Importer… » dans l'onglet ajoute les devis types d'un ou plusieurs fichiers .devistype (sans rien écraser). Seuls les fichiers .devistype s'importent ici, et ils ne s'importent jamais dans la liste des devis.",
       },
     ],
   },

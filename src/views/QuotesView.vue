@@ -159,65 +159,66 @@ async function pdf(q: QuoteSummary) {
   }
 }
 
-/** Fichier « numéro - client.devis » (ou « nom du type.devis »), à importer sur un autre poste. */
-async function exportFile(id: number) {
+/** Fichiers d'échange : .devis pour les devis, .devistype pour les devis types (chacun ne s'importe qu'à sa place). */
+const fileFilter = (templates: boolean) =>
+  templates ? { name: "Devis type", extensions: ["devistype"] } : { name: "Devis", extensions: ["devis"] };
+
+/** Fichier « numéro - client.devis » ou « nom du type.devistype », à importer sur un autre poste. */
+async function exportFile(id: number, templates: boolean) {
   try {
     const { file_name, contents } = await api.exportQuote(id);
-    const path = await pickSavePath({ defaultPath: file_name, filters: [{ name: "Devis", extensions: ["devis"] }] });
+    const path = await pickSavePath({ defaultPath: file_name, filters: [fileFilter(templates)] });
     if (!path) return;
     await api.saveFile(path, new TextEncoder().encode(contents));
-    toast.add({ severity: "success", summary: "Devis exporté", detail: path, life: 4000 });
+    toast.add({ severity: "success", summary: templates ? "Devis type exporté" : "Devis exporté", detail: path, life: 4000 });
   } catch (e) {
     toast.add({ severity: "error", summary: "Export du devis", detail: errorMessage(e) });
   }
 }
 
-/** Import de fichiers .devis (plusieurs à la fois), après confirmation : un devis de même numéro est
- * écrasé ; depuis l'onglet « Devis types », tous deviennent des devis types. */
+/** Import de plusieurs fichiers à la fois, après confirmation : .devis dans la liste des devis (un devis
+ * de même numéro est écrasé), .devistype dans l'onglet « Devis types » (ajoutés). */
 async function importFiles() {
   const templates = tab.value === "types";
   const paths = await pickFiles({
     title: templates ? "Importer des devis types" : "Importer des devis",
-    filters: [{ name: "Devis", extensions: ["devis"] }],
+    filters: [fileFilter(templates)],
   });
   if (!paths.length) return;
   let seen;
   try {
-    seen = await api.previewQuoteFiles(paths, templates, todayIso());
+    seen = await api.previewQuoteFiles(paths, templates);
   } catch (e) {
-    toast.add({ severity: "error", summary: "Import de devis", detail: errorMessage(e) });
+    toast.add({ severity: "error", summary: templates ? "Import de devis types" : "Import de devis", detail: errorMessage(e) });
     return;
   }
   const replaced = seen.filter((q) => q.replaced);
   const what = templates ? `${seen.length} devis type${seen.length > 1 ? "s" : ""}` : `${seen.length} devis`;
   confirm.require({
     header: `Importer ${what}`,
-    message:
-      (templates
-        ? "Les devis types des fichiers seront ajoutés (un devis importé ici devient un devis type, sans client, prix ni frais)."
-        : "Si un devis existe déjà avec cette référence, il sera écrasé avec cette version.") +
-      (replaced.length
-        ? `\n\nDevis écrasés (${replaced.length}) : ${replaced.map((q) => `${q.number} (${q.name})`).join(", ")}.`
-        : templates
-          ? ""
+    message: templates
+      ? `Ajouter ${what} : ${seen.map((q) => `« ${q.name} »`).join(", ")}.`
+      : "Si un devis existe déjà avec cette référence, il sera écrasé avec cette version." +
+        (replaced.length
+          ? `\n\nDevis écrasés (${replaced.length}) : ${replaced.map((q) => `${q.number} (${q.name})`).join(", ")}.`
           : "\n\nAucun devis existant n'a la même référence."),
     icon: replaced.length ? "pi pi-exclamation-triangle" : "pi pi-upload",
     rejectProps: { label: "Annuler", severity: "secondary", text: true },
     acceptProps: { label: replaced.length ? "Importer et écraser" : "Importer", severity: replaced.length ? "danger" : undefined },
     accept: async () => {
       try {
-        const done = await api.importQuotes(paths, templates, todayIso());
-        await Promise.all([load(), loadTemplates()]);
-        const types = done.filter((q) => q.is_template).length;
-        const added = done.filter((q) => !q.is_template && !q.replaced).length;
+        const done = await api.importQuotes(paths, templates);
+        await (templates ? loadTemplates() : load());
+        const added = done.filter((q) => !q.replaced).length;
+        const overwritten = done.length - added;
+        const noun = templates ? "devis type" : "devis";
         const parts = [
-          ...(added ? [`${added} devis ajouté${added > 1 ? "s" : ""}`] : []),
-          ...(done.length - types - added ? [`${done.length - types - added} écrasé${done.length - types - added > 1 ? "s" : ""}`] : []),
-          ...(types ? [`${types} devis type${types > 1 ? "s" : ""} ajouté${types > 1 ? "s" : ""}`] : []),
+          ...(added ? [`${added} ${noun}${added > 1 && templates ? "s" : ""} ajouté${added > 1 ? "s" : ""}`] : []),
+          ...(overwritten ? [`${overwritten} écrasé${overwritten > 1 ? "s" : ""}`] : []),
         ];
         toast.add({ severity: "success", summary: "Import terminé", detail: parts.join(", ") + ".", life: 4000 });
       } catch (e) {
-        toast.add({ severity: "error", summary: "Import de devis", detail: errorMessage(e) });
+        toast.add({ severity: "error", summary: templates ? "Import de devis types" : "Import de devis", detail: errorMessage(e) });
       }
     },
   });
@@ -258,7 +259,7 @@ onMounted(() => {
       <template v-else>
         <InputText v-model="templateSearch" placeholder="Nom…" style="width: 240px" />
         <Button
-          v-tooltip.bottom="'Ajouter des devis types depuis des fichiers .devis (un devis importé ici devient un devis type)'"
+          v-tooltip.bottom="'Ajouter des devis types depuis des fichiers .devistype'"
           label="Importer…"
           icon="pi pi-upload"
           severity="secondary"
@@ -300,12 +301,12 @@ onMounted(() => {
               @click="router.push({ path: '/devis/nouveau', query: { type: data.id } })"
             />
             <Button
-              v-tooltip.top="'Exporter (fichier .devis)'"
+              v-tooltip.top="'Exporter (fichier .devistype, à importer sur un autre poste)'"
               icon="pi pi-download"
               outlined
               rounded
               severity="secondary"
-              @click="exportFile(data.id)"
+              @click="exportFile(data.id, true)"
             />
             <Button
               v-tooltip.top="'Supprimer'"
@@ -412,7 +413,7 @@ onMounted(() => {
               outlined
               severity="secondary"
               rounded
-              @click="exportFile(data.id)"
+              @click="exportFile(data.id, false)"
             />
             <Button
               v-tooltip.top="'Supprimer'"
