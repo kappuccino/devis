@@ -1,6 +1,8 @@
 //! Import du classeur « LPN finale.xlsx » dans SQLite.
 //! Remplace produits, clients et listes de prix ; les devis ne sont jamais touchés.
-//! Les clients viennent de « gestion tarifs », complétés par « CLIENTS IC » (code et nom seulement).
+//! Les clients viennent de « gestion tarifs », complétés par « CLIENTS IC » (code et nom seulement),
+//! puis par un client par liste de prix rattachée à personne (code de la liste sans son « T ») :
+//! la liste est rattachée à ce client, existant ou créé.
 
 use calamine::{open_workbook, Data, Range, Reader, Xlsx};
 use rusqlite::{params, Connection};
@@ -19,6 +21,10 @@ pub struct ImportReport {
     pub clients: usize,
     /// Dont clients venus seulement de « CLIENTS IC » (ni remise ni liste de prix).
     pub clients_ic: usize,
+    /// Dont clients créés pour une liste de prix rattachée à aucun client.
+    pub clients_from_lists: usize,
+    /// Listes de prix sans client rattachées au client existant de même code (sans le « T »).
+    pub lists_linked_to_existing: usize,
     pub price_lists: usize,
     pub price_list_items: usize,
     pub client_links: usize,
@@ -69,6 +75,7 @@ fn import_ranges(
     if let Some(range) = clients_ic {
         import_clients_ic(&tx, range, &mut report)?;
     }
+    clients_for_orphan_lists(&tx, &mut report)?;
 
     tx.commit()?;
     Ok(report)
@@ -235,11 +242,12 @@ fn import_clients(tx: &Connection, range: &Range<Data>, report: &mut ImportRepor
             text(row, 20),
             text(row, 21),
         ])?;
+        // Code en double : la première ligne est conservée, mais reçoit aussi les listes de celle-ci.
         if inserted == 0 {
-            duplicates.push(code);
-            continue;
+            duplicates.push(code.clone());
+        } else {
+            report.clients += 1;
         }
-        report.clients += 1;
         for col in LIST_COLS {
             let Some(list) = text(row, col).map(|l| l.to_uppercase()) else { continue };
             if known_lists.contains(&list) {
@@ -251,7 +259,7 @@ fn import_clients(tx: &Connection, range: &Range<Data>, report: &mut ImportRepor
     }
     if !duplicates.is_empty() {
         report.warnings.push(format!(
-            "{} code(s) client en double (première ligne conservée) : {}",
+            "{} code(s) client en double (première ligne conservée, listes de prix des doublons rattachées) : {}",
             duplicates.len(),
             duplicates.join(", ")
         ));
@@ -287,6 +295,35 @@ fn import_clients_ic(tx: &Connection, range: &Range<Data>, report: &mut ImportRe
     Ok(())
 }
 
+/// Rattache chaque liste de prix sans client au client dont le code est celui de la liste sans son
+/// « T » initial (T205000 → 205000), en le créant au besoin (nom = intitulé de la liste).
+fn clients_for_orphan_lists(tx: &Connection, report: &mut ImportReport) -> rusqlite::Result<()> {
+    let orphans: Vec<(String, Option<String>)> = tx
+        .prepare(
+            "SELECT code, label FROM price_lists
+             WHERE code NOT IN (SELECT price_list_code FROM client_price_lists)
+             ORDER BY code",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+
+    let mut client_stmt = tx.prepare("INSERT OR IGNORE INTO clients (code, name) VALUES (?1, ?2)")?;
+    let mut link_stmt = tx.prepare("INSERT INTO client_price_lists (client_code, price_list_code) VALUES (?1, ?2)")?;
+    for (list, label) in orphans {
+        let code = list.strip_prefix('T').unwrap_or(&list).to_string();
+        let name = label.filter(|l| !l.trim().is_empty()).unwrap_or_else(|| list.clone());
+        if client_stmt.execute(params![code, name])? == 1 {
+            report.clients += 1;
+            report.clients_from_lists += 1;
+        } else {
+            report.lists_linked_to_existing += 1;
+        }
+        link_stmt.execute(params![code, list])?;
+        report.client_links += 1;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -312,9 +349,12 @@ mod tests {
         let mut tarifs_row = vec![""; 18];
         tarifs_row[0] = "CLIENT TARIF";
         tarifs_row[1] = "001200";
+        tarifs_row[8] = "T999000";
         tarifs_row[15] = "57,5";
         tarifs_row[17] = "60";
-        let tarifs = range(&[header, &tarifs_row]);
+        let mut duplicate_row = vec![""; 13];
+        (duplicate_row[0], duplicate_row[1], duplicate_row[12]) = ("DOUBLON", "001200", "T205000");
+        let tarifs = range(&[header, &tarifs_row, &duplicate_row]);
         let ic = range(&[
             header,
             &["001200", "NOM IC IGNORÉ"],
@@ -322,9 +362,23 @@ mod tests {
             &["000000", "ZÉRO"],
             &["", "SANS CODE"],
         ]);
+        // B intitulé | D code liste | E réf | O prix
+        let price = |label: &'static str, list: &'static str| -> Vec<&'static str> {
+            let mut row = vec![""; 15];
+            (row[1], row[3], row[4], row[14]) = (label, list, "REF", "1");
+            row
+        };
+        let prices = range(&[
+            header,
+            &price("LISTE RATTACHÉE", "T999000"),
+            &price("COTRELEC SERTELEC", "T205000"),
+            &price("CLIENT EXISTANT", "T13770K"),
+            &price("NOUVEAU CLIENT", "T300000"),
+        ]);
         let empty = range(&[header]);
-        let report = import_ranges(&mut conn, &empty, &tarifs, &empty, Some(&ic)).unwrap();
-        assert_eq!((report.clients, report.clients_ic), (2, 1));
+        let report = import_ranges(&mut conn, &empty, &tarifs, &prices, Some(&ic)).unwrap();
+        assert_eq!((report.clients, report.clients_ic, report.clients_from_lists), (3, 1, 1));
+        assert_eq!(report.lists_linked_to_existing, 1);
 
         let rows: Vec<(String, String, f64)> = conn
             .prepare("SELECT code, name, discount_cfa FROM clients ORDER BY code")
@@ -338,6 +392,23 @@ mod tests {
             vec![
                 ("001200".into(), "CLIENT TARIF".into(), 57.5),
                 ("13770K".into(), "CEF 13 AUBAGNE".into(), 0.0),
+                ("300000".into(), "NOUVEAU CLIENT".into(), 0.0),
+            ]
+        );
+        let links: Vec<(String, String)> = conn
+            .prepare("SELECT client_code, price_list_code FROM client_price_lists ORDER BY client_code")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            links,
+            vec![
+                ("001200".into(), "T205000".into()),
+                ("001200".into(), "T999000".into()),
+                ("13770K".into(), "T13770K".into()),
+                ("300000".into(), "T300000".into()),
             ]
         );
     }

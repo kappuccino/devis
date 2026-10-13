@@ -286,6 +286,10 @@ export interface ImportReport {
   clients: number;
   /** Dont clients venus seulement de la feuille « CLIENTS IC ». */
   clients_ic: number;
+  /** Dont clients créés pour une liste de prix rattachée à aucun client. */
+  clients_from_lists: number;
+  /** Listes de prix sans client rattachées au client existant de même code. */
+  lists_linked_to_existing: number;
   price_lists: number;
   price_list_items: number;
   client_links: number;

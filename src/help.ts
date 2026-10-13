@@ -146,7 +146,7 @@ export const HELP: HelpSection[] = [
     items: [
       {
         title: "Fiches clients",
-        text: "Clients importés du fichier LPN : code, raison sociale, groupe, commercial, remises CFA / CFO et listes de prix rattachées, modifiables (un réimport du fichier LPN les remplace). Les clients présents seulement dans la feuille « CLIENTS IC » sont aussi importés, avec leur code et leur raison sociale uniquement (ni remise ni liste de prix) : sur leurs devis, forcer une liste de prix favorite.",
+        text: "Clients importés du fichier LPN : code, raison sociale, groupe, commercial, remises CFA / CFO et listes de prix rattachées, modifiables (un réimport du fichier LPN les remplace). Les clients présents seulement dans la feuille « CLIENTS IC » sont aussi importés, avec leur code et leur raison sociale uniquement (ni remise ni liste de prix) : sur leurs devis, forcer une liste de prix favorite. Une liste de prix rattachée à aucun client crée aussi un client : son code est celui de la liste sans le « T » (T205000 → 205000), son nom est l'intitulé de la liste, et la liste lui est rattachée. Si un client a déjà ce code, la liste lui est simplement rattachée, en plus de ses autres listes. Un code client présent sur plusieurs lignes de « gestion tarifs » donne un seul client (la première ligne), qui reçoit les listes de prix de toutes ces lignes.",
       },
       {
         title: "Export Excel des prix d'un client",

@@ -152,6 +152,11 @@
 - [x] Import LPN : clients de la feuille « CLIENTS IC » aussi importés (code et raison sociale seulement)
   - « gestion tarifs » prioritaire si le code est dans les deux feuilles.
   - Ces clients n'ont ni remise ni liste de prix : sur le devis, forcer une liste favorite.
+- [x] Import LPN : un client créé par liste de prix rattachée à aucun client
+  - Code = code de la liste sans le « T », nom = intitulé de la liste, liste rattachée.
+  - Si ce code client existe déjà : la liste est rattachée à ce client.
+- [x] Import LPN : code client en double dans « gestion tarifs » → première ligne conservée, avec les
+  listes de prix de toutes les lignes.
 
 - [ ] Dépôt du code en privé (mises à jour servies par le service de licences)
   - [x] CI : versions officielles publiées aussi dans `devis-release` ; l'appli y cherche ses mises à jour.
