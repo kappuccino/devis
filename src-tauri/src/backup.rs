@@ -1,9 +1,9 @@
 //! Sauvegarde de la base des devis (`devis.db`) : copies datées dans un dossier choisi
 //! (par défaut `Documents/Devis Groupe Cahors/sauvegardes`, hors du dossier de l'appli qu'une
 //! désinstallation avec « Supprimer les données » efface en entier), automatiques au démarrage
-//! (au plus une fois par 20 h), à la demande et avant chaque mise à jour, en gardant les N plus
-//! récentes ; restauration d'une copie. Une base sans aucun devis n'est jamais copiée
-//! automatiquement et ne fait jamais supprimer d'anciennes copies.
+//! (au plus une fois par 20 h) et chaque soir à 22 h tant que l'appli tourne, à la demande et avant
+//! chaque mise à jour, en gardant les N plus récentes ; restauration d'une copie. Une base sans
+//! aucun devis n'est jamais copiée automatiquement et ne fait jamais supprimer d'anciennes copies.
 //!
 //! Copie : `VACUUM INTO`, cohérente même pendant que l'appli écrit. Restauration : la copie est
 //! recopiée dans la connexion ouverte (API de sauvegarde SQLite), après une copie de sécurité
@@ -23,6 +23,10 @@ const VERSION_KEY: &str = "last_app_version";
 pub const DEFAULT_KEEP: usize = 10;
 /// Copie automatique si la plus récente a plus de 20 h (une par jour de travail).
 const AUTO_INTERVAL: Duration = Duration::from_secs(20 * 3600);
+/// Copie du soir, heure locale : l'appli reste ouverte des jours entiers, sans redémarrage.
+const EVENING: &str = "22:00:00";
+/// Au plus tard, une copie par 24 h tant que l'appli tourne (ordinateur en veille à 22 h…).
+const MAX_GAP_MS: i64 = 24 * 3600 * 1000;
 
 const PREFIX: &str = "devis-";
 const SAFETY_PREFIX: &str = "devis-avant-restauration-";
@@ -203,6 +207,40 @@ pub fn auto_backup(conn: &Connection, default_dir: &Path) -> Result<Option<PathB
             age.saturating_sub(Duration::from_millis(ms as u64)) < AUTO_INTERVAL
         });
     if recent {
+        return Ok(None);
+    }
+    backup_now(conn, default_dir).map(Some)
+}
+
+/// Date (ms) de la copie automatique ou manuelle la plus récente du dossier.
+fn latest_copy(dir: &Path) -> Result<Option<i64>> {
+    Ok(list(dir)?.iter().filter(|f| !f.safety).filter_map(|f| f.modified).max())
+}
+
+/// Copie du soir due ? Après 22 h sans copie depuis 22 h, ou plus de 24 h sans copie.
+fn evening_due(last_ms: Option<i64>, now_ms: i64, evening_ms: i64) -> bool {
+    match last_ms {
+        None => true,
+        Some(last) => (now_ms >= evening_ms && last < evening_ms) || now_ms - last >= MAX_GAP_MS,
+    }
+}
+
+/// Vérifiée chaque minute pendant que l'appli tourne : copie du soir (22 h, heure locale) si elle
+/// est due, que la sauvegarde automatique est activée et que la base a des devis.
+pub fn evening_backup(conn: &Connection, default_dir: &Path) -> Result<Option<PathBuf>> {
+    if setting(conn, AUTO_KEY)?.as_deref() == Some("0") || !has_quotes(conn)? {
+        return Ok(None);
+    }
+    // 22 h aujourd'hui, heure locale, en ms depuis 1970 (SQLite connaît le fuseau du poste).
+    let evening_ms: i64 = conn
+        .query_row(
+            "SELECT CAST(strftime('%s', date('now', 'localtime') || ' ' || ?1, 'utc') AS INTEGER) * 1000",
+            [EVENING],
+            |r| r.get(0),
+        )
+        .map_err(err)?;
+    let now_ms = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
+    if !evening_due(latest_copy(&dir(conn, default_dir)?)?, now_ms, evening_ms) {
         return Ok(None);
     }
     backup_now(conn, default_dir).map(Some)
@@ -460,6 +498,31 @@ mod tests {
         record_version(&conn, "0.2.3").unwrap();
         assert!(backup_before_upgrade(&db_path, &backups, "0.2.3").unwrap().is_none(), "même version");
         assert!(backup_before_upgrade(&db_path, &backups, "0.2.4").unwrap().is_some(), "nouvelle version");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn evening_backup_after_22h_or_after_24h_without_copy() {
+        const H: i64 = 3600 * 1000;
+        let evening = 1_000 * H; // 22 h aujourd'hui
+        assert!(evening_due(None, evening - 5 * H, evening), "aucune copie : tout de suite");
+        assert!(!evening_due(Some(evening - 3 * H), evening - H, evening), "avant 22 h, copie récente");
+        assert!(evening_due(Some(evening - 3 * H), evening + 60_000, evening), "22 h passées, dernière copie avant 22 h");
+        assert!(!evening_due(Some(evening + 60_000), evening + 2 * H, evening), "déjà faite ce soir");
+        // Ce matin à 8 h (22 h − 14 h), après une veille hier à 22 h : dernière copie avant-hier à 6 h.
+        assert!(evening_due(Some(evening - 40 * H), evening - 14 * H, evening), "plus de 24 h sans copie");
+        assert!(!evening_due(Some(evening - 24 * H), evening - 14 * H, evening), "copie d'hier soir : on attend ce soir");
+
+        let root = temp_dir("evening");
+        let db_path = root.join("devis.db");
+        let backups = root.join("Documents").join("sauvegardes");
+        let conn = crate::db::open(&db_path).unwrap();
+        assert!(evening_backup(&conn, &backups).unwrap().is_none(), "base sans devis");
+        conn.execute("INSERT INTO quotes (number, client_code, date) VALUES ('26-A-0001', '', '2026-10-10')", []).unwrap();
+        assert!(evening_backup(&conn, &backups).unwrap().is_some(), "aucune copie encore");
+        conn.execute("INSERT INTO settings (key, value) VALUES ('backup_auto', '0')", []).unwrap();
+        std::fs::remove_dir_all(&backups).unwrap();
+        assert!(evening_backup(&conn, &backups).unwrap().is_none(), "désactivée");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

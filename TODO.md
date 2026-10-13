@@ -165,6 +165,8 @@
     (couvre aussi un installeur lancé à la main).
   - Base sans devis : pas de copie automatique, pas de suppression d'anciennes copies.
   - Démarrage sans devis alors qu'une sauvegarde en contient : restauration proposée.
+- [x] Sauvegarde automatique chaque soir à 22 h (l'appli reste ouverte des jours entiers) ; ordinateur en veille
+  à 22 h : copie au réveil, et jamais plus de 24 h sans copie.
 
 - [ ] Dépôt du code en privé (mises à jour servies par le service de licences)
   - [x] CI : versions officielles publiées aussi dans `devis-release` ; l'appli y cherche ses mises à jour.

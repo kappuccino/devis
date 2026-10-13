@@ -151,7 +151,7 @@ onMounted(refresh);
       <label for="backup-auto">Automatique</label>
       <div class="inline">
         <Checkbox v-model="auto" input-id="backup-auto" binary @update:model-value="(v: boolean) => saveSetting(AUTO_KEY, v ? '1' : '0')" />
-        <label for="backup-auto">Sauvegarder au démarrage de l'appli (au plus une fois par jour)</label>
+        <label for="backup-auto">Sauvegarder au démarrage de l'appli et chaque soir à 22 h, tant qu'elle reste ouverte</label>
       </div>
     </div>
     <div class="actions">

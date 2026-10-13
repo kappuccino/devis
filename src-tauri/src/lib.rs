@@ -81,9 +81,19 @@ pub fn run() {
             {
                 let (db, backup_dir) = (db.clone(), backup_dir.clone());
                 std::thread::spawn(move || {
-                    let conn = db.lock().unwrap_or_else(|p| p.into_inner());
-                    if let Err(e) = backup::auto_backup(&conn, &backup_dir) {
-                        eprintln!("Sauvegarde automatique : {e}");
+                    {
+                        let conn = db.lock().unwrap_or_else(|p| p.into_inner());
+                        if let Err(e) = backup::auto_backup(&conn, &backup_dir) {
+                            eprintln!("Sauvegarde automatique : {e}");
+                        }
+                    }
+                    // L'appli reste ouverte des jours entiers : copie du soir, vérifiée chaque minute.
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        let conn = db.lock().unwrap_or_else(|p| p.into_inner());
+                        if let Err(e) = backup::evening_backup(&conn, &backup_dir) {
+                            eprintln!("Sauvegarde du soir : {e}");
+                        }
                     }
                 });
             }

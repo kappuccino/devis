@@ -219,7 +219,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Sauvegarde",
-        text: "Copies datées de la base des devis, rangées par défaut dans Documents → Devis Groupe Cahors → sauvegardes (ou dans le dossier choisi) : automatiques au démarrage (au plus une par jour), à la demande, avant chaque mise à jour de l'appli, et au premier démarrage d'une nouvelle version (avant que la base ne soit adaptée) ; les n dernières sont gardées. Tant qu'il n'y a aucun devis, rien n'est copié automatiquement et aucune ancienne copie n'est supprimée. Restauration d'une copie (la base actuelle est d'abord copiée) ; une copie endommagée ou modifiée hors de l'appli est refusée. Si l'appli démarre sans aucun devis alors qu'une sauvegarde en contient, elle propose de la restaurer.",
+        text: "Copies datées de la base des devis, rangées par défaut dans Documents → Devis Groupe Cahors → sauvegardes (ou dans le dossier choisi) : automatiques au démarrage (au plus une par jour) et chaque soir à 22 h tant que l'appli reste ouverte (ordinateur en veille à 22 h : au réveil), à la demande, avant chaque mise à jour de l'appli, et au premier démarrage d'une nouvelle version (avant que la base ne soit adaptée) ; les n dernières sont gardées. Tant qu'il n'y a aucun devis, rien n'est copié automatiquement et aucune ancienne copie n'est supprimée. Restauration d'une copie (la base actuelle est d'abord copiée) ; une copie endommagée ou modifiée hors de l'appli est refusée. Si l'appli démarre sans aucun devis alors qu'une sauvegarde en contient, elle propose de la restaurer.",
       },
       {
         title: "Interface et mises à jour",
