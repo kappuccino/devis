@@ -157,6 +157,7 @@
   - Si ce code client existe déjà : la liste est rattachée à ce client.
 - [x] Import LPN : code client en double dans « gestion tarifs » → première ligne conservée, avec les
   listes de prix de toutes les lignes.
+- [x] Recherches : filtrage lancé après une courte pause de frappe (plus de ralentissement en tapant).
 
 - [ ] Dépôt du code en privé (mises à jour servies par le service de licences)
   - [x] CI : versions officielles publiées aussi dans `devis-release` ; l'appli y cherche ses mises à jour.

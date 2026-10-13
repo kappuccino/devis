@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useDebouncedSearch } from "../composables/useDebouncedSearch";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import InputText from "primevue/inputtext";
@@ -15,12 +16,13 @@ const toast = useToast();
 const clients = ref<Client[]>([]);
 const loading = ref(true);
 const search = ref("");
+const query = useDebouncedSearch(search);
 
 const dialogVisible = ref(false);
 const editing = ref<Client | null>(null);
 
 const filtered = computed(() => {
-  const q = search.value.trim().toLowerCase();
+  const q = query.value.trim().toLowerCase();
   if (!q) return clients.value;
   return clients.value.filter((c) =>
     [c.code, c.name, c.group_name, c.subgroup, c.sales_rep, c.siren].some((v) => v?.toLowerCase().includes(q)),

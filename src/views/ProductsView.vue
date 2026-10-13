@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useDebouncedSearch } from "../composables/useDebouncedSearch";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import InputText from "primevue/inputtext";
@@ -16,10 +17,11 @@ const router = useRouter();
 const products = ref<Product[]>([]);
 const loading = ref(true);
 const search = ref("");
+const query = useDebouncedSearch(search);
 const family = ref<"Tous" | "CFA" | "CFO">("Tous");
 
 const filtered = computed(() => {
-  const q = search.value.trim().toLowerCase();
+  const q = query.value.trim().toLowerCase();
   return products.value.filter(
     (p) =>
       (family.value === "Tous" || p.family === family.value) &&

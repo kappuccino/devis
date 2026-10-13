@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useDebouncedSearch } from "../composables/useDebouncedSearch";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import InputText from "primevue/inputtext";
@@ -14,6 +15,7 @@ const toast = useToast();
 const lists = ref<PriceList[]>([]);
 const loading = ref(true);
 const search = ref("");
+const query = useDebouncedSearch(search);
 
 const selected = ref<PriceList | null>(null);
 const items = ref<PriceListItem[]>([]);
@@ -41,7 +43,7 @@ async function refreshClients() {
 }
 
 const filteredLists = computed(() => {
-  const q = search.value.trim().toLowerCase();
+  const q = query.value.trim().toLowerCase();
   return q
     ? lists.value.filter((l) => l.code.toLowerCase().includes(q) || l.label?.toLowerCase().includes(q))
     : lists.value;

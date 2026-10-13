@@ -2,6 +2,7 @@
 // Tiroir latéral : clients rattachés à une liste de prix (recherche, détacher) et rattachement
 // d'un autre client de la base. Ouvert depuis l'écran Listes de prix.
 import { computed, ref, watch } from "vue";
+import { useDebouncedSearch } from "../composables/useDebouncedSearch";
 import Drawer from "primevue/drawer";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
@@ -24,6 +25,7 @@ const attached = ref<ClientRef[]>([]);
 const allClients = ref<ClientRef[]>([]);
 const loading = ref(false);
 const search = ref("");
+const query = useDebouncedSearch(search);
 const busy = ref<string | null>(null);
 
 const visible = computed({
@@ -36,7 +38,7 @@ const visible = computed({
 const matches = (c: ClientRef, q: string) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q);
 
 const filtered = computed(() => {
-  const q = search.value.trim().toLowerCase();
+  const q = query.value.trim().toLowerCase();
   return q ? attached.value.filter((c) => matches(c, q)) : attached.value;
 });
 

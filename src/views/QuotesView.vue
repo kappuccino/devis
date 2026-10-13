@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useDebouncedSearch } from "../composables/useDebouncedSearch";
 import { useRoute, useRouter } from "vue-router";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
@@ -59,6 +60,7 @@ const confirm = useConfirm();
 const quotes = ref<QuoteSummary[]>([]);
 const loading = ref(true);
 const search = ref("");
+const query = useDebouncedSearch(search);
 /** Suivi : tous les devis, affaires obtenues ou en attente. */
 const status = ref<"all" | "won" | "open">("all");
 const statusOptions = [
@@ -68,7 +70,7 @@ const statusOptions = [
 ];
 
 const filtered = computed(() => {
-  const q = search.value.trim().toLowerCase();
+  const q = query.value.trim().toLowerCase();
   return quotes.value.filter(
     (d) =>
       (status.value === "all" || (status.value === "won") === !!d.won_at) &&

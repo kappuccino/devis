@@ -2,6 +2,7 @@
 // Tiroir latéral : tous les produits d'une liste de prix, avec une recherche.
 // Ouvert depuis le devis (listes du client, liste forcée) et les Réglages (listes favorites).
 import { computed, ref, watch } from "vue";
+import { useDebouncedSearch } from "../composables/useDebouncedSearch";
 import Drawer from "primevue/drawer";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
@@ -20,6 +21,7 @@ const items = ref<PriceListItem[]>([]);
 const label = ref<string | null>(null);
 const loading = ref(false);
 const search = ref("");
+const query = useDebouncedSearch(search);
 
 const visible = computed({
   get: () => code.value != null,
@@ -29,7 +31,7 @@ const visible = computed({
 });
 
 const filtered = computed(() => {
-  const q = search.value.trim().toLowerCase();
+  const q = query.value.trim().toLowerCase();
   return q
     ? items.value.filter((i) => i.product_ref.toLowerCase().includes(q) || i.designation?.toLowerCase().includes(q))
     : items.value;

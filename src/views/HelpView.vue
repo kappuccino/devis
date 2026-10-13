@@ -1,18 +1,20 @@
 <script setup lang="ts">
 // Aide : les fonctionnalités de l'appli, par rubrique (contenu dans src/help.ts, tenu à jour).
 import { computed, ref } from "vue";
+import { useDebouncedSearch } from "../composables/useDebouncedSearch";
 import InputText from "primevue/inputtext";
 import IconField from "primevue/iconfield";
 import InputIcon from "primevue/inputicon";
 import { HELP } from "../help";
 
 const search = ref("");
+const query = useDebouncedSearch(search);
 
 /** Sans accents ni majuscules, pour la recherche. */
 const plain = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 
 const sections = computed(() => {
-  const q = plain(search.value.trim());
+  const q = plain(query.value.trim());
   if (!q) return HELP;
   return HELP.map((s) => ({
     ...s,
@@ -37,7 +39,7 @@ function goTo(id: string) {
       </IconField>
     </div>
 
-    <nav v-if="!search.trim()" class="toc" aria-label="Rubriques">
+    <nav v-if="!query.trim()" class="toc" aria-label="Rubriques">
       <button v-for="s in HELP" :key="s.id" type="button" class="toc-link" @click="goTo(s.id)">
         <i :class="s.icon" /> {{ s.title }}
       </button>
