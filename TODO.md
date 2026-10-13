@@ -188,7 +188,10 @@
   - [ ] Passer `kappuccino/devis` en privé (tant qu'il est public, un poste resté en 0.1.x peut installer la 0.2.0 depuis ses releases).
   - [ ] Plus tard : sauvegarde en ligne chiffrée, diffusion du classeur des tarifs.
 
-- [ ] Export / import d'un devis (fichier), pour partager un devis type entre collègues.
+- [x] Export / import d'un devis (fichier `numéro - client.devis`), depuis la liste des devis et des devis types.
+  - Import de plusieurs fichiers d'un coup, numéro gardé ; un devis de même référence est écrasé, après une
+    confirmation qui liste les devis concernés. Depuis l'onglet « Devis types », tout devient devis type.
+  - A servi à restaurer les devis 26-JMOS-1754 à 1767 d'un poste, reconstruits depuis leurs PDF.
 
 - [ ] (Idée, en attente) Import d'une étude Elium : le PDF (« Microsoft Print to PDF ») ne contient que
   des images. Pistes : vérifier d'abord si Elium exporte la liste du matériel (PDF texte, Excel) ; sinon

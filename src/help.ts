@@ -92,7 +92,11 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Liste des devis",
-        text: "Le total affiché est le montant final HT du devis (après remise globale, frais compris, options exclues). Recherche par numéro ou client, filtre « Affaires obtenues / En attente », et pour chaque devis : PDF, nouvelle version, dupliquer (nouveau devis, nouveau numéro), supprimer.",
+        text: "Le total affiché est le montant final HT du devis (après remise globale, frais compris, options exclues). Recherche par numéro ou client, filtre « Affaires obtenues / En attente », et pour chaque devis : PDF, nouvelle version, dupliquer (nouveau devis, nouveau numéro), exporter, supprimer.",
+      },
+      {
+        title: "Exporter et importer un devis",
+        text: "Bouton flèche vers le bas d'un devis : enregistre un fichier « numéro - client.devis » (lignes, prix, client, contact, notes), à envoyer à un collègue ou à garder. « Importer… » en haut de la liste ajoute les devis d'un ou plusieurs fichiers .devis (sélection multiple) en gardant leur numéro. Si un devis existe déjà avec cette référence, il est écrasé par la version du fichier (son suivi, « Obtenue » et commentaire, est gardé) : une confirmation liste d'abord les devis concernés. Un devis type exporté revient dans les devis types.",
       },
       {
         title: "Commentaire",
@@ -121,6 +125,10 @@ export const HELP: HelpSection[] = [
       {
         title: "Partir d'un devis type",
         text: "« Créer un devis » dans l'onglet, ou le menu « Partir d'un devis type… » d'un nouveau devis. Les lignes du type sont ajoutées à la suite (confirmation demandée si le devis a déjà des lignes). Les prix sont calculés pour le client du devis, dès qu'il est choisi. Mettez à 0 ce qui ne sert pas, puis « Nettoyer ».",
+      },
+      {
+        title: "Exporter et importer un devis type",
+        text: "Bouton flèche vers le bas d'un devis type : fichier « nom du type.devis », à partager entre collègues. « Importer… » dans l'onglet ajoute les devis types des fichiers choisis ; un devis importé ici devient un devis type (sans client, prix ni frais).",
       },
     ],
   },

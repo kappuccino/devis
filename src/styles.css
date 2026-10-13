@@ -131,3 +131,9 @@ h2 {
 .warn {
   color: var(--app-warn);
 }
+
+/* Fenêtres de confirmation : les sauts de ligne du message sont gardés (ex. liste des devis écrasés). */
+.p-confirmdialog-message {
+  white-space: pre-line;
+  max-width: 36rem;
+}

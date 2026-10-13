@@ -14,6 +14,7 @@ import { api, type QuoteSummary, type QuoteTemplate } from "../api";
 import { errorMessage, formatDate, formatEuro, todayIso } from "../format";
 import { exportQuotePdf } from "../composables/usePdf";
 import { removeDraft } from "../drafts";
+import { pickFiles, pickSavePath } from "../dialogs";
 
 const router = useRouter();
 const route = useRoute();
@@ -158,6 +159,70 @@ async function pdf(q: QuoteSummary) {
   }
 }
 
+/** Fichier « numéro - client.devis » (ou « nom du type.devis »), à importer sur un autre poste. */
+async function exportFile(id: number) {
+  try {
+    const { file_name, contents } = await api.exportQuote(id);
+    const path = await pickSavePath({ defaultPath: file_name, filters: [{ name: "Devis", extensions: ["devis"] }] });
+    if (!path) return;
+    await api.saveFile(path, new TextEncoder().encode(contents));
+    toast.add({ severity: "success", summary: "Devis exporté", detail: path, life: 4000 });
+  } catch (e) {
+    toast.add({ severity: "error", summary: "Export du devis", detail: errorMessage(e) });
+  }
+}
+
+/** Import de fichiers .devis (plusieurs à la fois), après confirmation : un devis de même numéro est
+ * écrasé ; depuis l'onglet « Devis types », tous deviennent des devis types. */
+async function importFiles() {
+  const templates = tab.value === "types";
+  const paths = await pickFiles({
+    title: templates ? "Importer des devis types" : "Importer des devis",
+    filters: [{ name: "Devis", extensions: ["devis"] }],
+  });
+  if (!paths.length) return;
+  let seen;
+  try {
+    seen = await api.previewQuoteFiles(paths, templates, todayIso());
+  } catch (e) {
+    toast.add({ severity: "error", summary: "Import de devis", detail: errorMessage(e) });
+    return;
+  }
+  const replaced = seen.filter((q) => q.replaced);
+  const what = templates ? `${seen.length} devis type${seen.length > 1 ? "s" : ""}` : `${seen.length} devis`;
+  confirm.require({
+    header: `Importer ${what}`,
+    message:
+      (templates
+        ? "Les devis types des fichiers seront ajoutés (un devis importé ici devient un devis type, sans client, prix ni frais)."
+        : "Si un devis existe déjà avec cette référence, il sera écrasé avec cette version.") +
+      (replaced.length
+        ? `\n\nDevis écrasés (${replaced.length}) : ${replaced.map((q) => `${q.number} (${q.name})`).join(", ")}.`
+        : templates
+          ? ""
+          : "\n\nAucun devis existant n'a la même référence."),
+    icon: replaced.length ? "pi pi-exclamation-triangle" : "pi pi-upload",
+    rejectProps: { label: "Annuler", severity: "secondary", text: true },
+    acceptProps: { label: replaced.length ? "Importer et écraser" : "Importer", severity: replaced.length ? "danger" : undefined },
+    accept: async () => {
+      try {
+        const done = await api.importQuotes(paths, templates, todayIso());
+        await Promise.all([load(), loadTemplates()]);
+        const types = done.filter((q) => q.is_template).length;
+        const added = done.filter((q) => !q.is_template && !q.replaced).length;
+        const parts = [
+          ...(added ? [`${added} devis ajouté${added > 1 ? "s" : ""}`] : []),
+          ...(done.length - types - added ? [`${done.length - types - added} écrasé${done.length - types - added > 1 ? "s" : ""}`] : []),
+          ...(types ? [`${types} devis type${types > 1 ? "s" : ""} ajouté${types > 1 ? "s" : ""}`] : []),
+        ];
+        toast.add({ severity: "success", summary: "Import terminé", detail: parts.join(", ") + ".", life: 4000 });
+      } catch (e) {
+        toast.add({ severity: "error", summary: "Import de devis", detail: errorMessage(e) });
+      }
+    },
+  });
+}
+
 onMounted(() => {
   load();
   loadTemplates();
@@ -180,10 +245,26 @@ onMounted(() => {
       <template v-if="tab === 'quotes'">
         <Select v-model="status" :options="statusOptions" option-label="label" option-value="value" aria-label="Suivi" />
         <InputText v-model="search" placeholder="N°, client, affaire…" style="width: 240px" />
+        <Button
+          v-tooltip.bottom="'Ajouter des devis depuis des fichiers .devis'"
+          label="Importer…"
+          icon="pi pi-upload"
+          severity="secondary"
+          outlined
+          @click="importFiles"
+        />
         <Button label="Nouveau devis" icon="pi pi-plus" @click="router.push('/devis/nouveau')" />
       </template>
       <template v-else>
         <InputText v-model="templateSearch" placeholder="Nom…" style="width: 240px" />
+        <Button
+          v-tooltip.bottom="'Ajouter des devis types depuis des fichiers .devis (un devis importé ici devient un devis type)'"
+          label="Importer…"
+          icon="pi pi-upload"
+          severity="secondary"
+          outlined
+          @click="importFiles"
+        />
         <Button label="Nouveau devis type" icon="pi pi-plus" @click="router.push('/devis-types/nouveau')" />
       </template>
     </div>
@@ -207,7 +288,7 @@ onMounted(() => {
       <Column field="updated_at" header="Modifié le" sortable style="width: 140px">
         <template #body="{ data }">{{ formatDate(data.updated_at.slice(0, 10)) }}</template>
       </Column>
-      <Column header="" style="width: 230px">
+      <Column header="" style="width: 280px">
         <template #body="{ data }">
           <div class="row-actions">
             <Button
@@ -217,6 +298,14 @@ onMounted(() => {
               outlined
               rounded
               @click="router.push({ path: '/devis/nouveau', query: { type: data.id } })"
+            />
+            <Button
+              v-tooltip.top="'Exporter (fichier .devis)'"
+              icon="pi pi-download"
+              outlined
+              rounded
+              severity="secondary"
+              @click="exportFile(data.id)"
             />
             <Button
               v-tooltip.top="'Supprimer'"
@@ -297,7 +386,7 @@ onMounted(() => {
           />
         </template>
       </Column>
-      <Column header="" style="width: 210px">
+      <Column header="" style="width: 260px">
         <template #body="{ data }">
           <div class="row-actions">
             <Button v-tooltip.top="'PDF'" icon="pi pi-file-pdf" outlined rounded severity="info" @click="pdf(data)" />
@@ -316,6 +405,14 @@ onMounted(() => {
               severity="secondary"
               rounded
               @click="duplicate(data)"
+            />
+            <Button
+              v-tooltip.top="'Exporter (fichier .devis, à importer sur un autre poste)'"
+              icon="pi pi-download"
+              outlined
+              severity="secondary"
+              rounded
+              @click="exportFile(data.id)"
             />
             <Button
               v-tooltip.top="'Supprimer'"

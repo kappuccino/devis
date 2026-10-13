@@ -141,6 +141,16 @@ export interface BackupInfo {
   files: BackupFile[];
 }
 
+/** Devis ajouté par l'import d'un fichier .devis. */
+export interface ImportedQuote {
+  number: string;
+  /** Client, ou nom du devis type. */
+  name: string;
+  is_template: boolean;
+  /** Un devis de même numéro existait : il est écrasé par celui du fichier. */
+  replaced: boolean;
+}
+
 export interface ClientRef {
   code: string;
   name: string;
@@ -329,6 +339,14 @@ export const api = {
   backupNow: () => invoke<string>("backup_now"),
   /** Renvoie le chemin de la copie de sécurité de la base remplacée. */
   restoreBackup: (path: string) => invoke<string>("restore_backup", { path }),
+  /** Contenu .devis d'un devis et nom de fichier proposé. */
+  exportQuote: (id: number) => invoke<{ file_name: string; contents: string }>("export_quote", { id }),
+  /** Ce qu'importeraient des fichiers .devis (devis ajoutés ou écrasés), sans rien enregistrer. */
+  previewQuoteFiles: (paths: string[], templates: boolean, date: string) =>
+    invoke<ImportedQuote[]>("preview_quote_files", { paths, templates, date }),
+  /** Importe des fichiers .devis (un devis de même numéro est écrasé) ; `templates` : tous deviennent des devis types. */
+  importQuotes: (paths: string[], templates: boolean, date: string) =>
+    invoke<ImportedQuote[]>("import_quotes", { paths, templates, date }),
   /** Copie de la base avant une mise à jour (null : base sans devis, rien à copier). */
   backupBeforeUpdate: () => invoke<string | null>("backup_before_update"),
   /** Base sans devis : la sauvegarde la plus récente qui en contient. */

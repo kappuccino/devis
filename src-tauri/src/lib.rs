@@ -6,6 +6,7 @@ mod files;
 mod import;
 mod licence;
 mod pricing;
+mod quote_file;
 mod stats;
 mod xlsx_export;
 
@@ -130,6 +131,9 @@ pub fn run() {
             commands::restore_backup,
             commands::backup_before_update,
             commands::restore_candidate,
+            commands::export_quote,
+            commands::preview_quote_files,
+            commands::import_quotes,
             commands::list_price_lists,
             commands::get_price_list_items,
             commands::get_price_list_clients,

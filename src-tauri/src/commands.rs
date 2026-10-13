@@ -369,6 +369,56 @@ pub fn restore_candidate(state: State<AppState>) -> CmdResult<Option<RestoreCand
     Ok(crate::backup::restore_candidate(&conn, &state.backup_dir)?.map(|(file, quotes)| RestoreCandidate { file, quotes }))
 }
 
+// ---------- Fichiers .devis ----------
+
+/// Le devis `id` au format .devis, et le nom de fichier proposé ; le front choisit où l'écrire.
+#[tauri::command]
+pub fn export_quote(state: State<AppState>, id: i64) -> CmdResult<crate::quote_file::ExportedQuote> {
+    crate::quote_file::export(&state.conn(), id)
+}
+
+/// Ce qu'importeraient les fichiers .devis choisis (devis ajoutés ou écrasés), sans rien enregistrer.
+#[tauri::command]
+pub fn preview_quote_files(
+    state: State<AppState>,
+    files: State<crate::files::FileAccess>,
+    paths: Vec<String>,
+    templates: bool,
+    date: String,
+) -> CmdResult<Vec<crate::quote_file::ImportedQuote>> {
+    each_quote_file(&files, &paths, |bytes| crate::quote_file::preview(&state.conn(), bytes, templates, &date))
+}
+
+fn each_quote_file(
+    files: &crate::files::FileAccess,
+    paths: &[String],
+    mut f: impl FnMut(&[u8]) -> CmdResult<Vec<crate::quote_file::ImportedQuote>>,
+) -> CmdResult<Vec<crate::quote_file::ImportedQuote>> {
+    let mut all = Vec::new();
+    for path in paths {
+        let file = files.check_opened(path)?;
+        let bytes = crate::files::read_limited(&file, crate::files::MAX_IMPORT)?;
+        let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        all.extend(f(&bytes).map_err(|e| format!("« {name} » : {e}"))?);
+    }
+    Ok(all)
+}
+
+/// Ajoute les devis des fichiers .devis choisis (`templates` : import depuis l'onglet « Devis types ») ;
+/// un devis de même numéro est écrasé.
+#[tauri::command]
+pub fn import_quotes(
+    state: State<AppState>,
+    files: State<crate::files::FileAccess>,
+    paths: Vec<String>,
+    templates: bool,
+    date: String,
+) -> CmdResult<Vec<crate::quote_file::ImportedQuote>> {
+    // Tous les fichiers sont relus d'abord : un fichier illisible n'importe rien.
+    each_quote_file(&files, &paths, |bytes| crate::quote_file::preview(&state.conn(), bytes, templates, &date))?;
+    each_quote_file(&files, &paths, |bytes| crate::quote_file::import(&mut state.conn(), bytes, templates, &date))
+}
+
 /// Contact imprimé dans le haut de l'export Excel (saisi au moment de l'export).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -643,7 +693,7 @@ fn code_or_none(code: String) -> Option<String> {
     Some(code).filter(|c| !c.is_empty())
 }
 
-fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
+pub fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
     let mut quote = conn
         .query_row(
             "SELECT id, number, client_code, client_name, date, notes, total_ht, discount_cfa, discount_cfo, price_lists,
@@ -767,7 +817,13 @@ pub fn save_quote(state: State<AppState>, quote: Quote) -> CmdResult<Quote> {
 }
 
 /// Enregistre un devis (nouveau : numéro attribué) et renvoie sa version enregistrée.
-pub fn store_quote(conn: &mut Connection, mut quote: Quote) -> CmdResult<Quote> {
+pub fn store_quote(conn: &mut Connection, quote: Quote) -> CmdResult<Quote> {
+    store_quote_numbered(conn, quote, None)
+}
+
+/// Comme `store_quote`, mais un nouveau devis prend le numéro `number` s'il est fourni
+/// (import d'un fichier .devis) au lieu du numéro suivant.
+pub fn store_quote_numbered(conn: &mut Connection, mut quote: Quote, number: Option<String>) -> CmdResult<Quote> {
     let tx = conn.transaction().map_err(err)?;
     // Tous les prix au centime.
     for l in &mut quote.lines {
@@ -822,7 +878,7 @@ pub fn store_quote(conn: &mut Connection, mut quote: Quote) -> CmdResult<Quote> 
         }
         None => {
             // Numéro déjà fixé : nouvelle version d'un devis (« …-V2 »).
-            let number = match quote.number.clone().filter(|_| quote.version_of.is_some()) {
+            let number = match number.or_else(|| quote.number.clone().filter(|_| quote.version_of.is_some())) {
                 Some(n) => n,
                 // Devis type : numéro technique, hors numérotation des devis.
                 None if quote.is_template => tx
@@ -1010,7 +1066,7 @@ pub fn save_as_template(state: State<AppState>, id: i64, name: String, date: Str
     store_quote(&mut conn, as_template(quote, name, date))
 }
 
-fn as_template(mut q: Quote, name: String, date: String) -> Quote {
+pub fn as_template(mut q: Quote, name: String, date: String) -> Quote {
     q.id = None;
     q.number = None;
     q.client_code = None;
