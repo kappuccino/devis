@@ -308,7 +308,7 @@ pub fn product_price_history(state: State<AppState>, product_ref: String) -> Cmd
 
 #[derive(Serialize)]
 pub struct BackupInfo {
-    /// Dossier utilisé, et dossier par défaut (à côté de la base).
+    /// Dossier utilisé, et dossier par défaut (dans Documents).
     dir: String,
     default_dir: String,
     files: Vec<crate::backup::BackupFile>,
@@ -317,11 +317,11 @@ pub struct BackupInfo {
 #[tauri::command]
 pub fn backup_info(state: State<AppState>) -> CmdResult<BackupInfo> {
     let conn = state.conn();
-    let dir = crate::backup::dir(&conn, &state.db_path)?;
+    let dir = crate::backup::dir(&conn, &state.backup_dir)?;
     Ok(BackupInfo {
         files: crate::backup::list(&dir)?,
         dir: dir.to_string_lossy().into_owned(),
-        default_dir: crate::backup::default_dir(&state.db_path).to_string_lossy().into_owned(),
+        default_dir: state.backup_dir.to_string_lossy().into_owned(),
     })
 }
 
@@ -329,7 +329,7 @@ pub fn backup_info(state: State<AppState>) -> CmdResult<BackupInfo> {
 #[tauri::command]
 pub fn backup_now(state: State<AppState>) -> CmdResult<String> {
     let conn = state.conn();
-    crate::backup::backup_now(&conn, &state.db_path).map(|p| p.to_string_lossy().into_owned())
+    crate::backup::backup_now(&conn, &state.backup_dir).map(|p| p.to_string_lossy().into_owned())
 }
 
 /// Restaure une copie ; renvoie le chemin de la copie de sécurité de la base remplacée.
@@ -337,14 +337,36 @@ pub fn backup_now(state: State<AppState>) -> CmdResult<String> {
 pub fn restore_backup(state: State<AppState>, path: String) -> CmdResult<String> {
     let mut conn = state.conn();
     // Seulement une copie du dossier des sauvegardes (celles que l'écran propose).
-    let dir = crate::files::normalize(&crate::backup::dir(&conn, &state.db_path)?);
+    let dir = crate::files::normalize(&crate::backup::dir(&conn, &state.backup_dir)?);
     let file = crate::files::normalize(std::path::Path::new(&path));
     let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     if file.parent() != Some(dir.as_path()) || !name.starts_with("devis-") || !name.ends_with(".db") {
         return Err(format!("Restauration refusée : « {path} » n'est pas une copie du dossier des sauvegardes."));
     }
-    crate::backup::restore(&mut conn, &state.db_path, &file)
+    crate::backup::restore(&mut conn, &state.backup_dir, &file)
         .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Copie de la base juste avant d'installer une mise à jour ; renvoie son chemin (aucun si la base
+/// n'a pas de devis).
+#[tauri::command]
+pub fn backup_before_update(state: State<AppState>) -> CmdResult<Option<String>> {
+    let conn = state.conn();
+    crate::backup::backup_before_update(&conn, &state.backup_dir)
+        .map(|p| p.map(|p| p.to_string_lossy().into_owned()))
+}
+
+#[derive(Serialize)]
+pub struct RestoreCandidate {
+    file: crate::backup::BackupFile,
+    quotes: i64,
+}
+
+/// Base sans aucun devis : la sauvegarde la plus récente qui en contient, à proposer au démarrage.
+#[tauri::command]
+pub fn restore_candidate(state: State<AppState>) -> CmdResult<Option<RestoreCandidate>> {
+    let conn = state.conn();
+    Ok(crate::backup::restore_candidate(&conn, &state.backup_dir)?.map(|(file, quotes)| RestoreCandidate { file, quotes }))
 }
 
 /// Contact imprimé dans le haut de l'export Excel (saisi au moment de l'export).

@@ -17,6 +17,8 @@ use tauri::Manager;
 pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
     pub db_path: PathBuf,
+    /// Dossier des sauvegardes par défaut (Documents), si aucun n'est choisi dans les Réglages.
+    pub backup_dir: PathBuf,
 }
 
 impl AppState {
@@ -58,19 +60,33 @@ pub fn run() {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let db_path = dir.join("devis.db");
+            // Sauvegardes hors du dossier de l'appli (une désinstallation peut l'effacer en entier) ;
+            // celles de l'ancien dossier y sont recopiées.
+            let backup_dir = backup::default_dir(app.path().document_dir().ok(), &db_path);
+            // Nouvelle version : copie de la base avant que `db::open` ne la mette à niveau.
+            let version = app.package_info().version.to_string();
+            if let Err(e) = backup::backup_before_upgrade(&db_path, &backup_dir, &version) {
+                eprintln!("Sauvegarde avant mise à niveau : {e}");
+            }
             let conn = db::open(&db_path)?;
+            if let Err(e) = backup::record_version(&conn, &version) {
+                eprintln!("Version de l'appli : {e}");
+            }
+            if let Err(e) = backup::migrate_legacy(&conn, &db_path, &backup_dir) {
+                eprintln!("Sauvegardes de l'ancien dossier : {e}");
+            }
             let db = Arc::new(Mutex::new(conn));
             // Sauvegarde automatique (au plus une par 20 h), sans retarder l'ouverture.
             {
-                let (db, db_path) = (db.clone(), db_path.clone());
+                let (db, backup_dir) = (db.clone(), backup_dir.clone());
                 std::thread::spawn(move || {
                     let conn = db.lock().unwrap_or_else(|p| p.into_inner());
-                    if let Err(e) = backup::auto_backup(&conn, &db_path) {
+                    if let Err(e) = backup::auto_backup(&conn, &backup_dir) {
                         eprintln!("Sauvegarde automatique : {e}");
                     }
                 });
             }
-            app.manage(AppState { db, db_path });
+            app.manage(AppState { db, db_path, backup_dir });
             // Licence du poste (ticket enregistré dans le même dossier).
             app.manage(licence::Licence::open(&dir));
             // Chemins choisis par l'utilisateur pendant la session (seuls accessibles depuis la page).
@@ -112,6 +128,8 @@ pub fn run() {
             commands::backup_info,
             commands::backup_now,
             commands::restore_backup,
+            commands::backup_before_update,
+            commands::restore_candidate,
             commands::list_price_lists,
             commands::get_price_list_items,
             commands::get_price_list_clients,

@@ -302,7 +302,7 @@ pub async fn pick_save(window: WebviewWindow, files: State<'_, FileAccess>, opti
 #[tauri::command]
 pub fn open_file(app: AppHandle, files: State<'_, FileAccess>, state: State<'_, AppState>, path: String) -> CmdResult<()> {
     let p = normalize(Path::new(&path));
-    let backup_dir = crate::backup::dir(&state.conn(), &state.db_path).map(|d| normalize(&d)).ok();
+    let backup_dir = crate::backup::dir(&state.conn(), &state.backup_dir).map(|d| normalize(&d)).ok();
     let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     let allowed = (set(&files.written).contains(&p) && OPENABLE.contains(&ext.as_str()))
         || (backup_dir.as_ref() == Some(&p) && p.is_dir());

@@ -146,7 +146,7 @@ onMounted(refresh);
           class="keep-input"
           @update:model-value="(v: number | null) => v && saveSetting(KEEP_KEY, String(v))"
         />
-        <span class="muted">les plus anciennes sont supprimées (sauf les copies « avant restauration »)</span>
+        <span class="muted">les plus anciennes sont supprimées (sauf les copies « avant restauration » et « avant mise à jour »)</span>
       </div>
       <label for="backup-auto">Automatique</label>
       <div class="inline">
@@ -165,7 +165,8 @@ onMounted(refresh);
       <Column header="Date">
         <template #body="{ data }">
           {{ formatDate(data.modified) }}
-          <Tag v-if="data.safety" value="avant restauration" severity="warn" class="safety" />
+          <Tag v-if="data.before_update" value="avant mise à jour" severity="info" class="safety" />
+          <Tag v-else-if="data.safety" value="avant restauration" severity="warn" class="safety" />
         </template>
       </Column>
       <Column header="Fichier">

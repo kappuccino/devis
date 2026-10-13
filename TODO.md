@@ -158,6 +158,13 @@
 - [x] Import LPN : code client en double dans « gestion tarifs » → première ligne conservée, avec les
   listes de prix de toutes les lignes.
 - [x] Recherches : filtrage lancé après une courte pause de frappe (plus de ralentissement en tapant).
+- [x] Sauvegardes protégées (un poste a perdu tout `%APPDATA%\fr.devis.app`, sauvegardes comprises)
+  - Dossier par défaut : `Documents\Devis Groupe Cahors\sauvegardes` ; anciennes copies recopiées au démarrage.
+  - Copie de la base avant chaque mise à jour (mise à jour annulée si la copie échoue).
+  - Copie au premier démarrage d'une nouvelle version, avant la mise à niveau de la base
+    (couvre aussi un installeur lancé à la main).
+  - Base sans devis : pas de copie automatique, pas de suppression d'anciennes copies.
+  - Démarrage sans devis alors qu'une sauvegarde en contient : restauration proposée.
 
 - [ ] Dépôt du code en privé (mises à jour servies par le service de licences)
   - [x] CI : versions officielles publiées aussi dans `devis-release` ; l'appli y cherche ses mises à jour.

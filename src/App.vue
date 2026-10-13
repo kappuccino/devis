@@ -9,9 +9,43 @@ import Toast from "primevue/toast";
 import ConfirmDialog from "primevue/confirmdialog";
 import { useRoute } from "vue-router";
 import logo from "./assets/logo-cahors.png";
-import { MOD } from "./format";
+import { MOD, errorMessage } from "./format";
+import { useConfirm } from "primevue/useconfirm";
+import { useToast } from "primevue/usetoast";
+import { api } from "./api";
 
 const route = useRoute();
+const confirm = useConfirm();
+const toast = useToast();
+
+/**
+ * Base sans aucun devis alors qu'une sauvegarde en contient (dossier de l'appli effacé par une
+ * désinstallation, nouveau poste…) : on propose de la restaurer.
+ */
+async function offerRestore() {
+  const found = await api.restoreCandidate().catch(() => null);
+  if (!found) return;
+  const date = found.file.modified
+    ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(new Date(found.file.modified))
+    : found.file.name;
+  confirm.require({
+    header: "Restaurer vos devis ?",
+    message:
+      `Aucun devis sur cet ordinateur, mais une sauvegarde du ${date} en contient ${found.quotes}. ` +
+      "La restaurer (devis, clients, listes de prix, réglages) ? Vous pourrez aussi le faire plus tard dans Réglages → Sauvegarde.",
+    icon: "pi pi-history",
+    rejectProps: { label: "Plus tard", severity: "secondary", text: true },
+    acceptProps: { label: "Restaurer", icon: "pi pi-history" },
+    accept: async () => {
+      try {
+        await api.restoreBackup(found.file.path);
+        window.location.reload();
+      } catch (e) {
+        toast.add({ severity: "error", summary: "Restauration", detail: errorMessage(e) });
+      }
+    },
+  });
+}
 
 const nav = [
   { to: "/devis", label: "Devis", icon: "pi pi-file-edit" },
@@ -61,6 +95,7 @@ watch(
   (valid) => {
     if (!valid || started) return;
     started = true;
+    offerRestore();
     // Index de la documentation mis à jour en tâche de fond, sans bloquer l'appli.
     startDocs();
     // Nouvelle version ? Vérifié discrètement quelques secondes après le lancement

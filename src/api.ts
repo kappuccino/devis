@@ -129,8 +129,10 @@ export interface BackupFile {
   size: number;
   /** Date de la copie (ms). */
   modified: number | null;
-  /** Copie de sécurité faite avant une restauration (jamais supprimée automatiquement). */
+  /** Copie de sécurité faite avant une restauration ou une mise à jour (hors du tri des N copies). */
   safety: boolean;
+  /** Copie faite avant une mise à jour. */
+  before_update: boolean;
 }
 
 export interface BackupInfo {
@@ -327,6 +329,10 @@ export const api = {
   backupNow: () => invoke<string>("backup_now"),
   /** Renvoie le chemin de la copie de sécurité de la base remplacée. */
   restoreBackup: (path: string) => invoke<string>("restore_backup", { path }),
+  /** Copie de la base avant une mise à jour (null : base sans devis, rien à copier). */
+  backupBeforeUpdate: () => invoke<string | null>("backup_before_update"),
+  /** Base sans devis : la sauvegarde la plus récente qui en contient. */
+  restoreCandidate: () => invoke<{ file: BackupFile; quotes: number } | null>("restore_candidate"),
   /** Export Excel d'une liste de prix d'un client (gabarit des réglages). */
   exportPriceList: (
     path: string,

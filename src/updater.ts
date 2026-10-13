@@ -4,6 +4,8 @@ import { markRaw, reactive } from "vue";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { licenceTicket } from "./licence";
+import { api } from "./api";
+import { errorMessage } from "./format";
 
 /** En-tête de licence (vérification et téléchargement). */
 async function licenceHeaders(): Promise<Record<string, string>> {
@@ -46,7 +48,7 @@ export async function checkForUpdate(silent = false) {
   }
 }
 
-/** Télécharge et installe la mise à jour, puis relance l'application. */
+/** Copie la base, puis télécharge et installe la mise à jour, et relance l'application. */
 export async function installUpdate() {
   const update = updater.available;
   if (!update) return;
@@ -56,6 +58,12 @@ export async function installUpdate() {
   let total = 0;
   let received = 0;
   try {
+    // Sans copie de la base, pas de mise à jour.
+    try {
+      await api.backupBeforeUpdate();
+    } catch (e) {
+      throw new Error(`Sauvegarde de la base impossible, mise à jour annulée : ${errorMessage(e)}`);
+    }
     const headers = await licenceHeaders();
     await update.downloadAndInstall((event) => {
       if (event.event === "Started") total = event.data.contentLength ?? 0;
