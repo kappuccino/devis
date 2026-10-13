@@ -23,8 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 
-# Données sources (clients, tarifs)
+# Données sources (clients, tarifs) et devis clients
 documents-source/
+lesanciensdevis/
 
 # Sources des icônes (déjà copiées dans src-tauri/icons)
 tauri-icons/
