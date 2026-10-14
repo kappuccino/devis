@@ -152,9 +152,10 @@
 - [x] Import LPN : clients de la feuille « CLIENTS IC » aussi importés (code et raison sociale seulement)
   - « gestion tarifs » prioritaire si le code est dans les deux feuilles.
   - Ces clients n'ont ni remise ni liste de prix : sur le devis, forcer une liste favorite.
-- [x] Import LPN : un client créé par liste de prix rattachée à aucun client
+- [x] Import LPN : chaque liste de prix crée son client (même si d'autres clients y sont rattachés,
+  ex. T205000 « COTRELEC SERTELEC », tarif de groupe des agences SERTELEC / SUD RESEAUX)
   - Code = code de la liste sans le « T », nom = intitulé de la liste, liste rattachée.
-  - Si ce code client existe déjà : la liste est rattachée à ce client.
+  - Si ce code client existe déjà : la liste est rattachée à ce client, qui garde son nom.
 - [x] Import LPN : code client en double dans « gestion tarifs » → première ligne conservée, avec les
   listes de prix de toutes les lignes.
 - [x] Recherches : filtrage lancé après une courte pause de frappe (plus de ralentissement en tapant).

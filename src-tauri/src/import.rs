@@ -21,9 +21,9 @@ pub struct ImportReport {
     pub clients: usize,
     /// Dont clients venus seulement de « CLIENTS IC » (ni remise ni liste de prix).
     pub clients_ic: usize,
-    /// Dont clients créés pour une liste de prix rattachée à aucun client.
+    /// Dont clients créés pour une liste de prix (code de la liste sans le « T », même nom).
     pub clients_from_lists: usize,
-    /// Listes de prix sans client rattachées au client existant de même code (sans le « T »).
+    /// Listes de prix dont le client de même code (sans le « T ») existait déjà.
     pub lists_linked_to_existing: usize,
     pub price_lists: usize,
     pub price_list_items: usize,
@@ -75,7 +75,7 @@ fn import_ranges(
     if let Some(range) = clients_ic {
         import_clients_ic(&tx, range, &mut report)?;
     }
-    clients_for_orphan_lists(&tx, &mut report)?;
+    clients_for_lists(&tx, &mut report)?;
 
     tx.commit()?;
     Ok(report)
@@ -295,21 +295,19 @@ fn import_clients_ic(tx: &Connection, range: &Range<Data>, report: &mut ImportRe
     Ok(())
 }
 
-/// Rattache chaque liste de prix sans client au client dont le code est celui de la liste sans son
-/// « T » initial (T205000 → 205000), en le créant au besoin (nom = intitulé de la liste).
-fn clients_for_orphan_lists(tx: &Connection, report: &mut ImportReport) -> rusqlite::Result<()> {
-    let orphans: Vec<(String, Option<String>)> = tx
-        .prepare(
-            "SELECT code, label FROM price_lists
-             WHERE code NOT IN (SELECT price_list_code FROM client_price_lists)
-             ORDER BY code",
-        )?
+/// Chaque liste de prix a son propre client : code de la liste sans son « T » initial
+/// (T205000 → 205000), créé au besoin avec l'intitulé de la liste pour nom (un client déjà présent,
+/// venu de « gestion tarifs » ou « CLIENTS IC », garde son nom), et rattaché à la liste.
+fn clients_for_lists(tx: &Connection, report: &mut ImportReport) -> rusqlite::Result<()> {
+    let lists: Vec<(String, Option<String>)> = tx
+        .prepare("SELECT code, label FROM price_lists ORDER BY code")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<Result<_, _>>()?;
 
     let mut client_stmt = tx.prepare("INSERT OR IGNORE INTO clients (code, name) VALUES (?1, ?2)")?;
-    let mut link_stmt = tx.prepare("INSERT INTO client_price_lists (client_code, price_list_code) VALUES (?1, ?2)")?;
-    for (list, label) in orphans {
+    let mut link_stmt =
+        tx.prepare("INSERT OR IGNORE INTO client_price_lists (client_code, price_list_code) VALUES (?1, ?2)")?;
+    for (list, label) in lists {
         let code = list.strip_prefix('T').unwrap_or(&list).to_string();
         let name = label.filter(|l| !l.trim().is_empty()).unwrap_or_else(|| list.clone());
         if client_stmt.execute(params![code, name])? == 1 {
@@ -318,8 +316,7 @@ fn clients_for_orphan_lists(tx: &Connection, report: &mut ImportReport) -> rusql
         } else {
             report.lists_linked_to_existing += 1;
         }
-        link_stmt.execute(params![code, list])?;
-        report.client_links += 1;
+        report.client_links += link_stmt.execute(params![code, list])?;
     }
     Ok(())
 }
@@ -377,7 +374,7 @@ mod tests {
         ]);
         let empty = range(&[header]);
         let report = import_ranges(&mut conn, &empty, &tarifs, &prices, Some(&ic)).unwrap();
-        assert_eq!((report.clients, report.clients_ic, report.clients_from_lists), (3, 1, 1));
+        assert_eq!((report.clients, report.clients_ic, report.clients_from_lists), (5, 1, 3));
         assert_eq!(report.lists_linked_to_existing, 1);
 
         let rows: Vec<(String, String, f64)> = conn
@@ -392,7 +389,9 @@ mod tests {
             vec![
                 ("001200".into(), "CLIENT TARIF".into(), 57.5),
                 ("13770K".into(), "CEF 13 AUBAGNE".into(), 0.0),
+                ("205000".into(), "COTRELEC SERTELEC".into(), 0.0),
                 ("300000".into(), "NOUVEAU CLIENT".into(), 0.0),
+                ("999000".into(), "LISTE RATTACHÉE".into(), 0.0),
             ]
         );
         let links: Vec<(String, String)> = conn
@@ -408,7 +407,9 @@ mod tests {
                 ("001200".into(), "T205000".into()),
                 ("001200".into(), "T999000".into()),
                 ("13770K".into(), "T13770K".into()),
+                ("205000".into(), "T205000".into()),
                 ("300000".into(), "T300000".into()),
+                ("999000".into(), "T999000".into()),
             ]
         );
     }

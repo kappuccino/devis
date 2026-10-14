@@ -312,10 +312,10 @@ onMounted(async () => {
             <Message severity="success" :closable="false">
               {{ formatNumber(report.products) }} produits, {{ formatNumber(report.clients) }} clients
               (dont {{ formatNumber(report.clients_ic) }} de « CLIENTS IC », sans remise ni liste,
-              et {{ formatNumber(report.clients_from_lists) }} créés pour une liste de prix sans client),
+              et {{ formatNumber(report.clients_from_lists) }} créés pour une liste de prix, à son nom),
               {{ formatNumber(report.price_lists) }} listes ({{ formatNumber(report.price_list_items) }} prix),
               {{ formatNumber(report.client_links) }} rattachements client → liste
-              (dont {{ formatNumber(report.lists_linked_to_existing) }} listes sans client rattachées au client de même code).
+              (dont {{ formatNumber(report.lists_linked_to_existing) }} listes rattachées au client existant de même code).
             </Message>
             <Message v-for="w in report.warnings" :key="w" severity="warn" :closable="false">{{ w }}</Message>
           </div>
