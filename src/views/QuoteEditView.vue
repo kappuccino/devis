@@ -8,6 +8,7 @@ import Button from "primevue/button";
 import Tag from "primevue/tag";
 import { useToast } from "primevue/usetoast";
 import Dialog from "primevue/dialog";
+import RadioButton from "primevue/radiobutton";
 import InputNumber from "primevue/inputnumber";
 import Select from "primevue/select";
 import Checkbox from "primevue/checkbox";
@@ -46,7 +47,16 @@ import {
 import { favoriteLists } from "../favorites";
 import { lastSalesRep, rememberSalesRep, salesRepList } from "../salesReps";
 import { applyColumnTabOrder } from "../gridNav";
-import { autoFeeChanges, feeRulesFrom, type FeeRules } from "../fees";
+import {
+  autoFeeChanges,
+  feeRulesFrom,
+  parseRates,
+  ratesFor,
+  SHIPPING_RATES_KEY,
+  shippingSuggestionRange,
+  type FeeRules,
+  type ShippingRate,
+} from "../fees";
 
 /** `template` : éditeur d'un devis type (sans client, ni prix, ni totaux, ni PDF). */
 const props = defineProps<{ id?: string; template?: boolean }>();
@@ -78,6 +88,8 @@ interface EditLine extends QuoteLine {
   discountText: string;
   /** Frais ajouté automatiquement (conditions de vente), tant qu'on ne l'a pas modifié. */
   auto?: boolean;
+  /** Frais de port suggérés (camion) et acceptés, tant qu'on ne les a pas modifiés. */
+  suggested?: boolean;
   /** Prix par quantité de la liste retenue et palier appliqué (connus après un calcul de prix). */
   lpnTiers?: PriceTier[];
   lpnMinQty?: number | null;
@@ -319,6 +331,44 @@ function applyAutoFees() {
   const { add, remove } = autoFeeChanges(totals.value.products, feeRules.value, present, dismissedFees);
   if (remove.length) feeLines.value = feeLines.value.filter((l) => !remove.includes(l.kind as FeeKind));
   for (const kind of add) addFee(kind, { amount: feeRules.value[kind]!.amount });
+  // Franco de port atteint : les frais de port suggérés (non modifiés depuis) n'ont plus lieu d'être.
+  const range = shippingRange.value;
+  if (range && totals.value.products >= range.to) feeLines.value = feeLines.value.filter((l) => !l.suggested);
+}
+
+// ---------- Frais de port suggérés (camion), entre le minimum de facturation et le franco ----------
+
+const shippingRange = ref<{ from: number; to: number } | null>(null);
+const shippingRates = ref<ShippingRate[]>([]);
+const showTruck = computed(() => {
+  const range = shippingRange.value;
+  const products = totals.value.products;
+  return !isTemplate.value && range != null && products >= range.from && products < range.to;
+});
+const shippingVisible = ref(false);
+/** Département de livraison tapé (gardé d'une ouverture à l'autre). */
+const shippingDepartment = ref("");
+// Du moins cher au plus cher : le moins cher est proposé d'office (ex. « 4 » avant « 4 VILLES HAUTES MONTAGNES »).
+const shippingMatches = computed(() =>
+  ratesFor(shippingRates.value, shippingDepartment.value).sort((a, b) => a.price - b.price),
+);
+const shippingChoice = ref<ShippingRate | null>(null);
+// Un seul tarif : choisi d'office ; plusieurs (ex. « villes hautes montagnes ») : le moins cher.
+watch(shippingMatches, (m) => (shippingChoice.value = m[0] ?? null));
+
+function openShipping() {
+  shippingChoice.value = shippingMatches.value[0] ?? null;
+  shippingVisible.value = true;
+}
+
+/** Ajoute les frais de port suggérés, ou remplace le montant des frais de port déjà présents. */
+function acceptShipping() {
+  const rate = shippingChoice.value;
+  if (!rate) return;
+  if (!hasFee("shipping")) addFee("shipping", { amount: rate.price });
+  const fee = feeLines.value.find((l) => l.kind === "shipping")!;
+  Object.assign(fee, { auto: false, suggested: true, unit_price: rate.price, priceText: editText(rate.price, 2) });
+  shippingVisible.value = false;
 }
 
 /** Remise globale sur les produits, en % (les frais ne sont pas remisés). */
@@ -1430,6 +1480,8 @@ onMounted(async () => {
     favorites.value = favoriteLists(settings);
     salesReps.value = salesRepList(settings);
     feeRules.value = feeRulesFrom(settings);
+    shippingRange.value = shippingSuggestionRange(settings);
+    shippingRates.value = parseRates(settings[SHIPPING_RATES_KEY]);
   } catch (e) {
     toast.add({ severity: "error", summary: "Chargement des clients", detail: errorMessage(e) });
   }
@@ -1616,6 +1668,42 @@ async function saveAsTemplate() {
     </div>
     <QuoteDocsDialog v-model:visible="docsDialogVisible" :quote="docsDialogQuote" />
     <PriceListDrawer v-model:code="drawerList" />
+    <Dialog v-model:visible="shippingVisible" modal header="Frais de port" :style="{ width: '440px' }">
+      <p v-if="!shippingRates.length" class="muted dialog-hint">
+        Aucun tableau des frais de port : importez-le dans Réglages → Frais automatiques.
+      </p>
+      <form v-else class="shipping-form" @submit.prevent="acceptShipping">
+        <label for="shipping-department">Département de livraison</label>
+        <InputText
+          id="shipping-department"
+          v-model="shippingDepartment"
+          autofocus
+          autocomplete="off"
+          placeholder="ex. 33, 04, 2A ou code postal"
+        />
+        <div v-if="shippingMatches.length > 1" class="shipping-choices">
+          <label v-for="(r, i) in shippingMatches" :key="i" class="shipping-choice">
+            <RadioButton v-model="shippingChoice" :value="r" name="shipping-rate" />
+            <span>{{ r.department }} — {{ r.destination }}</span>
+            <span class="num">{{ formatEuro(r.price) }}</span>
+          </label>
+        </div>
+        <p v-if="shippingChoice" class="shipping-result">
+          Frais de port suggérés ({{ shippingChoice.destination || shippingChoice.department }}) :
+          <strong>{{ formatEuro(shippingChoice.price) }}</strong>
+        </p>
+        <p v-else-if="shippingDepartment.trim()" class="warn">Département introuvable dans le tableau.</p>
+      </form>
+      <template #footer>
+        <template v-if="shippingChoice">
+          <span class="shipping-question">Souhaitez-vous ajouter ces frais de port ?</span>
+          <Button label="Non" severity="secondary" text @click="shippingVisible = false" />
+          <Button label="Oui" icon="pi pi-check" @click="acceptShipping" />
+        </template>
+        <Button v-else label="Fermer" severity="secondary" text @click="shippingVisible = false" />
+      </template>
+    </Dialog>
+
     <Dialog v-model:visible="asTemplateVisible" modal header="Enregistrer comme devis type" :style="{ width: '440px' }">
       <p class="muted dialog-hint">
         Les lignes et les notes de ce devis, sans client ni prix : les prix seront calculés pour le client de
@@ -2294,9 +2382,46 @@ async function saveAsTemplate() {
             <span></span>
           </template>
 
+          <!-- Entre le minimum de facturation et le franco, sans frais de port : ligne « Frais de port »
+               avec le camion qui clignote (frais de port suggérés selon le département). -->
+          <template v-if="showTruck && !hasFee('shipping')">
+            <div class="fee-name">
+              <Button
+                v-tooltip.left="'Calculer les frais de port'"
+                icon="pi pi-truck"
+                text
+                rounded
+                size="small"
+                aria-label="Calculer les frais de port"
+                class="truck"
+                :class="{ blink: !hasFee('shipping') }"
+                @click="openShipping"
+              />
+              <span class="muted fee-placeholder">Frais de port</span>
+            </div>
+            <span></span>
+            <span></span>
+            <span></span>
+          </template>
+
           <!-- Frais de port / de facturation : après la remise (jamais remisés), montant modifiable. -->
           <template v-for="fee in feeLines" :key="fee.key">
-            <InputText v-model="fee.designation" size="small" fluid class="fee-label" />
+            <div class="fee-name">
+              <template v-if="fee.kind === 'shipping' && showTruck">
+                <Button
+                  v-tooltip.left="'Calculer les frais de port'"
+                  icon="pi pi-truck"
+                  text
+                  rounded
+                  size="small"
+                  aria-label="Calculer les frais de port"
+                  class="truck"
+                  :class="{ blink: !hasFee('shipping') }"
+                  @click="openShipping"
+                />
+              </template>
+              <InputText v-model="fee.designation" size="small" fluid class="fee-label" />
+            </div>
             <span class="muted fee-hint">non remisé</span>
             <div class="euro-input">
               <InputText
@@ -2308,7 +2433,7 @@ async function saveAsTemplate() {
                 size="small"
                 fluid
                 class="num"
-                @update:model-value="(v: string | undefined) => { fee.auto = false; onPriceInput(fee, v ?? ''); }"
+                @update:model-value="(v: string | undefined) => { fee.auto = false; fee.suggested = false; onPriceInput(fee, v ?? ''); }"
                 @blur="onPriceBlur(fee)"
               />
               <span>€</span>
@@ -2866,6 +2991,49 @@ tr:hover .drag-handle i {
   overflow: visible;
 }
 
+/* Camion des frais de port suggérés : clignote tant qu'aucun frais de port n'est sur le devis. */
+.truck.p-button {
+  color: var(--app-accent);
+}
+
+.truck.blink {
+  animation: truck-blink 1.2s ease-in-out infinite;
+}
+
+@keyframes truck-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.shipping-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.shipping-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.shipping-choice {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.shipping-result {
+  margin: 0.25rem 0 0;
+}
+
+.shipping-question {
+  margin-right: auto;
+}
+
 .fee-hint {
   font-size: 0.85em;
 }
@@ -2986,6 +3154,18 @@ tr:hover .drag-handle i {
 
 .totals :deep(.fee-label) {
   text-align: right;
+}
+
+/* Libellé d'un frais, précédé du camion pour les frais de port. */
+.fee-name {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.fee-placeholder {
+  padding-right: 0.75rem;
 }
 
 .t-remove {

@@ -158,6 +158,12 @@
   - Si ce code client existe déjà : la liste est rattachée à ce client, qui garde son nom.
 - [x] Import LPN : code client en double dans « gestion tarifs » → première ligne conservée, avec les
   listes de prix de toutes les lignes.
+- [x] Frais de port selon le montant HT des produits (tableau : prix arrondis à l'euro, une ligne par département, la moins chère, ex. « 4 » et « 4 VILLES HAUTES MONTAGNES » → « 4 »)
+  - Sous 140 € : frais de facturation 25 € et frais de port 31 € ajoutés d'office (modifiables, supprimables).
+  - De 140 à 840 € : camion clignotant devant « Frais de port » → département de livraison → frais de port
+    suggérés (tableau importé dans Réglages → Frais automatiques), ajoutés si on accepte.
+  - Au-delà de 840 € : franco, aucun frais (frais suggérés non modifiés retirés).
+  - [ ] Importer le vrai tableau des frais de port (Excel Dpt / Destination / Prix transport).
 - [x] Prix dégressifs des listes de prix (colonne N « Quantité Mini » de « fichier injection tarif »)
   - Le prix de liste suit la quantité de la ligne ; recalculé quand elle change, sauf prix saisi à la main.
   - Un prix « dès N » seul ne s'applique pas en dessous de N. Paliers dans l'infobulle LPN et

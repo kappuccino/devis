@@ -19,11 +19,11 @@ import { getTheme, setTheme, type ThemeMode } from "../theme";
 import { getVersion } from "@tauri-apps/api/app";
 import { checkForUpdate, installUpdate, updater, updatesSupported } from "../updater";
 import { licence, logout } from "../licence";
-import { FEE_SETTINGS } from "../fees";
+import { FEE_SETTINGS, parseRates, SHIPPING_RATES_KEY, shippingSuggestionRange } from "../fees";
 import { salesRepList, salesRepSetting, SALES_REPS_KEY } from "../salesReps";
 import { CGV_PDF_KEY, DEFAULT_VALIDITY, HEAD_OFFICE } from "../composables/usePdf";
 import { FAVORITE_LISTS_KEY, favoriteLists } from "../favorites";
-import { errorMessage, formatNumber } from "../format";
+import { errorMessage, formatEuro, formatNumber } from "../format";
 import BackupSettings from "../components/BackupSettings.vue";
 import PriceListDrawer from "../components/PriceListDrawer.vue";
 
@@ -124,9 +124,35 @@ const lastNumberIgnored = computed(() => {
 const feeFields: Field[] = [
   { key: FEE_SETTINGS.billing.threshold[0], label: "Minimum de facturation (€ HT)", placeholder: FEE_SETTINGS.billing.threshold[1] },
   { key: FEE_SETTINGS.billing.amount[0], label: "Frais de facturation (€ HT)", placeholder: FEE_SETTINGS.billing.amount[1] },
-  { key: FEE_SETTINGS.shipping.threshold[0], label: "Franco de port (€ HT)", placeholder: FEE_SETTINGS.shipping.threshold[1] },
-  { key: FEE_SETTINGS.shipping.amount[0], label: "Frais de port (€ HT)", placeholder: "vide : pas de frais de port automatiques" },
+  { key: FEE_SETTINGS.shipping.amount[0], label: "Frais de port sous le minimum (€ HT)", placeholder: FEE_SETTINGS.shipping.amount[1] },
+  { key: FEE_SETTINGS.franco[0], label: "Franco de port (€ HT)", placeholder: FEE_SETTINGS.franco[1] },
 ];
+
+// Tableau des frais de port par département (suggérés entre le minimum de facturation et le franco) :
+// importé d'un classeur, enregistré aussitôt.
+const shippingRates = computed(() => parseRates(settings.value[SHIPPING_RATES_KEY]));
+/** Franco au niveau du minimum de facturation ou en dessous : le camion n'apparaît jamais. */
+const francoTooLow = computed(() => {
+  const franco = (settings.value[FEE_SETTINGS.franco[0]] ?? "").trim();
+  return franco !== "0" && shippingSuggestionRange(settings.value) == null;
+});
+const ratesVisible = ref(false);
+async function importShippingRates() {
+  const path = await pickFile({
+    title: "Tableau des frais de port",
+    filters: [{ name: "Excel", extensions: ["xlsx", "xlsm", "xls", "ods"] }],
+  });
+  if (!path) return;
+  try {
+    const rates = await api.readShippingRates(path);
+    const json = JSON.stringify(rates);
+    await api.saveSettings({ [SHIPPING_RATES_KEY]: json });
+    settings.value[SHIPPING_RATES_KEY] = json;
+    toast.add({ severity: "success", summary: "Frais de port", detail: `${rates.length} tarifs importés`, life: 3000 });
+  } catch (e) {
+    toast.add({ severity: "error", summary: "Tableau des frais de port", detail: errorMessage(e) });
+  }
+}
 
 // Interface : thème (mémorisé sur ce poste).
 const theme = ref<ThemeMode>(getTheme());
@@ -666,16 +692,52 @@ onMounted(async () => {
         <section class="card">
           <h2>Frais automatiques</h2>
           <p class="muted">
-            Sur un devis, une ligne de frais est ajoutée d'elle-même quand le total HT des produits est sous le seuil,
-            et retirée quand il repasse au-dessus. Modifiée ou retirée à la main, elle n'est plus touchée.
+            Sous le minimum de facturation, les frais de facturation et de port sont ajoutés d'eux-mêmes au devis,
+            et retirés quand le total HT des produits repasse au-dessus (modifiés ou retirés à la main, ils ne sont
+            plus touchés). Du minimum au franco, un camion clignote devant « Frais de port » : il propose les frais de port du
+            département de livraison, d'après le tableau ci-dessous. Au-delà du franco : aucun frais.
             Champ vide : valeur indiquée en gris ; 0 : désactivé.
           </p>
           <div class="form-grid">
             <template v-for="f in feeFields" :key="f.key">
               <label :for="f.key">{{ f.label }}</label>
               <InputText :id="f.key" v-model="settings[f.key]" :placeholder="f.placeholder" inputmode="decimal" />
+              <template v-if="f.key === FEE_SETTINGS.franco[0] && francoTooLow">
+                <span></span>
+                <small class="warn">
+                  Le franco doit dépasser le minimum de facturation : sinon, pas de frais de port suggérés (camion).
+                </small>
+              </template>
             </template>
+            <label>Frais de port par département</label>
+            <div class="rates-row">
+              <span v-if="shippingRates.length">{{ shippingRates.length }} tarifs</span>
+              <span v-else class="muted">aucun tableau</span>
+              <Button
+                v-if="shippingRates.length"
+                :label="ratesVisible ? 'Masquer' : 'Afficher'"
+                text
+                size="small"
+                @click="ratesVisible = !ratesVisible"
+              />
+              <Button label="Importer (Excel)…" icon="pi pi-upload" severity="secondary" size="small" @click="importShippingRates" />
+            </div>
           </div>
+          <p class="muted">Classeur : colonnes Dpt, Destination et Prix transport, sur la première feuille.</p>
+          <DataTable
+            v-if="ratesVisible && shippingRates.length"
+            :value="shippingRates"
+            size="small"
+            striped-rows
+            scrollable
+            scroll-height="320px"
+          >
+            <Column field="department" header="Dpt" />
+            <Column field="destination" header="Destination" />
+            <Column field="price" header="Prix transport" class="num">
+              <template #body="{ data }">{{ formatEuro(data.price) }}</template>
+            </Column>
+          </DataTable>
         </section>
 
         <div>
@@ -688,6 +750,12 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.rates-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 /* Code d'une liste favorite : ouvre le détail de la liste. */
 .list-link {
   padding: 0;

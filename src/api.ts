@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { ShippingRate } from "./fees";
 
 export type Family = "CFA" | "CFO";
 
@@ -397,6 +398,8 @@ export const api = {
   filesExist: (paths: string[]) => invoke<boolean[]>("files_exist", { paths }),
 
   getSettings: () => invoke<Settings>("get_settings"),
+  /** Tableau des frais de port par département, lu dans un classeur choisi avec `pickFile`. */
+  readShippingRates: (path: string) => invoke<ShippingRate[]>("read_shipping_rates", { path }),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   dbStats: () => invoke<DbStats>("db_stats"),
   importLpn: (path: string) => invoke<ImportReport>("import_lpn", { path }),

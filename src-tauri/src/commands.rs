@@ -1266,6 +1266,18 @@ pub async fn import_lpn(
     .map_err(err)?
 }
 
+/// Tableau des frais de port par département, lu dans un classeur choisi dans l'appli.
+#[tauri::command]
+pub fn read_shipping_rates(
+    files: State<crate::files::FileAccess>,
+    path: String,
+) -> CmdResult<Vec<crate::shipping::ShippingRate>> {
+    let path = files.check_opened(&path)?;
+    crate::files::check_size(&path, crate::files::MAX_IMPORT)?;
+    std::panic::catch_unwind(|| crate::shipping::read_rates(&path))
+        .map_err(|_| "Classeur illisible : vérifiez le fichier choisi.".to_string())?
+}
+
 #[tauri::command]
 pub fn save_file(files: State<crate::files::FileAccess>, path: String, contents: Vec<u8>) -> CmdResult<()> {
     let target = files.check_save_target(&path)?;

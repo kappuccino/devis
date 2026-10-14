@@ -58,7 +58,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Frais de port et de facturation",
-        text: "Toujours en bas du devis, jamais remisés. Ajoutés automatiquement selon les seuils des Réglages (franco de port, minimum de facturation), sauf si vous les avez modifiés ou retirés.",
+        text: "Toujours en bas du devis, jamais remisés, montants modifiables et supprimables (croix). Sous le minimum de facturation (140 € HT de produits) : frais de facturation (25 €) et frais de port (31 €) ajoutés d'office, retirés si le total repasse au-dessus, sauf si vous les avez modifiés ou retirés. De 140 à 840 € HT : un camion clignote à gauche de « Frais de port », au-dessus du Total HT ; cliquez-le, tapez le département de livraison (numéro, code postal ou nom) : les frais de port suggérés s'affichent, « Oui » les ajoute au devis. Un seul tarif par département : à l'import du tableau, s'il y en a plusieurs (ex. villes de haute montagne), seul le moins cher est gardé. Au-delà du franco (840 € HT) : aucun frais. Montants et seuils dans les Réglages.",
       },
       {
         title: "Sélection, copier, couper, coller, déplacer",
@@ -215,7 +215,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Config PDF",
-        text: "Société et logo, rédacteur du devis (nom, adresse, téléphone, email, imprimés sous le logo), version complète des conditions générales de vente (PDF ajouté en dernière page ; le texte en bas du devis est fixe), préfixe et dernier numéro de devis, validité du devis (90 jours par défaut, imprimée sur le PDF), commerciaux, gabarit de l'export Excel, frais automatiques (franco de port, minimum de facturation).",
+        text: "Société et logo, rédacteur du devis (nom, adresse, téléphone, email, imprimés sous le logo), version complète des conditions générales de vente (PDF ajouté en dernière page ; le texte en bas du devis est fixe), préfixe et dernier numéro de devis, validité du devis (90 jours par défaut, imprimée sur le PDF), commerciaux, gabarit de l'export Excel, frais automatiques (minimum de facturation, frais de facturation et de port en dessous, franco de port, tableau des frais de port par département à importer d'un fichier Excel).",
       },
       {
         title: "Sauvegarde",

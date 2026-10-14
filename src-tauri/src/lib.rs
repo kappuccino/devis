@@ -7,6 +7,7 @@ mod import;
 mod licence;
 mod pricing;
 mod quote_file;
+mod shipping;
 mod stats;
 mod xlsx_export;
 
@@ -162,6 +163,7 @@ pub fn run() {
             commands::save_settings,
             commands::db_stats,
             commands::import_lpn,
+            commands::read_shipping_rates,
             commands::save_file,
         ]))
         .run(tauri::generate_context!())
