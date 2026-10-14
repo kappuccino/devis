@@ -33,7 +33,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Saisie des lignes",
-        text: "Tapez une référence ou un code ENEDIS : des propositions s'affichent. Le prix est calculé pour le client : le plus bas de ses listes de prix (LPN), sinon le prix public moins sa remise CFA ou CFO. Les colonnes Prix public, Prix remisé et LPN montrent d'où vient le prix (en gras : celui retenu). Un même code ENEDIS peut correspondre à plusieurs produits : choisissez alors le bon dans la liste proposée."
+        text: "Tapez une référence ou un code ENEDIS : des propositions s'affichent. Le prix est calculé pour le client : le plus bas de ses listes de prix (LPN), sinon le prix public moins sa remise CFA ou CFO. Prix dégressifs : une liste peut avoir un meilleur prix à partir d'une quantité (ex. 82,49 € à l'unité, 80,01 € dès 150) ; le prix suit la quantité de la ligne, et l'infobulle de la colonne LPN donne les paliers. Un prix saisi à la main n'est pas modifié quand la quantité change. Les colonnes Prix public, Prix remisé et LPN montrent d'où vient le prix (en gras : celui retenu). Un même code ENEDIS peut correspondre à plusieurs produits : choisissez alors le bon dans la liste proposée."
       },
       {
         title: "Navigation au clavier",
@@ -169,7 +169,7 @@ export const HELP: HelpSection[] = [
     items: [
       {
         title: "Listes de prix nets (LPN)",
-        text: "Toutes les listes du fichier LPN, avec leurs produits (prix net, prix public, remise) et leurs clients. Au-delà de 5 clients, « Afficher les n clients » ouvre un tiroir pour les filtrer, en rattacher ou en détacher.",
+        text: "Toutes les listes du fichier LPN, avec leurs produits (prix net, quantité mini des prix dégressifs, prix public, remise) et leurs clients. Au-delà de 5 clients, « Afficher les n clients » ouvre un tiroir pour les filtrer, en rattacher ou en détacher.",
       },
     ],
   },

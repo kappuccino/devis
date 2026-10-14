@@ -264,6 +264,8 @@ pub struct PriceListItem {
     pub label: Option<String>,
     pub public_price: Option<f64>,
     pub family: Option<String>,
+    /// Quantité mini de ce prix (0 : prix unitaire).
+    pub min_qty: f64,
 }
 
 #[tauri::command]
@@ -272,10 +274,10 @@ pub fn get_price_list_items(state: State<AppState>, code: String) -> CmdResult<V
     query_all(
         &conn,
         "SELECT pli.product_ref, COALESCE(p.designation, pli.designation), pli.price, pli.label,
-                p.public_price, p.family
+                p.public_price, p.family, pli.min_qty
          FROM price_list_items pli LEFT JOIN products p ON p.ref = pli.product_ref
          WHERE pli.price_list_code = ?1
-         ORDER BY pli.product_ref, pli.price",
+         ORDER BY pli.product_ref, pli.min_qty, pli.price",
         [code],
         |r| {
             Ok(PriceListItem {
@@ -285,6 +287,7 @@ pub fn get_price_list_items(state: State<AppState>, code: String) -> CmdResult<V
                 label: r.get(3)?,
                 public_price: r.get(4)?,
                 family: r.get(5)?,
+                min_qty: r.get(6)?,
             })
         },
     )
@@ -464,12 +467,13 @@ pub fn export_price_list(
     Ok(())
 }
 
-/// Lignes de l'export : une par référence (prix le plus bas si la liste en a plusieurs).
+/// Lignes de l'export : une par référence, au prix unitaire (le plus bas sans quantité mini ; à
+/// défaut, le plus bas tout court, pour une référence vendue seulement par quantité).
 fn price_list_export_rows(conn: &Connection, code: &str) -> CmdResult<Vec<crate::xlsx_export::Row>> {
     query_all(
         conn,
         "SELECT pli.product_ref, COALESCE(p.designation, MAX(pli.designation), ''), COALESCE(p.enedis_code, ''),
-                MIN(pli.price)
+                COALESCE(MIN(CASE WHEN pli.min_qty <= 1 THEN pli.price END), MIN(pli.price))
          FROM price_list_items pli LEFT JOIN products p ON p.ref = pli.product_ref
          WHERE pli.price_list_code = ?1
          GROUP BY pli.product_ref
@@ -508,8 +512,13 @@ pub fn get_price_list_clients(state: State<AppState>, code: String) -> CmdResult
 // ---------- Prix ----------
 
 #[tauri::command]
-pub fn resolve_price(state: State<AppState>, pricing: PricingContext, product_ref: String) -> CmdResult<ResolvedPrice> {
-    pricing::resolve_price(&state.conn(), &pricing, &product_ref)
+pub fn resolve_price(
+    state: State<AppState>,
+    pricing: PricingContext,
+    product_ref: String,
+    quantity: Option<f64>,
+) -> CmdResult<ResolvedPrice> {
+    pricing::resolve_price(&state.conn(), &pricing, &product_ref, quantity)
 }
 
 // ---------- Devis ----------

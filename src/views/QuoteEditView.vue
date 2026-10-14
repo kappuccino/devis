@@ -15,6 +15,7 @@ import {
   api,
   type Client,
   type PriceList,
+  type PriceTier,
   type PricingContext,
   type ProductHit,
   type Quote,
@@ -23,7 +24,7 @@ import {
   type QuoteTemplate,
   type QuoteVersion,
 } from "../api";
-import { errorMessage, formatDate, formatEuro, formatUnitPrice, MOD, round2, todayIso } from "../format";
+import { errorMessage, formatDate, formatEuro, formatNumber, formatUnitPrice, MOD, round2, todayIso } from "../format";
 import { exportQuotePdf } from "../composables/usePdf";
 import QuoteDocsDialog from "../components/docs/QuoteDocsDialog.vue";
 import PriceListDrawer from "../components/PriceListDrawer.vue";
@@ -77,6 +78,9 @@ interface EditLine extends QuoteLine {
   discountText: string;
   /** Frais ajouté automatiquement (conditions de vente), tant qu'on ne l'a pas modifié. */
   auto?: boolean;
+  /** Prix par quantité de la liste retenue et palier appliqué (connus après un calcul de prix). */
+  lpnTiers?: PriceTier[];
+  lpnMinQty?: number | null;
 }
 
 let nextKey = 0;
@@ -135,11 +139,90 @@ const withTexts = <T extends QuoteLine>(l: T) => ({
 function onQtyInput(line: EditLine, text: string) {
   line.qtyText = text;
   line.quantity = parseNumber(text);
+  scheduleQtyPrice(line);
 }
 
 function onPriceInput(line: EditLine, text: string) {
   line.priceText = text;
   line.unit_price = parseNumber(text) ?? 0;
+}
+
+/** PU calculé par l'appli (prix de liste ou prix public remisé), et non saisi à la main. */
+const isAutoPrice = (l: EditLine) =>
+  l.price_source != null &&
+  ((l.price_source === l.lpn_list && l.unit_price === l.lpn_price) ||
+    (l.price_source.startsWith("Public") && l.unit_price === l.discounted_price));
+
+/** Recalcul du prix en cours de frappe de la quantité, après une courte pause (par ligne). */
+const QTY_PRICE_DELAY = 250;
+const qtyTimers = new Map<number, ReturnType<typeof setTimeout>>();
+function scheduleQtyPrice(line: EditLine) {
+  clearTimeout(qtyTimers.get(line.key));
+  qtyTimers.set(
+    line.key,
+    setTimeout(() => {
+      qtyTimers.delete(line.key);
+      priceForQuantity(line);
+    }, QTY_PRICE_DELAY),
+  );
+}
+onBeforeUnmount(() => qtyTimers.forEach((t) => clearTimeout(t)));
+
+/** Quantité validée (champ quitté) : texte remis en forme, prix recalculé sans attendre. */
+function onQtyCommit(line: EditLine) {
+  line.qtyText = editText(line.quantity, 3);
+  if (!qtyTimers.has(line.key)) return;
+  clearTimeout(qtyTimers.get(line.key));
+  qtyTimers.delete(line.key);
+  priceForQuantity(line);
+}
+
+/**
+ * Quantité modifiée : les prix de liste dépendent de la quantité (prix dégressifs dès une quantité
+ * mini). Le PU est recalculé s'il vient de l'appli ; un prix saisi à la main et la désignation
+ * restent tels quels.
+ */
+async function priceForQuantity(line: EditLine) {
+  if (line.kind !== "item" || !line.product_ref || line.pendingRef != null) return;
+  if (isTemplate.value || !hasClient.value) return;
+  // Réf refusée (ex. prix de liste seulement dès 10 pièces) : on retente avec la nouvelle quantité.
+  if (line.error) {
+    line.resolvedRef = null;
+    await resolve(line);
+    return;
+  }
+  if (!isAutoPrice(line)) return;
+  const quantity = line.quantity;
+  try {
+    const p = await api.resolvePrice(pricing.value, line.product_ref, quantity);
+    // Quantité retouchée entre-temps, ou prix saisi à la main pendant le calcul.
+    if (line.quantity !== quantity || !isAutoPrice(line)) return;
+    Object.assign(line, {
+      unit_price: p.unit_price,
+      priceText: editText(p.unit_price, 2),
+      price_source: p.source,
+      discounted_price: p.discounted_price,
+      lpn_price: p.lpn_price,
+      lpn_list: p.lpn_list,
+      lpnTiers: p.lpn_tiers,
+      lpnMinQty: p.lpn_min_qty,
+    });
+  } catch {
+    // Produit disparu entre-temps : on garde le prix de la ligne.
+  }
+}
+
+/** Infobulle du prix LPN : la liste, et ses prix par quantité s'il y en a plusieurs. */
+function lpnTooltip(l: EditLine) {
+  if (!l.lpn_list) return "Aucun prix négocié";
+  const tiers = l.lpnTiers ?? [];
+  if (tiers.length < 2) return `Liste ${l.lpn_list}`;
+  const steps = tiers.map((t) => {
+    const label = t.min_qty > 1 ? `dès ${formatNumber(t.min_qty)}` : "à l'unité";
+    const applied = t.min_qty === (l.lpnMinQty ?? 0) ? " (appliqué)" : "";
+    return `${formatUnitPrice(t.price)} ${label}${applied}`;
+  });
+  return `Liste ${l.lpn_list} · ${steps.join(" · ")}`;
 }
 
 /** Remise supplémentaire de la ligne, en % (0 à 100). */
@@ -514,7 +597,7 @@ async function resolve(line: EditLine, focusNext = false, field: "ref" | "enedis
   // Une autre saisie a été lancée entre-temps (ex. choix dans la liste ENEDIS) : on l'ignore.
   const stale = () => line.pendingRef !== r;
   try {
-    const p = await api.resolvePrice(pricing.value, r);
+    const p = await api.resolvePrice(pricing.value, r, line.quantity);
     if (stale()) return;
     Object.assign(line, {
       product_ref: p.product_ref,
@@ -528,6 +611,8 @@ async function resolve(line: EditLine, focusNext = false, field: "ref" | "enedis
       discounted_price: p.discounted_price,
       lpn_price: p.lpn_price,
       lpn_list: p.lpn_list,
+      lpnTiers: p.lpn_tiers,
+      lpnMinQty: p.lpn_min_qty,
       resolvedRef: p.product_ref,
       resolvedEnedis: p.enedis_code,
       error: null,
@@ -1067,7 +1152,7 @@ async function fillMissingReferencePrices() {
   await Promise.all(
     missing.map(async (l) => {
       try {
-        const p = await api.resolvePrice(ctx, l.product_ref);
+        const p = await api.resolvePrice(ctx, l.product_ref, l.quantity);
         Object.assign(l, {
           public_price: p.public_price,
           threshold_price: p.threshold_price,
@@ -2024,7 +2109,7 @@ async function saveAsTemplate() {
                   size="small"
                   class="num"
                   @update:model-value="(v: string | undefined) => onQtyInput(line, v ?? '')"
-                  @blur="line.qtyText = editText(line.quantity, 3)"
+                  @blur="onQtyCommit(line)"
                   @keydown.enter="moveToQuantity(line, 1, $event)"
                   @keydown.down="moveToQuantity(line, 1, $event)"
                   @keydown.up="moveToQuantity(line, -1, $event)"
@@ -2037,7 +2122,7 @@ async function saveAsTemplate() {
                   {{ formatUnitPrice(line.discounted_price) }}
                 </td>
                 <td
-                  v-tooltip.top="line.lpn_list ? `Liste ${line.lpn_list}` : 'Aucun prix négocié'"
+                  v-tooltip.top="lpnTooltip(line)"
                   class="num ref-price"
                   :class="{ used: line.lpn_price != null && line.price_source === line.lpn_list }"
                 >

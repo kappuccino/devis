@@ -9,7 +9,7 @@ import Button from "primevue/button";
 import PriceListClientsDrawer from "../components/PriceListClientsDrawer.vue";
 import { useToast } from "primevue/usetoast";
 import { api, type ClientRef, type PriceList, type PriceListItem } from "../api";
-import { errorMessage, formatPct, formatUnitPrice } from "../format";
+import { errorMessage, formatNumber, formatPct, formatUnitPrice } from "../format";
 
 const toast = useToast();
 const lists = ref<PriceList[]>([]);
@@ -172,6 +172,10 @@ onMounted(async () => {
               </template>
             </Column>
             <Column field="family" header="Famille" style="width: 80px" />
+            <!-- Prix dégressif : ce prix s'applique dès cette quantité (vide : prix unitaire). -->
+            <Column field="min_qty" header="Qté mini" sortable class="num" style="width: 85px">
+              <template #body="{ data }">{{ data.min_qty > 1 ? formatNumber(data.min_qty) : "" }}</template>
+            </Column>
             <Column field="price" header="Prix net" sortable class="num" style="width: 100px">
               <template #body="{ data }"><strong>{{ formatUnitPrice(data.price) }}</strong></template>
             </Column>

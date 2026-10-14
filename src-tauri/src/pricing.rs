@@ -23,18 +23,46 @@ impl PricingContext {
     }
 }
 
-/// Prix le plus bas d'un produit parmi des listes (JSON), avec la liste et sa désignation.
-fn cheapest_in(conn: &Connection, lists_json: &str, product_ref: &str) -> rusqlite::Result<Option<(f64, String, Option<String>)>> {
+/// Prix de liste retenu : prix, code de la liste, désignation, quantité mini du palier appliqué.
+struct ListHit {
+    price: f64,
+    list: String,
+    designation: Option<String>,
+    min_qty: f64,
+}
+
+/// Prix le plus bas d'un produit parmi des listes (JSON), pour la quantité de la ligne : seuls les
+/// prix dont la quantité mini est atteinte comptent (quantité vide ou nulle = 1, prix unitaire).
+fn cheapest_in(conn: &Connection, lists_json: &str, product_ref: &str, quantity: Option<f64>) -> rusqlite::Result<Option<ListHit>> {
     conn.query_row(
-        "SELECT pli.price, pli.price_list_code, pli.designation
+        "SELECT pli.price, pli.price_list_code, pli.designation, pli.min_qty
          FROM price_list_items pli
          WHERE pli.price_list_code IN (SELECT value FROM json_each(?1)) AND pli.product_ref = ?2
-         ORDER BY pli.price ASC
+           AND pli.min_qty <= MAX(?3, 1)
+         ORDER BY pli.price ASC, pli.min_qty ASC
          LIMIT 1",
-        params![lists_json, product_ref],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        params![lists_json, product_ref, quantity.unwrap_or(0.0)],
+        |r| Ok(ListHit { price: r.get(0)?, list: r.get(1)?, designation: r.get(2)?, min_qty: r.get(3)? }),
     )
     .optional()
+}
+
+/// Prix par quantité d'un produit dans une liste.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct PriceTier {
+    pub min_qty: f64,
+    pub price: f64,
+}
+
+/// Tous les prix d'un produit dans une liste, par quantité mini croissante (doublons retirés).
+fn tiers(conn: &Connection, list: &str, product_ref: &str) -> rusqlite::Result<Vec<PriceTier>> {
+    conn.prepare(
+        "SELECT min_qty, MIN(price) FROM price_list_items
+         WHERE price_list_code = ?1 AND product_ref = ?2
+         GROUP BY min_qty ORDER BY min_qty",
+    )?
+    .query_map(params![list, product_ref], |r| Ok(PriceTier { min_qty: r.get(0)?, price: round2(r.get(1)?) }))?
+    .collect()
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -54,13 +82,23 @@ pub struct ResolvedPrice {
     /// Prix de la liste de prix (LPN) retenue, s'il en existe un.
     pub lpn_price: Option<f64>,
     pub lpn_list: Option<String>,
+    /// Quantité mini du prix LPN retenu (0 : prix unitaire).
+    pub lpn_min_qty: Option<f64>,
+    /// Prix par quantité du produit dans la liste retenue (un seul s'il n'y a pas de dégressif).
+    pub lpn_tiers: Vec<PriceTier>,
 }
 
 /// Prix d'un produit dans les conditions d'un devis :
 /// 1. le prix de la liste forcée, si le produit y figure (même si une autre liste est moins chère) ;
 /// 2. sinon le prix le plus bas parmi les listes de prix du devis ;
 /// 3. sinon le prix public moins la remise CFA ou CFO du devis selon la famille du produit.
-pub fn resolve_price(conn: &Connection, ctx: &PricingContext, product_ref: &str) -> Result<ResolvedPrice, String> {
+/// Les prix de liste dépendent de la quantité de la ligne (prix dégressifs dès une quantité mini).
+pub fn resolve_price(
+    conn: &Connection,
+    ctx: &PricingContext,
+    product_ref: &str,
+    quantity: Option<f64>,
+) -> Result<ResolvedPrice, String> {
     let lists = ctx.lists_json();
     let typed = product_ref.trim();
     let canonical = canonical_ref(conn, &lists, typed).map_err(|e| e.to_string())?;
@@ -83,9 +121,7 @@ pub fn resolve_price(conn: &Connection, ctx: &PricingContext, product_ref: &str)
     let forced = match &ctx.forced_price_list {
         Some(code) => {
             let one = serde_json::to_string(&[code]).map_err(|e| e.to_string())?;
-            cheapest_in(conn, &one, product_ref)
-                .map_err(|e| e.to_string())?
-                .map(|(price, list, designation)| (price, format!("{list} (forcée)"), designation))
+            cheapest_in(conn, &one, product_ref, quantity).map_err(|e| e.to_string())?
         }
         None => None,
     };
@@ -94,9 +130,18 @@ pub fn resolve_price(conn: &Connection, ctx: &PricingContext, product_ref: &str)
         Some(hit) => Some(hit),
         None => {
             let usual = serde_json::to_string(&ctx.price_lists).map_err(|e| e.to_string())?;
-            cheapest_in(conn, &usual, product_ref).map_err(|e| e.to_string())?
+            cheapest_in(conn, &usual, product_ref, quantity).map_err(|e| e.to_string())?
         }
     };
+    let lpn_tiers = match &lpn {
+        Some(hit) => tiers(conn, &hit.list, product_ref).map_err(|e| e.to_string())?,
+        None => Vec::new(),
+    };
+    // Source affichée : code de la liste, « (forcée) » pour la liste forcée.
+    let lpn = lpn.map(|hit| ListHit {
+        list: if is_forced { format!("{} (forcée)", hit.list) } else { hit.list },
+        ..hit
+    });
 
     // Prix remisé : prix public − remise CFA ou CFO du devis (produits du catalogue seulement).
     let discounted = product.as_ref().map(|(_, public_price, family, _)| {
@@ -114,27 +159,41 @@ pub fn resolve_price(conn: &Connection, ctx: &PricingContext, product_ref: &str)
 
     // Prix retenu : la liste forcée ; sinon le plus bas entre le prix LPN et le prix remisé.
     let (unit_price, source) = match (&lpn, &discounted) {
-        (Some((price, list, _)), _) if is_forced => (round2(*price), list.clone()),
-        (Some((price, list, _)), Some((remise, remise_source))) => {
-            if round2(*price) <= *remise {
-                (round2(*price), list.clone())
+        (Some(hit), _) if is_forced => (round2(hit.price), hit.list.clone()),
+        (Some(hit), Some((remise, remise_source))) => {
+            if round2(hit.price) <= *remise {
+                (round2(hit.price), hit.list.clone())
             } else {
                 (*remise, remise_source.clone())
             }
         }
-        (Some((price, list, _)), None) => (round2(*price), list.clone()),
+        (Some(hit), None) => (round2(hit.price), hit.list.clone()),
         (None, Some((remise, remise_source))) => (*remise, remise_source.clone()),
         (None, None) if canonical.is_none() && enedis_refs(conn, typed).map_err(|e| e.to_string())?.len() > 1 => {
             return Err(format!(
                 "Plusieurs produits portent le code ENEDIS « {typed} » : choisissez le bon dans la liste"
             ))
         }
-        (None, None) => return Err(format!("Produit « {product_ref} » introuvable")),
+        (None, None) => {
+            // Produit hors catalogue, dont la liste n'a qu'un prix dès une certaine quantité.
+            let from: Option<f64> = conn
+                .query_row(
+                    "SELECT MIN(min_qty) FROM price_list_items
+                     WHERE price_list_code IN (SELECT value FROM json_each(?1)) AND product_ref = ?2",
+                    params![lists, product_ref],
+                    |r| r.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            return Err(match from {
+                Some(q) => format!("Produit « {product_ref} » : prix de liste seulement dès {} pièces", fmt_qty(q)),
+                None => format!("Produit « {product_ref} » introuvable"),
+            });
+        }
     };
 
     let (designation, family, public_price, threshold_price) = match &product {
         Some((d, p, f, t)) => (d.clone(), f.clone(), Some(round2(*p)), t.map(round2)),
-        None => (lpn.as_ref().and_then(|(_, _, d)| d.clone()).unwrap_or_default(), None, None, None),
+        None => (lpn.as_ref().and_then(|hit| hit.designation.clone()).unwrap_or_default(), None, None, None),
     };
     Ok(ResolvedPrice {
         product_ref: product_ref.to_string(),
@@ -146,8 +205,10 @@ pub fn resolve_price(conn: &Connection, ctx: &PricingContext, product_ref: &str)
         public_price,
         threshold_price,
         discounted_price: discounted.map(|(price, _)| price),
-        lpn_price: lpn.as_ref().map(|(price, _, _)| round2(*price)),
-        lpn_list: lpn.map(|(_, list, _)| list),
+        lpn_price: lpn.as_ref().map(|hit| round2(hit.price)),
+        lpn_min_qty: lpn.as_ref().map(|hit| hit.min_qty),
+        lpn_list: lpn.map(|hit| hit.list),
+        lpn_tiers,
     })
 }
 
@@ -221,6 +282,11 @@ pub fn round2(v: f64) -> f64 {
     cents.round() / 100.0
 }
 
+/// Quantité lisible (« 150 », « 2,5 »).
+fn fmt_qty(v: f64) -> String {
+    fmt_pct(v)
+}
+
 fn fmt_pct(v: f64) -> String {
     if v.fract() == 0.0 {
         format!("{v:.0}")
@@ -263,7 +329,7 @@ mod tests {
     #[test]
     fn cheapest_attached_list_wins() {
         let conn = setup();
-        let r = resolve_price(&conn, &ctx(), "C1").unwrap();
+        let r = resolve_price(&conn, &ctx(), "C1", None).unwrap();
         // T3 est moins cher mais ne fait pas partie des listes du devis.
         assert_eq!(r.unit_price, 10.0);
         assert_eq!(r.source, "T2");
@@ -272,7 +338,7 @@ mod tests {
     #[test]
     fn falls_back_to_public_price_with_cfo_discount() {
         let conn = setup();
-        let r = resolve_price(&conn, &ctx(), "A1").unwrap();
+        let r = resolve_price(&conn, &ctx(), "A1", None).unwrap();
         assert_eq!(r.unit_price, 40.0);
         assert_eq!(r.source, "Public -60% CFO");
     }
@@ -280,7 +346,7 @@ mod tests {
     #[test]
     fn falls_back_to_public_price_with_cfa_discount() {
         let conn = setup();
-        let r = resolve_price(&conn, &ctx(), "B1").unwrap();
+        let r = resolve_price(&conn, &ctx(), "B1", None).unwrap();
         assert_eq!(r.unit_price, 85.0);
         assert_eq!(r.source, "Public -57,5% CFA");
     }
@@ -288,7 +354,7 @@ mod tests {
     #[test]
     fn list_only_product_is_priced() {
         let conn = setup();
-        let r = resolve_price(&conn, &ctx(), "X9").unwrap();
+        let r = resolve_price(&conn, &ctx(), "X9", None).unwrap();
         assert_eq!(r.unit_price, 7.0);
         assert_eq!(r.source, "T1");
     }
@@ -302,9 +368,9 @@ mod tests {
         )
         .unwrap();
         // 10 × (1 - 0,60) = 4 ; seuil 1,377472 → 1,38
-        let r = resolve_price(&conn, &ctx(), "R1").unwrap();
+        let r = resolve_price(&conn, &ctx(), "R1", None).unwrap();
         assert_eq!(r.threshold_price, Some(1.38));
-        assert_eq!(resolve_price(&conn, &ctx(), "R2").unwrap().unit_price, 1.01);
+        assert_eq!(resolve_price(&conn, &ctx(), "R2", None).unwrap().unit_price, 1.01);
         assert_eq!(round2(2.8389280000000001), 2.84);
         assert_eq!(round2(0.125), 0.13);
     }
@@ -317,10 +383,10 @@ mod tests {
                 ('00188', 'E4R', 10, 'CFO'), ('06PFAD0003', 'Coffret', 20, 'CFO');",
         )
         .unwrap();
-        assert_eq!(resolve_price(&conn, &ctx(), "188").unwrap().product_ref, "00188");
-        assert_eq!(resolve_price(&conn, &ctx(), " 06pfad0003 ").unwrap().product_ref, "06PFAD0003");
+        assert_eq!(resolve_price(&conn, &ctx(), "188", None).unwrap().product_ref, "00188");
+        assert_eq!(resolve_price(&conn, &ctx(), " 06pfad0003 ", None).unwrap().product_ref, "06PFAD0003");
         // Référence de liste de prix absente du catalogue.
-        assert_eq!(resolve_price(&conn, &ctx(), "x9").unwrap().product_ref, "X9");
+        assert_eq!(resolve_price(&conn, &ctx(), "x9", None).unwrap().product_ref, "X9");
     }
 
     #[test]
@@ -330,7 +396,7 @@ mod tests {
             "INSERT INTO products (ref, public_price, family) VALUES ('0188', 1, 'CFO'), ('00188', 1, 'CFO');",
         )
         .unwrap();
-        assert!(resolve_price(&conn, &ctx(), "188").is_err());
+        assert!(resolve_price(&conn, &ctx(), "188", None).is_err());
     }
 
     #[test]
@@ -338,11 +404,11 @@ mod tests {
         let conn = setup();
         // Remise CFO modifiée sur le devis, aucune liste (client ponctuel sans liste).
         let custom = PricingContext { price_lists: vec![], discount_cfa: 0.0, discount_cfo: 50.0, forced_price_list: None };
-        let r = resolve_price(&conn, &custom, "C1").unwrap();
+        let r = resolve_price(&conn, &custom, "C1", None).unwrap();
         assert_eq!((r.unit_price, r.source.as_str()), (25.0, "Public -50% CFO"));
         // Une seule liste.
         let single = PricingContext { price_lists: vec!["T3".into()], ..custom };
-        assert_eq!(resolve_price(&conn, &single, "C1").unwrap().unit_price, 1.0);
+        assert_eq!(resolve_price(&conn, &single, "C1", None).unwrap().unit_price, 1.0);
     }
 
     #[test]
@@ -359,27 +425,27 @@ mod tests {
     fn enedis_code_comes_from_catalogue() {
         let conn = setup();
         conn.execute("UPDATE products SET enedis_code = '67.98.302' WHERE ref = 'A1'", []).unwrap();
-        assert_eq!(resolve_price(&conn, &ctx(), "A1").unwrap().enedis_code.as_deref(), Some("67.98.302"));
-        assert_eq!(resolve_price(&conn, &ctx(), "X9").unwrap().enedis_code, None);
+        assert_eq!(resolve_price(&conn, &ctx(), "A1", None).unwrap().enedis_code.as_deref(), Some("67.98.302"));
+        assert_eq!(resolve_price(&conn, &ctx(), "X9", None).unwrap().enedis_code, None);
     }
 
     #[test]
     fn shared_enedis_code_asks_to_choose() {
         let conn = setup();
         conn.execute("UPDATE products SET enedis_code = '67.98.302' WHERE ref IN ('A1', 'B1')", []).unwrap();
-        let err = resolve_price(&conn, &ctx(), "6798302").unwrap_err();
+        let err = resolve_price(&conn, &ctx(), "6798302", None).unwrap_err();
         assert!(err.contains("Plusieurs produits"), "{err}");
         // Le choix dans la liste envoie la référence exacte.
-        assert_eq!(resolve_price(&conn, &ctx(), "B1").unwrap().product_ref, "B1");
+        assert_eq!(resolve_price(&conn, &ctx(), "B1", None).unwrap().product_ref, "B1");
     }
 
     #[test]
     fn product_found_by_enedis_code() {
         let conn = setup();
         conn.execute("UPDATE products SET enedis_code = '67.98.302' WHERE ref = 'A1'", []).unwrap();
-        assert_eq!(resolve_price(&conn, &ctx(), "67.98.302").unwrap().product_ref, "A1");
-        assert_eq!(resolve_price(&conn, &ctx(), "6798302").unwrap().product_ref, "A1");
-        assert!(resolve_price(&conn, &ctx(), "67.98.999").is_err());
+        assert_eq!(resolve_price(&conn, &ctx(), "67.98.302", None).unwrap().product_ref, "A1");
+        assert_eq!(resolve_price(&conn, &ctx(), "6798302", None).unwrap().product_ref, "A1");
+        assert!(resolve_price(&conn, &ctx(), "67.98.999", None).is_err());
     }
 
     #[test]
@@ -387,13 +453,13 @@ mod tests {
         let conn = setup();
         // T1 (12,50) est forcée : elle passe devant T2 (10,00), pourtant moins chère.
         let forced = PricingContext { forced_price_list: Some("T1".into()), ..ctx() };
-        let r = resolve_price(&conn, &forced, "C1").unwrap();
+        let r = resolve_price(&conn, &forced, "C1", None).unwrap();
         assert_eq!((r.unit_price, r.source.as_str()), (12.5, "T1 (forcée)"));
         // Liste forcée hors des listes du client : elle s'ajoute aux recherches.
         let outside = PricingContext { forced_price_list: Some("T3".into()), ..ctx() };
-        assert_eq!(resolve_price(&conn, &outside, "C1").unwrap().unit_price, 1.0);
+        assert_eq!(resolve_price(&conn, &outside, "C1", None).unwrap().unit_price, 1.0);
         // Produit absent de la liste forcée : règle habituelle.
-        let r = resolve_price(&conn, &outside, "X9").unwrap();
+        let r = resolve_price(&conn, &outside, "X9", None).unwrap();
         assert_eq!((r.unit_price, r.source.as_str()), (7.0, "T1"));
     }
 
@@ -406,20 +472,65 @@ mod tests {
              INSERT INTO price_list_items (price_list_code, product_ref, price) VALUES ('T1', 'D1', 55);",
         )
         .unwrap();
-        let r = resolve_price(&conn, &ctx(), "D1").unwrap();
+        let r = resolve_price(&conn, &ctx(), "D1", None).unwrap();
         assert_eq!((r.unit_price, r.source.as_str()), (40.0, "Public -60% CFO"));
         assert_eq!((r.discounted_price, r.lpn_price, r.lpn_list.as_deref()), (Some(40.0), Some(55.0), Some("T1")));
         // C1 : remisé 20 €, LPN 10 € (T2) → la LPN l'emporte.
-        let r = resolve_price(&conn, &ctx(), "C1").unwrap();
+        let r = resolve_price(&conn, &ctx(), "C1", None).unwrap();
         assert_eq!((r.unit_price, r.discounted_price, r.lpn_price), (10.0, Some(20.0), Some(10.0)));
         // Liste forcée : prioritaire même si plus chère.
         let forced = PricingContext { forced_price_list: Some("T1".into()), ..ctx() };
-        assert_eq!(resolve_price(&conn, &forced, "D1").unwrap().unit_price, 55.0);
+        assert_eq!(resolve_price(&conn, &forced, "D1", None).unwrap().unit_price, 55.0);
+    }
+
+    /// Prix dégressifs : 82,49 € à l'unité, 80,01 € dès 150 ; un produit vendu seulement dès 10.
+    fn setup_tiers() -> Connection {
+        let conn = setup();
+        conn.execute_batch(
+            "INSERT INTO price_list_items (price_list_code, product_ref, price, min_qty) VALUES
+                ('T1', 'Q1', 82.49, 0), ('T1', 'Q1', 80.01, 150), ('T1', 'Q1', 82.49, 0),
+                ('T1', 'Q2', 9.0, 10);",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn quantity_tiers_apply_from_their_minimum() {
+        let conn = setup_tiers();
+        for (qty, price, min) in [(None, 82.49, 0.0), (Some(1.0), 82.49, 0.0), (Some(149.0), 82.49, 0.0),
+                                  (Some(150.0), 80.01, 150.0), (Some(500.0), 80.01, 150.0)] {
+            let r = resolve_price(&conn, &ctx(), "Q1", qty).unwrap();
+            assert_eq!((r.unit_price, r.lpn_min_qty), (price, Some(min)), "quantité {qty:?}");
+            assert_eq!(r.source, "T1");
+        }
+        let r = resolve_price(&conn, &ctx(), "Q1", Some(1.0)).unwrap();
+        assert_eq!(
+            r.lpn_tiers,
+            vec![PriceTier { min_qty: 0.0, price: 82.49 }, PriceTier { min_qty: 150.0, price: 80.01 }]
+        );
+    }
+
+    #[test]
+    fn tier_only_price_needs_its_quantity() {
+        let conn = setup_tiers();
+        let err = resolve_price(&conn, &ctx(), "Q2", Some(5.0)).unwrap_err();
+        assert!(err.contains("dès 10"), "{err}");
+        assert_eq!(resolve_price(&conn, &ctx(), "Q2", Some(10.0)).unwrap().unit_price, 9.0);
+    }
+
+    #[test]
+    fn forced_list_uses_tiers_too() {
+        let conn = setup_tiers();
+        let forced = PricingContext { forced_price_list: Some("T1".into()), ..ctx() };
+        let r = resolve_price(&conn, &forced, "Q1", Some(200.0)).unwrap();
+        assert_eq!((r.unit_price, r.source.as_str()), (80.01, "T1 (forcée)"));
+        assert_eq!(r.lpn_tiers.len(), 2);
     }
 
     #[test]
     fn unknown_product_is_an_error() {
         let conn = setup();
-        assert!(resolve_price(&conn, &ctx(), "NOPE").is_err());
+        assert!(resolve_price(&conn, &ctx(), "NOPE", None).is_err());
     }
 }

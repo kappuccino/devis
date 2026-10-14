@@ -56,6 +56,8 @@ export interface PriceListItem {
   label: string | null;
   public_price: number | null;
   family: Family | null;
+  /** Quantité mini de ce prix (0 : prix unitaire). */
+  min_qty: number;
 }
 
 /** Nombre et montant des devis, dont affaires obtenues. */
@@ -156,6 +158,12 @@ export interface ClientRef {
   name: string;
 }
 
+/** Prix d'une liste à partir d'une quantité (0 : prix unitaire). */
+export interface PriceTier {
+  min_qty: number;
+  price: number;
+}
+
 export interface ResolvedPrice {
   product_ref: string;
   /** Prix public − remise CFA / CFO (produit du catalogue). */
@@ -163,6 +171,10 @@ export interface ResolvedPrice {
   /** Prix de la liste de prix (LPN) retenue, et son code. */
   lpn_price: number | null;
   lpn_list: string | null;
+  /** Quantité mini du prix LPN retenu (0 : prix unitaire). */
+  lpn_min_qty: number | null;
+  /** Prix par quantité du produit dans la liste retenue. */
+  lpn_tiers: PriceTier[];
   enedis_code: string | null;
   designation: string;
   unit_price: number;
@@ -361,8 +373,9 @@ export const api = {
   getPriceListItems: (code: string) => invoke<PriceListItem[]>("get_price_list_items", { code }),
   getPriceListClients: (code: string) => invoke<ClientRef[]>("get_price_list_clients", { code }),
 
-  resolvePrice: (pricing: PricingContext, productRef: string) =>
-    invoke<ResolvedPrice>("resolve_price", { pricing, productRef }),
+  /** Prix dans les conditions du devis, pour la quantité de la ligne (prix dégressifs). */
+  resolvePrice: (pricing: PricingContext, productRef: string, quantity: number | null) =>
+    invoke<ResolvedPrice>("resolve_price", { pricing, productRef, quantity }),
 
   listQuotes: () => invoke<QuoteSummary[]>("list_quotes"),
   getQuote: (id: number) => invoke<Quote>("get_quote", { id }),

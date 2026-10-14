@@ -66,7 +66,9 @@ CREATE TABLE IF NOT EXISTS price_list_items (
     product_ref     TEXT NOT NULL,
     designation     TEXT,
     price           REAL NOT NULL,
-    label           TEXT
+    label           TEXT,
+    -- Quantité mini du prix (0 : prix unitaire ; ex. 150 : prix dégressif dès 150).
+    min_qty         REAL NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_pli_list_ref ON price_list_items(price_list_code, product_ref);
 CREATE INDEX IF NOT EXISTS idx_pli_ref ON price_list_items(product_ref);
@@ -214,6 +216,8 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     add_column(conn, "quotes", "project_name", "TEXT NOT NULL DEFAULT ''")?;
     // Commentaire de suivi (liste des devis).
     add_column(conn, "quotes", "comment", "TEXT NOT NULL DEFAULT ''")?;
+    // Prix par quantité des listes de prix (refaire l'import LPN pour les renseigner).
+    add_column(conn, "price_list_items", "min_qty", "REAL NOT NULL DEFAULT 0")?;
     // Validité par défaut passée de 30 à 90 jours : l'ancienne valeur suit, une seule fois
     // (on peut ensuite la remettre à 30 jours dans les Réglages).
     if conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('migrated_validity_90', '1')", [])? == 1 {

@@ -158,6 +158,10 @@
   - Si ce code client existe déjà : la liste est rattachée à ce client, qui garde son nom.
 - [x] Import LPN : code client en double dans « gestion tarifs » → première ligne conservée, avec les
   listes de prix de toutes les lignes.
+- [x] Prix dégressifs des listes de prix (colonne N « Quantité Mini » de « fichier injection tarif »)
+  - Le prix de liste suit la quantité de la ligne ; recalculé quand elle change, sauf prix saisi à la main.
+  - Un prix « dès N » seul ne s'applique pas en dessous de N. Paliers dans l'infobulle LPN et
+    colonne « Qté mini » des listes de prix. Refaire l'import LPN après la mise à jour.
 - [x] Recherches : filtrage lancé après une courte pause de frappe (plus de ralentissement en tapant).
 - [x] Sauvegardes protégées (un poste a perdu tout `%APPDATA%\fr.devis.app`, sauvegardes comprises)
   - Dossier par défaut : `Documents\Devis Groupe Cahors\sauvegardes` ; anciennes copies recopiées au démarrage.

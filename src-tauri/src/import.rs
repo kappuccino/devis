@@ -172,11 +172,12 @@ fn import_products(tx: &Connection, range: &Range<Data>, report: &mut ImportRepo
 }
 
 fn import_price_lists(tx: &Connection, range: &Range<Data>, report: &mut ImportReport) -> rusqlite::Result<()> {
-    // B client | D code analyse (= code liste) | E réf | J description | O prix | Q désignation
+    // B client | D code analyse (= code liste) | E réf | J description | N quantité mini | O prix
+    // | Q désignation. Une réf peut avoir plusieurs prix dans une liste : un par quantité mini.
     let mut list_stmt = tx.prepare("INSERT OR IGNORE INTO price_lists (code, label) VALUES (?1, ?2)")?;
     let mut item_stmt = tx.prepare(
-        "INSERT INTO price_list_items (price_list_code, product_ref, designation, price, label)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
+        "INSERT INTO price_list_items (price_list_code, product_ref, designation, price, label, min_qty)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
     )?;
     let mut skipped = 0;
     for row in data_rows(range) {
@@ -190,7 +191,8 @@ fn import_price_lists(tx: &Connection, range: &Range<Data>, report: &mut ImportR
         };
         let code = code.to_uppercase();
         report.price_lists += list_stmt.execute(params![code, text(row, 1)])?;
-        item_stmt.execute(params![code, r, text(row, 16), price, text(row, 9)])?;
+        let min_qty = number(row, 13).filter(|q| *q > 0.0).unwrap_or(0.0);
+        item_stmt.execute(params![code, r, text(row, 16), price, text(row, 9), min_qty])?;
         report.price_list_items += 1;
     }
     if skipped > 0 {
@@ -365,9 +367,13 @@ mod tests {
             (row[1], row[3], row[4], row[14]) = (label, list, "REF", "1");
             row
         };
+        // Même réf, prix dégressif dès 150 (colonne N « Quantité Mini »).
+        let mut tier = price("LISTE RATTACHÉE", "T999000");
+        (tier[13], tier[14]) = ("150", "0,8");
         let prices = range(&[
             header,
             &price("LISTE RATTACHÉE", "T999000"),
+            &tier,
             &price("COTRELEC SERTELEC", "T205000"),
             &price("CLIENT EXISTANT", "T13770K"),
             &price("NOUVEAU CLIENT", "T300000"),
@@ -376,6 +382,14 @@ mod tests {
         let report = import_ranges(&mut conn, &empty, &tarifs, &prices, Some(&ic)).unwrap();
         assert_eq!((report.clients, report.clients_ic, report.clients_from_lists), (5, 1, 3));
         assert_eq!(report.lists_linked_to_existing, 1);
+        let tiers: Vec<(f64, f64)> = conn
+            .prepare("SELECT min_qty, price FROM price_list_items WHERE price_list_code = 'T999000' ORDER BY min_qty")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(tiers, vec![(0.0, 1.0), (150.0, 0.8)]);
 
         let rows: Vec<(String, String, f64)> = conn
             .prepare("SELECT code, name, discount_cfa FROM clients ORDER BY code")
@@ -434,7 +448,7 @@ mod tests {
             )
             .unwrap();
         let ctx = crate::pricing::PricingContext { price_lists: vec![list], ..Default::default() };
-        let p = crate::pricing::resolve_price(&conn, &ctx, &product).unwrap();
+        let p = crate::pricing::resolve_price(&conn, &ctx, &product, None).unwrap();
         assert_eq!(p.unit_price, crate::pricing::round2(price));
     }
 }

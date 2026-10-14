@@ -11,7 +11,7 @@ import IconField from "primevue/iconfield";
 import InputIcon from "primevue/inputicon";
 import { useToast } from "primevue/usetoast";
 import { api, type PriceListItem } from "../api";
-import { errorMessage, formatPct, formatUnitPrice } from "../format";
+import { errorMessage, formatNumber, formatPct, formatUnitPrice } from "../format";
 
 /** Code de la liste affichée ; null : tiroir fermé. */
 const code = defineModel<string | null>("code", { required: true });
@@ -36,6 +36,9 @@ const filtered = computed(() => {
     ? items.value.filter((i) => i.product_ref.toLowerCase().includes(q) || i.designation?.toLowerCase().includes(q))
     : items.value;
 });
+
+/** Une réf peut avoir plusieurs prix (un par quantité mini) : on compte les produits. */
+const productCount = computed(() => new Set(items.value.map((i) => i.product_ref)).size);
 
 /** Remise de la ligne par rapport au prix public. */
 const discountVsPublic = (i: PriceListItem) => (i.public_price ? (1 - i.price / i.public_price) * 100 : null);
@@ -64,7 +67,7 @@ watch(code, async (c) => {
     <template #header>
       <div class="drawer-title">
         <h2 class="mono">{{ code }}</h2>
-        <span class="muted">{{ label }}<template v-if="!loading"> · {{ items.length }} produits</template></span>
+        <span class="muted">{{ label }}<template v-if="!loading"> · {{ productCount }} produits</template></span>
       </div>
     </template>
     <IconField>
@@ -89,6 +92,10 @@ watch(code, async (c) => {
         <template #body="{ data }">
           <span class="ellipsis" :title="data.designation ?? ''">{{ data.designation }}</span>
         </template>
+      </Column>
+      <!-- Prix dégressif : ce prix s'applique dès cette quantité (vide : prix unitaire). -->
+      <Column field="min_qty" header="Qté mini" sortable class="num" style="width: 80px">
+        <template #body="{ data }">{{ data.min_qty > 1 ? formatNumber(data.min_qty) : "" }}</template>
       </Column>
       <Column field="price" header="Prix net" sortable class="num" style="width: 95px">
         <template #body="{ data }"><strong>{{ formatUnitPrice(data.price) }}</strong></template>
