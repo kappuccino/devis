@@ -358,5 +358,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
   flex: 1;
   min-width: 0;
   overflow: auto;
+  /* Pas d'effet « élastique » en bout de page (la fenêtre derrière ne défile pas). */
+  overscroll-behavior: none;
 }
 </style>

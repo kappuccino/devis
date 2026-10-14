@@ -35,10 +35,11 @@ html.app-dark {
   --app-warn-bg: #3b2f12;
 }
 
+/* Surtout pas d'overscroll-behavior ici : posé sur toutes les zones, il empêche sous Windows
+   (WebView2) la molette de faire défiler la page dès que le pointeur survole une zone défilante
+   qui n'a rien à défiler, comme le cadre de chaque tableau PrimeVue (overflow: auto). */
 * {
   box-sizing: border-box;
-  /* Pas d'effet « élastique » de WebKit en bout de défilement, dans aucune zone. */
-  overscroll-behavior: none;
 }
 
 /* La fenêtre elle-même ne défile pas : seules les zones de contenu défilent. */
