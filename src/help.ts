@@ -37,7 +37,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Navigation au clavier",
-        text: "Tab descend dans la colonne, Maj+Tab remonte. Après une référence ou un code ENEDIS, Tab valide la ligne et passe à sa quantité. Entrée ou flèches haut / bas dans les quantités : ligne suivante / précédente.",
+        text: "Tab descend dans la colonne, Maj+Tab remonte. Après une référence ou un code ENEDIS, Tab valide la ligne et passe à sa quantité. Entrée ou flèches haut / bas dans les quantités ou dans les PU HT : même colonne de la ligne suivante / précédente (pratique pour forcer les prix ligne après ligne).",
         keys: ["Tab", "Maj+Tab", "Entrée", "↑", "↓"],
       },
       {
@@ -46,7 +46,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Liste de prix forcée",
-        text: "Le menu « Liste forcée » (listes favorites des Réglages) impose une liste de prix prioritaire pour tout le devis ; les prix sont recalculés aussitôt. Un clic sur le code d'une liste de prix ouvre le détail de ses produits.",
+        text: "Le menu « Liste forcée » (listes favorites des Réglages) impose une liste de prix prioritaire pour tout le devis ; les prix sont recalculés aussitôt, sauf ceux des lignes cochées dans « Verrouiller prix ». Pour mélanger deux listes : forcez la première, cochez « Verrouiller prix » sur les lignes à garder, puis forcez la seconde — seules les lignes non cochées prennent ses prix. Un clic sur le code d'une liste de prix ouvre le détail de ses produits.",
       },
       {
         title: "Titres, textes et sous-totaux",
@@ -54,7 +54,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Lignes en option",
-        text: "Case « Option » : la ligne n'est pas comptée dans le total HT ni dans les sous-totaux, mais dans « Total options HT », à part.",
+        text: "Case « Option » : la ligne n'est pas comptée dans le total HT ni dans les sous-totaux, mais dans « Total options HT », à part. Sur le PDF, les lignes en option sont écrites en gris clair : seules les lignes comprises dans le total restent en noir.",
       },
       {
         title: "Frais de port et de facturation",

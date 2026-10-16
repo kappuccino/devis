@@ -9,6 +9,7 @@
   - Elle est additionnée dans une ligne **« Total options »**, tout en bas du devis.
   - Usage : proposer un produit complémentaire que le client pourrait acheter en plus.
   - À prévoir aussi sur le PDF.
+  - [x] Sur le PDF, lignes en option entièrement en gris clair (les autres en noir).
 
 - [x] Listes de prix favorites et liste forcée sur un devis
   - Réglages : choisir plusieurs listes de prix (LPN) favorites, et pouvoir en retirer.
@@ -16,6 +17,9 @@
   - La liste forcée est **prioritaire** sur les autres listes du devis.
   - Les prix sont recalculés à la volée quand on choisit, change ou retire la liste forcée.
   - Le devis mémorise la liste forcée, même si elle est retirée des favoris ensuite.
+  - [x] Colonne « Verrouiller prix » (à droite du PU HT) : les lignes cochées gardent leur prix quand
+    les prix sont recalculés, pour mélanger deux listes (ex. SONEPAR puis EIFFAGE).
+  - [x] Entrée / ↑ / ↓ dans le PU HT : même colonne, ligne suivante / précédente.
 
 - [x] Contact du client sur le devis
   - Sous la raison sociale du client : champs **nom du contact**, **email** et **téléphone**.

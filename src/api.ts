@@ -225,6 +225,8 @@ export interface QuoteLine {
   discount: number;
   /** Ligne en option : hors total HT, comptée dans « Total options ». */
   is_option: boolean;
+  /** Prix verrouillé : gardé quand les prix du devis sont recalculés (changement de liste forcée…). */
+  price_locked?: boolean;
   price_source: string | null;
   public_price: number | null;
   /** Affiché dans l'appli, jamais sur le PDF. */

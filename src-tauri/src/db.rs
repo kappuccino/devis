@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS quote_lines (
     discount     REAL NOT NULL DEFAULT 0,
     -- 1 : ligne en option, comptée dans « Total options » et pas dans le total HT.
     is_option    INTEGER NOT NULL DEFAULT 0,
+    -- 1 : prix verrouillé, gardé quand les prix sont recalculés (ex. changement de liste forcée).
+    price_locked INTEGER NOT NULL DEFAULT 0,
     price_source TEXT,
     line_total   REAL NOT NULL DEFAULT 0,
     -- Copies au moment du devis (affichage seulement, le prix seuil n'est jamais imprimé).
@@ -184,6 +186,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // Lignes en option et liste de prix forcée.
     add_column(conn, "quote_lines", "is_option", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "quotes", "forced_price_list", "TEXT NOT NULL DEFAULT ''")?;
+    add_column(conn, "quote_lines", "price_locked", "INTEGER NOT NULL DEFAULT 0")?;
     // Prix remisé et prix LPN mémorisés sur les lignes.
     add_column(conn, "quote_lines", "discounted_price", "REAL")?;
     add_column(conn, "quote_lines", "lpn_price", "REAL")?;

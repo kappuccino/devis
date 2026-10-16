@@ -105,6 +105,7 @@ const blankLine = (): EditLine => ({
   unit_price: 0,
   discount: 0,
   is_option: false,
+  price_locked: false,
   enedis_code: null,
   price_source: null,
   public_price: null,
@@ -203,12 +204,12 @@ async function priceForQuantity(line: EditLine) {
     await resolve(line);
     return;
   }
-  if (!isAutoPrice(line)) return;
+  if (line.price_locked || !isAutoPrice(line)) return;
   const quantity = line.quantity;
   try {
     const p = await api.resolvePrice(pricing.value, line.product_ref, quantity);
     // Quantité retouchée entre-temps, ou prix saisi à la main pendant le calcul.
-    if (line.quantity !== quantity || !isAutoPrice(line)) return;
+    if (line.quantity !== quantity || line.price_locked || !isAutoPrice(line)) return;
     Object.assign(line, {
       unit_price: p.unit_price,
       priceText: editText(p.unit_price, 2),
@@ -392,16 +393,16 @@ const subtotalAmounts = computed(() => {
 });
 
 /**
- * Navigation entre les quantités, lignes de texte et sous-totaux sautés :
- * - Entrée / ↓ : quantité de l'article suivant ; après le dernier, Entrée revient à la saisie de réf ;
- * - ↑ : quantité de l'article précédent.
+ * Navigation dans la colonne Qté ou PU HT, lignes de texte et sous-totaux sautés :
+ * - Entrée / ↓ : même colonne de l'article suivant ; après le dernier, Entrée revient à la saisie de réf ;
+ * - ↑ : même colonne de l'article précédent.
  */
-function moveToQuantity(line: EditLine, direction: 1 | -1, e?: Event) {
+function moveInColumn(line: EditLine, column: "qty" | "price", direction: 1 | -1, e?: Event) {
   e?.preventDefault();
-  line.qtyText = editText(line.quantity, 3);
+  if (column === "qty") line.qtyText = editText(line.quantity, 3);
   const items = lines.value.filter((l) => l.kind === "item" && !isEntryLine(l));
   const target = items[items.indexOf(line) + direction];
-  let input = target ? document.getElementById(`qty-${target.key}`) : null;
+  let input = target ? document.getElementById(`${column}-${target.key}`) : null;
   if (!target && direction === 1 && e instanceof KeyboardEvent && e.key === "Enter") {
     input = document.getElementById(`ref-${lines.value[lines.value.length - 1].key}`);
   }
@@ -731,12 +732,16 @@ function selectEnedis(line: EditLine, hit: ProductHit) {
  * pour ne pas écraser les prix de liste ni les prix saisis à la main.
  */
 async function repriceLines(onlyPublic = false) {
-  const priced = filledLines.value.filter((l) => !onlyPublic || l.price_source?.startsWith("Public"));
-  if (!priced.length) return;
+  // Prix verrouillés (colonne « Verrouiller prix ») : gardés tels quels.
+  const candidates = filledLines.value.filter((l) => !onlyPublic || l.price_source?.startsWith("Public"));
+  const priced = candidates.filter((l) => !l.price_locked);
+  const locked = candidates.length - priced.length;
+  if (!priced.length && !locked) return;
   // La réf est déjà connue : on force un nouveau calcul.
   priced.forEach((l) => (l.resolvedRef = null));
   await Promise.all(priced.map((l) => resolve(l)));
-  toast.add({ severity: "info", summary: "Prix recalculés", life: 2000 });
+  const detail = locked ? `${locked} prix verrouillé${locked > 1 ? "s" : ""} gardé${locked > 1 ? "s" : ""}` : undefined;
+  toast.add({ severity: "info", summary: "Prix recalculés", detail, life: 2500 });
 }
 
 /** Ajoute un titre, une ligne de texte ou un sous-total en fin de devis ; on la déplace ensuite à la poignée. */
@@ -896,7 +901,7 @@ async function pasteLines(anchor: EditLine | null = null) {
   // Copiées depuis un devis aux conditions différentes : on applique celles de ce devis.
   if (hasClient.value && clipboard.value.pricingKey !== pricingKey.value) {
     // On passe par lines.value (objets réactifs) pour que l'écran se mette à jour.
-    const items = lines.value.filter((l) => pastedKeys.has(l.key) && l.kind === "item");
+    const items = lines.value.filter((l) => pastedKeys.has(l.key) && l.kind === "item" && !l.price_locked);
     await Promise.all(items.map((l) => resolve(l)));
     if (items.length) toast.add({ severity: "info", summary: "Prix recalculés pour ce client", life: 2500 });
   }
@@ -1051,6 +1056,7 @@ const toQuoteLine = (l: EditLine): QuoteLine => ({
   unit_price: l.unit_price,
   discount: l.discount ?? 0,
   is_option: !!l.is_option,
+  price_locked: !!l.price_locked,
   price_source: l.price_source,
   public_price: l.public_price,
   discounted_price: l.discounted_price ?? null,
@@ -1248,6 +1254,7 @@ const snapshot = () =>
       l.unit_price,
       l.discount,
       l.is_option,
+      !!l.price_locked,
       l.price_source,
     ]),
   });
@@ -1545,7 +1552,12 @@ async function applyTemplate(id: number) {
       .filter((l) => !isFee(l.kind))
       .map((l) => ({
         ...blankLine(),
-        ...withTexts({ ...l, quantity: l.kind === "item" && !l.quantity ? null : l.quantity, unit_price: 0 }),
+        ...withTexts({
+          ...l,
+          quantity: l.kind === "item" && !l.quantity ? null : l.quantity,
+          unit_price: 0,
+          price_locked: false,
+        }),
         resolvedRef: null,
       }));
     lines.value = [...lines.value.filter((l) => !isEntryLine(l)), ...added, blankLine()];
@@ -2008,6 +2020,13 @@ async function saveAsTemplate() {
               <th v-tooltip.top="'Prix public − remise CFA / CFO du devis'" style="width: 76px" class="num">Prix remisé</th>
               <th v-tooltip.top="'Prix négocié de la liste de prix'" style="width: 76px" class="num">LPN</th>
               <th style="width: 80px" class="num">PU HT</th>
+              <th
+                v-tooltip.top="'Prix gardé quand les prix sont recalculés (ex. en changeant de liste forcée)'"
+                style="width: 64px"
+                class="select-cell"
+              >
+                Verrouiller prix
+              </th>
               <th v-tooltip.top="'Remise supplémentaire sur le prix de la ligne'" style="width: 64px" class="num">
                 Remise sup. (%)
               </th>
@@ -2050,7 +2069,7 @@ async function saveAsTemplate() {
                 />
               </td>
               <template v-if="line.kind === 'text'">
-                <td :colspan="isTemplate ? 5 : 11">
+                <td :colspan="isTemplate ? 5 : 12">
                   <Textarea
                     :id="`text-${line.key}`"
                     v-model="line.designation"
@@ -2066,7 +2085,7 @@ async function saveAsTemplate() {
               </template>
               <!-- Titre : sépare le devis en paragraphes (gras, rouge ; plus grand sur le PDF). -->
               <template v-else-if="line.kind === 'title'">
-                <td :colspan="isTemplate ? 5 : 11">
+                <td :colspan="isTemplate ? 5 : 12">
                   <InputText
                     :id="`text-${line.key}`"
                     v-model="line.designation"
@@ -2079,7 +2098,7 @@ async function saveAsTemplate() {
                 <td v-if="!isTemplate"></td>
               </template>
               <template v-else>
-                <td :colspan="isTemplate ? 4 : 9">
+                <td :colspan="isTemplate ? 4 : 10">
                   <InputText v-model="line.designation" fluid size="small" class="subtotal-label" />
                 </td>
                 <td v-if="!isTemplate" class="num subtotal-amount">{{ formatEuro(subtotalAmounts.get(line.key)) }}</td>
@@ -2198,9 +2217,9 @@ async function saveAsTemplate() {
                   class="num"
                   @update:model-value="(v: string | undefined) => onQtyInput(line, v ?? '')"
                   @blur="onQtyCommit(line)"
-                  @keydown.enter="moveToQuantity(line, 1, $event)"
-                  @keydown.down="moveToQuantity(line, 1, $event)"
-                  @keydown.up="moveToQuantity(line, -1, $event)"
+                  @keydown.enter="moveInColumn(line, 'qty', 1, $event)"
+                  @keydown.down="moveInColumn(line, 'qty', 1, $event)"
+                  @keydown.up="moveInColumn(line, 'qty', -1, $event)"
                 />
               </td>
               <template v-if="!isTemplate">
@@ -2226,6 +2245,7 @@ async function saveAsTemplate() {
                 >
                   <div class="euro-input">
                     <InputText
+                      :id="`price-${line.key}`"
                       :model-value="line.priceText"
                       inputmode="decimal"
                       autocomplete="off"
@@ -2235,9 +2255,21 @@ async function saveAsTemplate() {
                       :invalid="isBelowThreshold(line)"
                       @update:model-value="(v: string | undefined) => onPriceInput(line, v ?? '')"
                       @blur="onPriceBlur(line)"
+                      @keydown.enter="moveInColumn(line, 'price', 1, $event)"
+                      @keydown.down="moveInColumn(line, 'price', 1, $event)"
+                      @keydown.up="moveInColumn(line, 'price', -1, $event)"
                     />
                     <span v-if="line.product_ref">€</span>
                   </div>
+                </td>
+                <td class="select-cell">
+                  <input
+                    v-if="line.product_ref"
+                    v-model="line.price_locked"
+                    v-tooltip.top="line.price_locked ? 'Prix verrouillé' : ''"
+                    type="checkbox"
+                    aria-label="Verrouiller le prix"
+                  />
                 </td>
                 <td>
                   <InputText
