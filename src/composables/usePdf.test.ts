@@ -93,4 +93,28 @@ describe("PDF du devis", () => {
       "TOTAL HT", formatEuro(146),
     ]);
   });
+
+  it("écrit les lignes en option en gris clair, les autres en noir", () => {
+    const item = (ref: string, is_option: boolean) => ({ kind: "item", product_ref: ref, designation: "A", quantity: 2, unit_price: 10, discount: 0, is_option });
+    const q = { ...quote, lines: [item("NOIR", false), item("GRIS", true)] } as unknown as Quote;
+    /** Cellules du tableau des lignes qui suivent la cellule de la réf. */
+    const row = (ref: string): Record<string, unknown>[] => {
+      const find = (c: unknown): Record<string, unknown>[] | null => {
+        if (Array.isArray(c)) {
+          if (c.some((x) => x && typeof x === "object" && (x as { text?: unknown }).text === ref)) return c;
+          for (const x of c) {
+            const r = find(x);
+            if (r) return r;
+          }
+          return null;
+        }
+        return c && typeof c === "object" ? find(Object.values(c)) : null;
+      };
+      return find(buildDocument(q, null, {}).content) ?? [];
+    };
+    const colors = (ref: string) => row(ref).map((c) => (typeof c === "object" ? c.color : undefined));
+    expect(colors("GRIS").length).toBeGreaterThan(4);
+    expect(new Set(colors("GRIS"))).toEqual(new Set(["#a3a8b0"]));
+    expect(colors("NOIR").every((c) => c === undefined)).toBe(true);
+  });
 });

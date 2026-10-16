@@ -30,6 +30,8 @@ export const ORDERS_EMAIL = "maec-commande@groupe-cahors.com";
 export const DEFAULT_VALIDITY = "90 jours";
 
 const MUTED = "#6b7280";
+/** Lignes en option : tout en gris clair, seules les lignes comprises dans le total restent en noir. */
+const OPTION_TEXT = "#a3a8b0";
 const TEXT = "#1f2328";
 const BORDER = "#e3e6ea";
 /** Gris clair des pastilles de sous-total et du bandeau TOTAL HT. */
@@ -370,16 +372,20 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
         ...empties(span - 1),
       ]);
     } else {
+      // Ligne en option : signalée, hors total HT (comptée dans « Total options »), et toute en
+      // gris clair pour la distinguer des lignes comprises dans le total.
+      const grey = l.is_option ? { color: OPTION_TEXT } : {};
       body.push([
-        ...(withEnedis ? [{ text: l.enedis_code ?? "", style: "mono" }] : []),
-        { text: l.product_ref, style: "mono" },
-        // Ligne en option : signalée, et hors total HT (comptée dans « Total options »).
-        l.is_option ? { text: [l.designation, { text: "  (option)", style: "optionTag" }], italics: true } : l.designation,
-        { text: formatNumber(l.quantity), alignment: "right" },
-        ...(withPublic ? [price(l.public_price, { color: MUTED })] : []),
-        price(l.unit_price, withPublic ? { bold: true } : {}),
-        { text: l.discount ? `${formatNumber(l.discount)} %` : "", alignment: "right" },
-        { text: formatEuro(lineTotal(l)), alignment: "right" },
+        ...(withEnedis ? [{ text: l.enedis_code ?? "", style: "mono", ...grey }] : []),
+        { text: l.product_ref, style: "mono", ...grey },
+        l.is_option
+          ? { text: [l.designation, { text: "  (option)", style: "optionTag" }], italics: true, ...grey }
+          : l.designation,
+        { text: formatNumber(l.quantity), alignment: "right", ...grey },
+        ...(withPublic ? [price(l.public_price, { color: MUTED, ...grey })] : []),
+        price(l.unit_price, { ...(withPublic ? { bold: true } : {}), ...grey }),
+        { text: l.discount ? `${formatNumber(l.discount)} %` : "", alignment: "right", ...grey },
+        { text: formatEuro(lineTotal(l)), alignment: "right", ...grey },
       ]);
     }
   }
