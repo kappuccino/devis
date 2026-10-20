@@ -46,7 +46,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Liste de prix forcée",
-        text: "Le menu « Liste forcée » (listes favorites des Réglages) impose une liste de prix prioritaire pour tout le devis ; les prix sont recalculés aussitôt, sauf ceux des lignes cochées dans « Verrouiller prix ». Pour mélanger deux listes : forcez la première, cochez « Verrouiller prix » sur les lignes à garder, puis forcez la seconde — seules les lignes non cochées prennent ses prix. Un clic sur le code d'une liste de prix ouvre le détail de ses produits.",
+        text: "Le menu « Liste forcée » (listes favorites des Réglages) impose une liste de prix prioritaire pour tout le devis ; les prix sont recalculés aussitôt, sauf ceux des lignes cochées dans la colonne au cadenas, à droite du PU HT (« Verrouiller prix » ; la case de l'en-tête coche ou décoche toutes les lignes d'un coup). Pour mélanger deux listes : forcez la première, cochez le cadenas des lignes à garder, puis forcez la seconde — seules les lignes non cochées prennent ses prix. Un clic sur le code d'une liste de prix ouvre le détail de ses produits.",
       },
       {
         title: "Titres, textes et sous-totaux",

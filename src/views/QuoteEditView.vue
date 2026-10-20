@@ -744,6 +744,14 @@ async function repriceLines(onlyPublic = false) {
   toast.add({ severity: "info", summary: "Prix recalculés", detail, life: 2500 });
 }
 
+/** Case d'en-tête « Verrouiller prix » : toutes les lignes (avec une réf) d'un coup. */
+const allLocked = computed(() => filledLines.value.length > 0 && filledLines.value.every((l) => l.price_locked));
+const someLocked = computed(() => filledLines.value.some((l) => l.price_locked));
+function toggleAllLocked() {
+  const lock = !allLocked.value;
+  filledLines.value.forEach((l) => (l.price_locked = lock));
+}
+
 /** Ajoute un titre, une ligne de texte ou un sous-total en fin de devis ; on la déplace ensuite à la poignée. */
 function insertSpecialLine(kind: "title" | "text" | "subtotal") {
   const added: EditLine = { ...blankLine(), kind, quantity: 0, designation: kind === "subtotal" ? "Sous-total" : "" };
@@ -2021,11 +2029,21 @@ async function saveAsTemplate() {
               <th v-tooltip.top="'Prix négocié de la liste de prix'" style="width: 76px" class="num">LPN</th>
               <th style="width: 80px" class="num">PU HT</th>
               <th
-                v-tooltip.top="'Prix gardé quand les prix sont recalculés (ex. en changeant de liste forcée)'"
-                style="width: 64px"
+                v-tooltip.top="'Verrouiller prix : gardé quand les prix sont recalculés (ex. en changeant de liste forcée). Case du haut : toutes les lignes.'"
+                style="width: 40px"
                 class="select-cell"
               >
-                Verrouiller prix
+                <label class="lock-all">
+                  <input
+                    type="checkbox"
+                    :checked="allLocked"
+                    :indeterminate="someLocked && !allLocked"
+                    :disabled="!filledLines.length"
+                    aria-label="Verrouiller le prix de toutes les lignes"
+                    @change="toggleAllLocked"
+                  />
+                  <i class="pi pi-lock" aria-hidden="true" />
+                </label>
               </th>
               <th v-tooltip.top="'Remise supplémentaire sur le prix de la ligne'" style="width: 64px" class="num">
                 Remise sup. (%)
@@ -2974,6 +2992,18 @@ tr:hover .drag-handle i {
 :global(body.dragging-lines *) {
   cursor: grabbing !important;
   user-select: none;
+}
+
+.lock-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.lock-all .pi {
+  font-size: 0.8rem;
 }
 
 /* Texte : noir, gras (taille 10–11 sur le PDF). */

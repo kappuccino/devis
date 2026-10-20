@@ -20,6 +20,7 @@
   - [x] Colonne « Verrouiller prix » (à droite du PU HT) : les lignes cochées gardent leur prix quand
     les prix sont recalculés, pour mélanger deux listes (ex. SONEPAR puis EIFFAGE).
   - [x] Entrée / ↑ / ↓ dans le PU HT : même colonne, ligne suivante / précédente.
+  - [x] Case dans l'en-tête « Verrouiller prix » : toutes les lignes d'un coup.
 
 - [x] Contact du client sur le devis
   - Sous la raison sociale du client : champs **nom du contact**, **email** et **téléphone**.
