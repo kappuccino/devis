@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, provide, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AutoComplete, { type AutoCompleteCompleteEvent } from "primevue/autocomplete";
 import InputText from "primevue/inputtext";
@@ -476,10 +476,18 @@ onMounted(() => {
 });
 onBeforeUnmount(() => tableObserver?.disconnect());
 
-// Tab descend dans la colonne, Maj+Tab remonte (tabindex recalculés à chaque rendu).
+// Tab descend dans la colonne, Maj+Tab remonte. Les tabindex sont posés juste avant que Tab ne
+// déplace le curseur (écoute en phase de capture), et non après chaque rendu : à chaque frappe,
+// cela parcourait toutes les cellules du tableau (lent sur les gros devis).
 const updateTabOrder = () => applyColumnTabOrder(linesTable.value, totalsPanel.value);
-onMounted(updateTabOrder);
-onUpdated(updateTabOrder);
+const onTabKey = (e: KeyboardEvent) => {
+  if (e.key === "Tab") updateTabOrder();
+};
+onMounted(() => {
+  updateTabOrder();
+  window.addEventListener("keydown", onTabKey, true);
+});
+onBeforeUnmount(() => window.removeEventListener("keydown", onTabKey, true));
 
 // Commercial : choisi dans la liste des Réglages ; le dernier choisi est repris sur les nouveaux devis.
 const salesReps = ref<string[]>([]);

@@ -214,6 +214,13 @@
     fichier est refusée à l'autre place.
   - A servi à restaurer les devis 26-JMOS-1754 à 1767 d'un poste, reconstruits depuis leurs PDF.
 
+- [ ] Lenteurs de saisie sur les gros devis (≈ 400 lignes, sensibles dès 200)
+  - [x] Chaque ligne du tableau dans son propre composant (`QuoteLineRow`) : une frappe ne redessine
+    que sa ligne.
+  - [x] Ordre de tabulation posé à l'appui sur Tab, et non plus après chaque rendu.
+  - [ ] À vérifier sur le poste de Julie ; si besoin : surveillance du brouillon allégée (watch profond),
+    champs de recherche montés seulement au clic, infobulles au survol.
+
 - [ ] (Idée, en attente) Import d'une étude Elium : le PDF (« Microsoft Print to PDF ») ne contient que
   des images. Pistes : vérifier d'abord si Elium exporte la liste du matériel (PDF texte, Excel) ; sinon
   LLM de vision via le service de licences (≈ 0,3 à 6 centimes par étude selon le modèle), avec
