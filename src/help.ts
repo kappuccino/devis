@@ -62,7 +62,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Sélection, copier, couper, coller, déplacer",
-        text: "Cochez des lignes (Maj+clic : toute une plage), puis copiez, coupez ou supprimez-les ; collez après la dernière ligne sélectionnée ou en fin de devis, y compris dans un autre devis. Glissez une ligne (ou la sélection) par sa poignée pour la déplacer. Échap vide la sélection.",
+        text: `Sélectionnez des lignes à la souris en cliquant sur une partie de la ligne qui n'est pas un champ (prix affichés, total, marges) : clic pour une ligne, clic glissé pour plusieurs, ${MOD}+clic pour en ajouter ou en retirer une, Maj+clic pour toute une plage. Les cases à cocher de gauche marchent aussi. Puis copiez, coupez ou supprimez-les ; collez après la dernière ligne sélectionnée ou en fin de devis, y compris dans un autre devis. Glissez une ligne (ou la sélection) par sa poignée pour la déplacer. Échap vide la sélection.`,
         keys: [`${MOD}C`, `${MOD}X`, `${MOD}V`, "Échap"],
       },
       {

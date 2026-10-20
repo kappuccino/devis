@@ -867,6 +867,76 @@ function toggleAll() {
 
 const clearSelection = () => (selectedKeys.value = new Set());
 
+// Sélection à la souris, sur une partie de ligne qui n'est pas un champ (prix affichés, total,
+// marges…) : clic → cette ligne seule, Ctrl/⌘+clic → ajoute ou retire la ligne, Maj+clic → plage
+// depuis le clic précédent, clic glissé → toutes les lignes survolées.
+const NOT_SELECTING = "input, textarea, button, select, a, .drag-handle, .p-autocomplete, .p-inputtext";
+const rangeSelect = ref<{ anchor: number; base: Set<number> } | null>(null);
+
+function onRowPointerDown(line: EditLine, e: PointerEvent) {
+  if (e.button !== 0 || isEntryLine(line)) return;
+  if ((e.target as Element | null)?.closest(NOT_SELECTING)) return;
+  e.preventDefault();
+  (document.activeElement as HTMLElement | null)?.blur?.();
+  const add = e.ctrlKey || e.metaKey;
+  if (e.shiftKey && lastClickedKey != null && selectableLines.value.some((l) => l.key === lastClickedKey)) {
+    rangeSelect.value = { anchor: lastClickedKey, base: add ? new Set(selectedKeys.value) : new Set() };
+    selectRangeTo(line.key);
+  } else if (add) {
+    const keys = new Set(selectedKeys.value);
+    if (keys.has(line.key)) keys.delete(line.key);
+    else keys.add(line.key);
+    selectedKeys.value = keys;
+    lastClickedKey = line.key;
+    rangeSelect.value = { anchor: line.key, base: new Set(keys) };
+  } else {
+    selectedKeys.value = new Set([line.key]);
+    lastClickedKey = line.key;
+    rangeSelect.value = { anchor: line.key, base: new Set() };
+  }
+  document.body.classList.add("selecting-lines");
+  window.addEventListener("pointermove", onRangeMove);
+  window.addEventListener("pointerup", stopRangeSelect);
+  window.addEventListener("pointercancel", stopRangeSelect);
+}
+
+/** Sélection de la ligne d'ancrage jusqu'à `key` (en plus des lignes déjà là au Ctrl/⌘+clic). */
+function selectRangeTo(key: number) {
+  const r = rangeSelect.value;
+  if (!r) return;
+  const all = selectableLines.value;
+  const a = all.findIndex((l) => l.key === r.anchor);
+  const b = all.findIndex((l) => l.key === key);
+  if (a < 0 || b < 0) return;
+  const keys = new Set(r.base);
+  all.slice(Math.min(a, b), Math.max(a, b) + 1).forEach((l) => keys.add(l.key));
+  selectedKeys.value = keys;
+}
+
+function onRangeMove(e: PointerEvent) {
+  if (!rangeSelect.value || !tbodyEl.value) return;
+  const rows = Array.from(tbodyEl.value.querySelectorAll<HTMLElement>("tr[data-key]"));
+  // Au-dessus de la première ligne ou sous la dernière : on s'arrête à la ligne du bord.
+  const row =
+    rows.find((r) => e.clientY < r.getBoundingClientRect().bottom) ?? rows[rows.length - 1];
+  if (row) selectRangeTo(Number(row.dataset.key));
+  const scroller = tbodyEl.value.closest(".content");
+  if (scroller) {
+    const box = scroller.getBoundingClientRect();
+    if (e.clientY < box.top + 48) scroller.scrollBy(0, -16);
+    else if (e.clientY > box.bottom - 48) scroller.scrollBy(0, 16);
+  }
+}
+
+function stopRangeSelect() {
+  rangeSelect.value = null;
+  document.body.classList.remove("selecting-lines");
+  window.removeEventListener("pointermove", onRangeMove);
+  window.removeEventListener("pointerup", stopRangeSelect);
+  window.removeEventListener("pointercancel", stopRangeSelect);
+}
+onBeforeUnmount(stopRangeSelect);
+
 /** Lignes concernées par copier / couper / supprimer / glisser (jamais la ligne de saisie vide). */
 const selectionBlock = () => selectedLines.value.filter((l) => l !== entryLine());
 
@@ -2062,6 +2132,7 @@ async function saveAsTemplate() {
             <tr
               v-if="line.kind !== 'item'"
               :data-key="line.key"
+              @pointerdown="onRowPointerDown(line, $event)"
               :class="[
                 `${line.kind}-row`,
                 {
@@ -2137,6 +2208,7 @@ async function saveAsTemplate() {
             <tr
               v-else
               :data-key="line.key"
+              @pointerdown="onRowPointerDown(line, $event)"
               :class="{
                 selected: selectedKeys.has(line.key),
                 'option-row': line.is_option,
@@ -2991,6 +3063,11 @@ tr:hover .drag-handle i {
 :global(body.dragging-lines),
 :global(body.dragging-lines *) {
   cursor: grabbing !important;
+  user-select: none;
+}
+
+:global(body.selecting-lines),
+:global(body.selecting-lines *) {
   user-select: none;
 }
 

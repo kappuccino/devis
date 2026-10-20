@@ -21,6 +21,7 @@
     les prix sont recalculés, pour mélanger deux listes (ex. SONEPAR puis EIFFAGE).
   - [x] Entrée / ↑ / ↓ dans le PU HT : même colonne, ligne suivante / précédente.
   - [x] Case dans l'en-tête « Verrouiller prix » : toutes les lignes d'un coup.
+  - [x] Sélection des lignes à la souris (clic, clic glissé, Ctrl/⌘+clic, Maj+clic) pour copier / coller.
 
 - [x] Contact du client sur le devis
   - Sous la raison sociale du client : champs **nom du contact**, **email** et **téléphone**.
