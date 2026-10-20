@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, provide, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AutoComplete, { type AutoCompleteCompleteEvent } from "primevue/autocomplete";
 import InputText from "primevue/inputtext";
@@ -16,7 +16,6 @@ import {
   api,
   type Client,
   type PriceList,
-  type PriceTier,
   type PricingContext,
   type ProductHit,
   type Quote,
@@ -25,7 +24,7 @@ import {
   type QuoteTemplate,
   type QuoteVersion,
 } from "../api";
-import { errorMessage, formatDate, formatEuro, formatNumber, formatUnitPrice, MOD, round2, todayIso } from "../format";
+import { errorMessage, formatDate, formatEuro, MOD, round2, todayIso } from "../format";
 import { exportQuotePdf } from "../composables/usePdf";
 import QuoteDocsDialog from "../components/docs/QuoteDocsDialog.vue";
 import PriceListDrawer from "../components/PriceListDrawer.vue";
@@ -37,9 +36,7 @@ import {
   FEE_KINDS,
   insertBlock,
   isFee,
-  lineTotal,
   moveBlockBefore,
-  netUnitPrice,
   quoteTotals,
   subtotals,
   type FeeKind,
@@ -47,6 +44,8 @@ import {
 import { favoriteLists } from "../favorites";
 import { lastSalesRep, rememberSalesRep, salesRepList } from "../salesReps";
 import { applyColumnTabOrder } from "../gridNav";
+import QuoteLineRow from "../components/QuoteLineRow.vue";
+import { editText, LINE_ROW_ACTIONS, type EditLine } from "../editLine";
 import {
   autoFeeChanges,
   feeRulesFrom,
@@ -69,31 +68,6 @@ const router = useRouter();
 const route = useRoute();
 const toast = useToast();
 const confirm = useConfirm();
-
-/** Ligne en cours d'édition : la ligne enregistrée + ce qui sert seulement à l'affichage. */
-interface EditLine extends QuoteLine {
-  key: number;
-  resolvedRef: string | null;
-  /** Code ENEDIS du produit trouvé (pour savoir si la colonne ENEDIS a été modifiée). */
-  resolvedEnedis?: string | null;
-  /** Réf en cours de résolution : évite un double appel (sélection + Entrée + blur). */
-  pendingRef: string | null;
-  error: string | null;
-  /**
-   * Texte des champs quantité, prix et remise, tel que tapé. `quantity` / `unit_price` / `discount`
-   * en sont déduits à chaque touche : totaux et sous-totaux suivent la frappe, sans réécrire le champ.
-   */
-  qtyText: string;
-  priceText: string;
-  discountText: string;
-  /** Frais ajouté automatiquement (conditions de vente), tant qu'on ne l'a pas modifié. */
-  auto?: boolean;
-  /** Frais de port suggérés (camion) et acceptés, tant qu'on ne les a pas modifiés. */
-  suggested?: boolean;
-  /** Prix par quantité de la liste retenue et palier appliqué (connus après un calcul de prix). */
-  lpnTiers?: PriceTier[];
-  lpnMinQty?: number | null;
-}
 
 let nextKey = 0;
 const blankLine = (): EditLine => ({
@@ -128,16 +102,6 @@ function parseNumber(text: string): number | null {
   const v = Number(t);
   return Number.isFinite(v) ? v : null;
 }
-
-/** Valeur affichée dans un champ en cours d'édition (sans séparateur de milliers). */
-const editText = (v: number | null, decimals: 2 | 3) =>
-  v == null
-    ? ""
-    : v.toLocaleString("fr-FR", {
-        useGrouping: false,
-        minimumFractionDigits: decimals === 2 ? 2 : 0,
-        maximumFractionDigits: decimals,
-      });
 
 /** Ligne chargée (devis, collage) : on prépare le texte de ses champs. */
 const withTexts = <T extends QuoteLine>(l: T) => ({
@@ -225,19 +189,6 @@ async function priceForQuantity(line: EditLine) {
   }
 }
 
-/** Infobulle du prix LPN : la liste, et ses prix par quantité s'il y en a plusieurs. */
-function lpnTooltip(l: EditLine) {
-  if (!l.lpn_list) return "Aucun prix négocié";
-  const tiers = l.lpnTiers ?? [];
-  if (tiers.length < 2) return `Liste ${l.lpn_list}`;
-  const steps = tiers.map((t) => {
-    const label = t.min_qty > 1 ? `dès ${formatNumber(t.min_qty)}` : "à l'unité";
-    const applied = t.min_qty === (l.lpnMinQty ?? 0) ? " (appliqué)" : "";
-    return `${formatUnitPrice(t.price)} ${label}${applied}`;
-  });
-  return `Liste ${l.lpn_list} · ${steps.join(" · ")}`;
-}
-
 /** Remise supplémentaire de la ligne, en % (0 à 100). */
 function onDiscountInput(line: EditLine, text: string) {
   line.discountText = text;
@@ -299,6 +250,9 @@ function onForcedListChange() {
 }
 const pricingKey = computed(() => JSON.stringify(pricing.value));
 const productSuggestions = ref<ProductHit[]>([]);
+/** Ligne à qui sont destinées les propositions (les autres reçoivent NO_HITS et ne bougent pas). */
+const productSuggestionsFor = ref<number | null>(null);
+const NO_HITS: ProductHit[] = [];
 const saving = ref(false);
 
 // Frais de port / de facturation : à part des autres lignes, toujours en bas du devis
@@ -561,6 +515,7 @@ const isStale = (line: EditLine) =>
   document.activeElement?.id !== `ref-${line.key}`;
 
 async function searchProducts(e: AutoCompleteCompleteEvent, line: EditLine) {
+  productSuggestionsFor.value = line.key;
   if (isStale(line)) {
     productSuggestions.value = [];
     return;
@@ -575,9 +530,11 @@ async function searchProducts(e: AutoCompleteCompleteEvent, line: EditLine) {
 
 /** Colonne ENEDIS : mêmes propositions que la référence, limitées aux produits qui ont un code ENEDIS. */
 const enedisSuggestions = ref<ProductHit[]>([]);
+const enedisSuggestionsFor = ref<number | null>(null);
 const isStaleEnedis = (line: EditLine) =>
   line.pendingRef != null || document.activeElement?.id !== `enedis-${line.key}`;
 async function searchEnedis(e: AutoCompleteCompleteEvent, line: EditLine) {
+  enedisSuggestionsFor.value = line.key;
   if (isStaleEnedis(line)) {
     enedisSuggestions.value = [];
     return;
@@ -1119,10 +1076,6 @@ function removeLine(line: EditLine) {
   lines.value = lines.value.filter((l) => l !== line);
   if (!lines.value.length) lines.value.push(blankLine());
 }
-
-/** Prix net de la ligne (remise supplémentaire comprise) sous le prix seuil. */
-const isBelowThreshold = (l: EditLine) =>
-  l.threshold_price != null && netUnitPrice(l.unit_price, l.discount) < l.threshold_price;
 
 /** Champs enregistrés d'une ligne (sans l'état d'édition). */
 const toQuoteLine = (l: EditLine): QuoteLine => ({
@@ -1672,6 +1625,28 @@ async function saveAsTemplate() {
     toast.add({ severity: "error", summary: "Devis type", detail: errorMessage(e) });
   }
 }
+
+// Actions appelées par les lignes du tableau (QuoteLineRow) : fournies une fois, elles ne changent
+// jamais, et une ligne n'est redessinée que si elle-même change.
+provide(LINE_ROW_ACTIONS, {
+  startDrag,
+  onRowPointerDown,
+  onSelectClick,
+  removeLine,
+  searchEnedis,
+  selectEnedis,
+  commitEnedis,
+  searchProducts,
+  commitRef,
+  onRefBlur,
+  validateAndGoToQuantity,
+  onQtyInput,
+  onQtyCommit,
+  onPriceInput,
+  onPriceBlur,
+  onDiscountInput,
+  moveInColumn,
+});
 </script>
 
 <template>
@@ -2128,278 +2103,19 @@ async function saveAsTemplate() {
           </tr>
         </thead>
         <tbody ref="tbodyEl">
-          <template v-for="line in lines" :key="line.key">
-            <tr
-              v-if="line.kind !== 'item'"
-              :data-key="line.key"
-              @pointerdown="onRowPointerDown(line, $event)"
-              :class="[
-                `${line.kind}-row`,
-                {
-                  selected: selectedKeys.has(line.key),
-                  dragging: drag?.moved && drag.keys.has(line.key),
-                  'drop-before': dropKey === line.key,
-                },
-              ]"
-            >
-              <td
-                v-tooltip.left="'Glisser pour déplacer'"
-                class="drag-cell drag-handle"
-                @pointerdown="startDrag(line, $event)"
-              >
-                <i class="pi pi-bars" />
-              </td>
-              <td class="select-cell">
-                <input
-                  type="checkbox"
-                  :checked="selectedKeys.has(line.key)"
-                  aria-label="Sélectionner la ligne"
-                  @click="onSelectClick(line, $event)"
-                />
-              </td>
-              <template v-if="line.kind === 'text'">
-                <td :colspan="isTemplate ? 5 : 12">
-                  <Textarea
-                    :id="`text-${line.key}`"
-                    v-model="line.designation"
-                    rows="1"
-                    auto-resize
-                    fluid
-                    size="small"
-                    placeholder="Texte libre…"
-                    class="text-line"
-                  />
-                </td>
-                <td v-if="!isTemplate"></td>
-              </template>
-              <!-- Titre : sépare le devis en paragraphes (gras, rouge ; plus grand sur le PDF). -->
-              <template v-else-if="line.kind === 'title'">
-                <td :colspan="isTemplate ? 5 : 12">
-                  <InputText
-                    :id="`text-${line.key}`"
-                    v-model="line.designation"
-                    fluid
-                    size="small"
-                    placeholder="Titre…"
-                    class="title-line"
-                  />
-                </td>
-                <td v-if="!isTemplate"></td>
-              </template>
-              <template v-else>
-                <td :colspan="isTemplate ? 4 : 10">
-                  <InputText v-model="line.designation" fluid size="small" class="subtotal-label" />
-                </td>
-                <td v-if="!isTemplate" class="num subtotal-amount">{{ formatEuro(subtotalAmounts.get(line.key)) }}</td>
-                <td></td>
-                <td v-if="!isTemplate"></td>
-              </template>
-              <td>
-                <Button
-                  icon="pi pi-times"
-                  text
-                  rounded
-                  size="small"
-                  severity="secondary"
-                  @click="removeLine(line)"
-                />
-              </td>
-            </tr>
-            <tr
-              v-else
-              :data-key="line.key"
-              @pointerdown="onRowPointerDown(line, $event)"
-              :class="{
-                selected: selectedKeys.has(line.key),
-                'option-row': line.is_option,
-                dragging: drag?.moved && drag.keys.has(line.key),
-                'drop-before': dropKey === line.key,
-              }"
-            >
-              <td
-                v-if="!isEntryLine(line)"
-                v-tooltip.left="'Glisser pour déplacer'"
-                class="drag-cell drag-handle"
-                @pointerdown="startDrag(line, $event)"
-              >
-                <i class="pi pi-bars" />
-              </td>
-              <td v-else class="drag-cell"></td>
-              <td class="select-cell">
-                <input
-                  v-if="!isEntryLine(line)"
-                  type="checkbox"
-                  :checked="selectedKeys.has(line.key)"
-                  aria-label="Sélectionner la ligne"
-                  @click="onSelectClick(line, $event)"
-                />
-              </td>
-              <td>
-                <AutoComplete
-                  :model-value="line.enedis_code ?? ''"
-                  :input-id="`enedis-${line.key}`"
-                  :suggestions="enedisSuggestions"
-                  option-label="enedis_code"
-                  :delay="200"
-                  :min-length="2"
-                  :show-empty-message="false"
-                  fluid
-                  size="small"
-                  placeholder="Code…"
-                  input-class="mono enedis-input"
-                  @update:model-value="(v: string | ProductHit) => (line.enedis_code = typeof v === 'string' ? v : (v.enedis_code ?? ''))"
-                  @complete="searchEnedis($event, line)"
-                  @option-select="selectEnedis(line, $event.value)"
-                  @keydown.enter="commitEnedis(line, true)"
-                  @keydown.tab="validateAndGoToQuantity(line, 'enedis', $event)"
-                  @blur="commitEnedis(line, false)"
-                >
-                  <template #option="{ option }">
-                    <div class="opt">
-                      <span class="mono">{{ option.enedis_code }}</span>
-                      <span class="mono muted">{{ option.ref }}</span>
-                      <span class="muted">{{ option.designation }}</span>
-                    </div>
-                  </template>
-                </AutoComplete>
-              </td>
-              <td>
-                <AutoComplete
-                  :model-value="line.product_ref"
-                  :input-id="`ref-${line.key}`"
-                  :suggestions="productSuggestions"
-                  option-label="ref"
-                  :delay="200"
-                  :min-length="2"
-                  :show-empty-message="false"
-                  fluid
-                  size="small"
-                  placeholder="Réf…"
-                  :invalid="!!line.error"
-                  @update:model-value="(v: string | ProductHit) => (line.product_ref = typeof v === 'string' ? v : v.ref)"
-                  @complete="searchProducts($event, line)"
-                  @option-select="commitRef(line)"
-                  @blur="onRefBlur(line)"
-                  @keydown.enter="commitRef(line)"
-                  @keydown.tab="validateAndGoToQuantity(line, 'ref', $event)"
-                >
-                  <template #option="{ option }">
-                    <div class="opt">
-                      <span class="mono">{{ option.ref }}</span>
-                      <span v-if="option.enedis_code" class="mono muted">{{ option.enedis_code }}</span>
-                      <span class="muted">{{ option.designation }}</span>
-                    </div>
-                  </template>
-                </AutoComplete>
-              </td>
-              <td>
-                <InputText v-model="line.designation" fluid size="small" />
-                <small v-if="line.error" class="warn">{{ line.error }}</small>
-              </td>
-              <td>
-                <InputText
-                  :id="`qty-${line.key}`"
-                  :model-value="line.qtyText"
-                  inputmode="decimal"
-                  autocomplete="off"
-                  fluid
-                  size="small"
-                  class="num"
-                  @update:model-value="(v: string | undefined) => onQtyInput(line, v ?? '')"
-                  @blur="onQtyCommit(line)"
-                  @keydown.enter="moveInColumn(line, 'qty', 1, $event)"
-                  @keydown.down="moveInColumn(line, 'qty', 1, $event)"
-                  @keydown.up="moveInColumn(line, 'qty', -1, $event)"
-                />
-              </td>
-              <template v-if="!isTemplate">
-                <td class="num muted">{{ formatUnitPrice(line.public_price) }}</td>
-                <!-- En gras : le prix qui a fixé le PU HT (le plus bas des deux, ou la liste forcée). -->
-                <td class="num ref-price" :class="{ used: line.price_source?.startsWith('Public') }">
-                  {{ formatUnitPrice(line.discounted_price) }}
-                </td>
-                <td
-                  v-tooltip.top="lpnTooltip(line)"
-                  class="num ref-price"
-                  :class="{ used: line.lpn_price != null && line.price_source === line.lpn_list }"
-                >
-                  {{ formatUnitPrice(line.lpn_price) }}
-                </td>
-                <!-- Source du prix en infobulle (sur une 2e ligne, elle doublait la hauteur des lignes). -->
-                <td
-                  v-tooltip.top="
-                    line.price_source
-                      ? `Prix : ${line.price_source}${isBelowThreshold(line) ? ' · sous le prix seuil' : ''}`
-                      : ''
-                  "
-                >
-                  <div class="euro-input">
-                    <InputText
-                      :id="`price-${line.key}`"
-                      :model-value="line.priceText"
-                      inputmode="decimal"
-                      autocomplete="off"
-                      fluid
-                      size="small"
-                      class="num"
-                      :invalid="isBelowThreshold(line)"
-                      @update:model-value="(v: string | undefined) => onPriceInput(line, v ?? '')"
-                      @blur="onPriceBlur(line)"
-                      @keydown.enter="moveInColumn(line, 'price', 1, $event)"
-                      @keydown.down="moveInColumn(line, 'price', 1, $event)"
-                      @keydown.up="moveInColumn(line, 'price', -1, $event)"
-                    />
-                    <span v-if="line.product_ref">€</span>
-                  </div>
-                </td>
-                <td class="select-cell">
-                  <input
-                    v-if="line.product_ref"
-                    v-model="line.price_locked"
-                    v-tooltip.top="line.price_locked ? 'Prix verrouillé' : ''"
-                    type="checkbox"
-                    aria-label="Verrouiller le prix"
-                  />
-                </td>
-                <td>
-                  <InputText
-                    :model-value="line.discountText"
-                    inputmode="decimal"
-                    autocomplete="off"
-                    placeholder="–"
-                    fluid
-                    size="small"
-                    class="num"
-                    @update:model-value="(v: string | undefined) => onDiscountInput(line, v ?? '')"
-                    @blur="line.discountText = line.discount ? editText(line.discount, 3) : ''"
-                  />
-                </td>
-                <td class="num">{{ line.product_ref && line.quantity != null ? formatEuro(lineTotal(line)) : "" }}</td>
-              </template>
-              <td class="select-cell">
-                <input
-                  v-if="!isEntryLine(line)"
-                  v-model="line.is_option"
-                  type="checkbox"
-                  aria-label="Ligne en option"
-                />
-              </td>
-              <td v-if="!isTemplate" class="num seuil" :class="{ warn: isBelowThreshold(line) }">
-                {{ formatUnitPrice(line.threshold_price) }}
-              </td>
-              <td>
-                <Button
-                  v-if="line.product_ref"
-                  icon="pi pi-times"
-                  text
-                  rounded
-                  size="small"
-                  severity="secondary"
-                  @click="removeLine(line)"
-                />
-              </td>
-            </tr>
-          </template>
+          <QuoteLineRow
+            v-for="line in lines"
+            :key="line.key"
+            :line="line"
+            :is-template="isTemplate"
+            :is-entry="isEntryLine(line)"
+            :selected="selectedKeys.has(line.key)"
+            :dragging="!!drag?.moved && drag.keys.has(line.key)"
+            :drop-before="dropKey === line.key"
+            :subtotal="line.kind === 'subtotal' ? subtotalAmounts.get(line.key) : undefined"
+            :product-suggestions="productSuggestionsFor === line.key ? productSuggestions : NO_HITS"
+            :enedis-suggestions="enedisSuggestionsFor === line.key ? enedisSuggestions : NO_HITS"
+          />
         </tbody>
       </table>
       <!-- Sous le tableau : ajout de lignes à gauche, totaux à droite. Les montants sont alignés
@@ -2896,7 +2612,7 @@ async function saveAsTemplate() {
   text-align: right;
 }
 
-.lines td {
+.lines :deep(td) {
   height: 26px;
   padding: 0 6px;
   vertical-align: middle;
@@ -2907,27 +2623,29 @@ async function saveAsTemplate() {
 }
 
 /* Cellule qui contient un champ : le champ occupe toute la cellule. */
-.lines td:has(> .p-inputtext),
-.lines td:has(> .euro-input),
-.lines td:has(> .p-textarea),
-.lines td:has(> .p-autocomplete) {
+.lines :deep(td:has(> .p-inputtext)),
+.lines :deep(td:has(> .euro-input)),
+.lines :deep(td:has(> .p-textarea)),
+.lines :deep(td:has(> .p-autocomplete)) {
   padding: 0;
 }
 
 /* Montant saisi : le symbole € suit le champ, comme dans les autres colonnes de prix. */
-.euro-input {
+.euro-input,
+.lines :deep(.euro-input) {
   display: flex;
   align-items: center;
   gap: 0.25rem;
   padding-right: 6px;
 }
 
-.euro-input :deep(.p-inputtext) {
+.euro-input :deep(.p-inputtext),
+.lines :deep(.euro-input .p-inputtext) {
   flex: 1;
   min-width: 0;
 }
 
-.lines .euro-input :deep(.p-inputtext) {
+.lines :deep(.euro-input .p-inputtext) {
   padding-right: 0;
 }
 
@@ -2948,8 +2666,8 @@ async function saveAsTemplate() {
 }
 
 /* Poignée et cases à cocher : centrées, sans « … » de débordement. */
-.lines td.drag-cell,
-.lines td.select-cell {
+.lines :deep(td.drag-cell),
+.lines :deep(td.select-cell) {
   padding: 0;
   text-overflow: clip;
 }
@@ -3004,26 +2722,26 @@ async function saveAsTemplate() {
   height: 22px;
 }
 
-.drag-cell {
+.lines :deep(.drag-cell) {
   text-align: center;
 }
 
 /* Toute la cellule sert de poignée (l'icône seule était trop petite à attraper). */
-.drag-handle {
+.lines :deep(.drag-handle) {
   cursor: grab;
   user-select: none;
 }
 
-.drag-handle i {
+.lines :deep(.drag-handle i) {
   color: var(--app-muted);
   opacity: 0.5;
 }
 
-.drag-handle:hover {
+.lines :deep(.drag-handle:hover) {
   background: color-mix(in srgb, var(--app-accent) 10%, transparent);
 }
 
-tr:hover .drag-handle i {
+.lines :deep(tr:hover .drag-handle i) {
   opacity: 1;
 }
 
@@ -3034,29 +2752,29 @@ tr:hover .drag-handle i {
 }
 
 /* Prix remisé / LPN : en gris, sauf celui qui a fixé le PU HT. */
-.lines td.ref-price {
+.lines :deep(td.ref-price) {
   color: var(--app-muted);
 }
 
-.lines td.ref-price.used {
+.lines :deep(td.ref-price.used) {
   color: var(--app-text);
   font-weight: 600;
 }
 
-.lines tr.option-row td {
+.lines :deep(tr.option-row td) {
   font-style: italic;
   background: color-mix(in srgb, var(--app-muted) 7%, transparent);
 }
 
-.lines tr.option-row td:first-child {
+.lines :deep(tr.option-row td:first-child) {
   box-shadow: inset 3px 0 0 var(--app-muted);
 }
 
-.lines tr.dragging td {
+.lines :deep(tr.dragging td) {
   opacity: 0.35;
 }
 
-.lines tr.drop-before td {
+.lines :deep(tr.drop-before td) {
   box-shadow: inset 0 3px 0 var(--app-accent);
 }
 
@@ -3084,7 +2802,7 @@ tr:hover .drag-handle i {
 }
 
 /* Texte : noir, gras (taille 10–11 sur le PDF). */
-.text-row :deep(.text-line) {
+.lines :deep(.text-row .text-line) {
   font-weight: 600;
   color: var(--app-text);
   border-color: transparent;
@@ -3092,13 +2810,13 @@ tr:hover .drag-handle i {
   box-shadow: none;
 }
 
-.text-row :deep(.text-line:hover),
-.text-row :deep(.text-line:focus) {
+.lines :deep(.text-row .text-line:hover),
+.lines :deep(.text-row .text-line:focus) {
   border-color: var(--app-border);
 }
 
 /* Titre : gras, rouge, taille courante (taille 12 sur le PDF). */
-.lines .title-row :deep(.title-line) {
+.lines :deep(.title-row .title-line) {
   font-weight: 700;
   /* Noir comme sur le PDF. */
   color: var(--app-text);
@@ -3107,25 +2825,25 @@ tr:hover .drag-handle i {
   box-shadow: none;
 }
 
-.title-row :deep(.title-line:hover),
-.title-row :deep(.title-line:focus) {
+.lines :deep(.title-row .title-line:hover),
+.lines :deep(.title-row .title-line:focus) {
   border-color: var(--app-border);
 }
 
 
 
-.subtotal-row td {
+.lines :deep(.subtotal-row td) {
   background: color-mix(in srgb, var(--app-accent) 9%, transparent);
   border-bottom: 2px solid color-mix(in srgb, var(--app-accent) 40%, transparent);
 }
 
-.subtotal-row :deep(.subtotal-label) {
+.lines :deep(.subtotal-row .subtotal-label) {
   font-weight: 600;
   text-align: right;
   background: transparent;
 }
 
-.lines td.subtotal-amount {
+.lines :deep(td.subtotal-amount) {
   font-weight: 700;
   overflow: visible;
 }
@@ -3184,13 +2902,14 @@ tr:hover .drag-handle i {
   white-space: nowrap;
 }
 
-.seuil {
+.seuil,
+.lines :deep(.seuil) {
   color: var(--app-muted);
   font-size: 0.92em;
 }
 
 /* Jamais en italique, même sur une ligne en option. */
-.lines tr.option-row td.seuil {
+.lines :deep(tr.option-row td.seuil) {
   font-style: normal;
 }
 
@@ -3212,24 +2931,27 @@ tr:hover .drag-handle i {
   flex: 1;
 }
 
-.select-cell {
+.select-cell,
+.lines :deep(.select-cell) {
   text-align: center;
 }
 
-.select-cell input {
+.select-cell input,
+.lines :deep(.select-cell input) {
   margin: 0;
 }
 
-.select-cell input {
+.select-cell input,
+.lines :deep(.select-cell input) {
   accent-color: var(--app-accent);
   cursor: pointer;
 }
 
-.lines tr.selected td {
+.lines :deep(tr.selected td) {
   background: color-mix(in srgb, var(--app-accent) 10%, transparent);
 }
 
-.lines small {
+.lines :deep(small) {
   display: block;
   margin-top: 3px;
 }
