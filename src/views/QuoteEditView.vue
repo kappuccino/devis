@@ -2473,12 +2473,13 @@ provide(LINE_ROW_ACTIONS, {
 /* Pleine largeur sous la recherche du client et la date (filet de séparation compris). */
 .client-details {
   flex-basis: 100%;
+  /* Plus proche du sélecteur de client que l'écart normal entre les blocs (1,5 rem). */
+  margin-top: -0.75rem;
   display: grid;
   grid-template-columns: 90px 1fr;
   column-gap: 1rem;
   row-gap: 0.4rem;
   align-items: start;
-  padding-top: 1rem;
 }
 
 .cd-caption {
@@ -2534,7 +2535,7 @@ provide(LINE_ROW_ACTIONS, {
 }
 
 .cd-fields :deep(input.pct) {
-  width: 90px;
+  width: 60px;
   text-align: right;
 }
 
@@ -2971,12 +2972,15 @@ provide(LINE_ROW_ACTIONS, {
   font-size: 0.85em;
 }
 
+/* Boutons d'ajout : à partir de la 3e colonne (ENEDIS), après la poignée et la case de sélection
+   (2 × 26 px). */
 .add-lines {
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
   white-space: nowrap;
   margin-top: 0.4rem;
+  padding-left: 52px;
 }
 
 .seuil,
