@@ -4,7 +4,7 @@ import type { Content, TableCell, TDocumentDefinitions } from "pdfmake/interface
 import { openFile, pickSavePath } from "../dialogs";
 import { api, type Client, type Quote, type Settings } from "../api";
 import { formatDate, formatEuro, formatNumber, formatUnitPrice, round2 } from "../format";
-import { isFee, lineTotal, quoteTotals, subtotals } from "../quoteLines";
+import { isFee, lineTotal, netUnitPrice, quoteTotals, subtotals } from "../quoteLines";
 import { CONDITIONS, parseConditions } from "../conditions";
 import { PDFDocument } from "pdf-lib";
 import { readFile } from "../docs/files";
@@ -375,6 +375,9 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
       // Ligne en option : signalée, hors total HT (comptée dans « Total options »), et toute en
       // gris clair pour la distinguer des lignes comprises dans le total.
       const grey = l.is_option ? { color: OPTION_TEXT } : {};
+      // Remise négative (augmentation) : jamais imprimée, le PU HT l'inclut déjà.
+      const raise = (l.discount ?? 0) < 0;
+      const unitPrice = raise ? netUnitPrice(l.unit_price, l.discount) : l.unit_price;
       body.push([
         ...(withEnedis ? [{ text: l.enedis_code ?? "", style: "mono", ...grey }] : []),
         { text: l.product_ref, style: "mono", ...grey },
@@ -383,8 +386,8 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
           : l.designation,
         { text: formatNumber(l.quantity), alignment: "right", ...grey },
         ...(withPublic ? [price(l.public_price, { color: MUTED, ...grey })] : []),
-        price(l.unit_price, { ...(withPublic ? { bold: true } : {}), ...grey }),
-        { text: l.discount ? `${formatNumber(l.discount)} %` : "", alignment: "right", ...grey },
+        price(unitPrice, { ...(withPublic ? { bold: true } : {}), ...grey }),
+        { text: l.discount > 0 ? `${formatNumber(l.discount)} %` : "", alignment: "right", ...grey },
         { text: formatEuro(lineTotal(l)), alignment: "right", ...grey },
       ]);
     }

@@ -11,6 +11,8 @@
   - À prévoir aussi sur le PDF.
   - [x] Sur le PDF, lignes en option entièrement en gris clair (les autres en noir).
 
+- [x] Remise supplémentaire négative (augmentation) : sur le PDF, incluse dans le PU HT, sans remise affichée.
+
 - [x] Listes de prix favorites et liste forcée sur un devis
   - Réglages : choisir plusieurs listes de prix (LPN) favorites, et pouvoir en retirer.
   - Devis : menu déroulant des listes favorites pour **forcer** une liste de prix.

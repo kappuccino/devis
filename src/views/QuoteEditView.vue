@@ -189,10 +189,11 @@ async function priceForQuantity(line: EditLine) {
   }
 }
 
-/** Remise supplémentaire de la ligne, en % (0 à 100). */
+/** Remise supplémentaire de la ligne, en % (jusqu'à 100 ; négative pour une augmentation). */
 function onDiscountInput(line: EditLine, text: string) {
   line.discountText = text;
-  line.discount = Math.min(100, Math.max(0, parseNumber(text) ?? 0));
+  // Négative : augmentation du prix (ex. −5 → +5 %).
+  line.discount = Math.min(100, parseNumber(text) ?? 0);
 }
 
 function onPriceBlur(line: EditLine) {
@@ -2098,7 +2099,7 @@ provide(LINE_ROW_ACTIONS, {
                   <i class="pi pi-lock" aria-hidden="true" />
                 </label>
               </th>
-              <th v-tooltip.top="'Remise supplémentaire sur le prix de la ligne'" style="width: 64px" class="num">
+              <th v-tooltip.top="'Remise supplémentaire sur le prix de la ligne ; négative pour une augmentation (ex. −5 = +5 %)'" style="width: 64px" class="num">
                 Remise sup. (%)
               </th>
               <th ref="totalHeader" style="width: 100px" class="num">Total HT</th>
