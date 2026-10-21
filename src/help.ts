@@ -46,7 +46,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Liste de prix forcée",
-        text: "Le menu « Liste forcée » (listes favorites des Réglages) impose une liste de prix prioritaire pour tout le devis ; les prix sont recalculés aussitôt, sauf ceux des lignes cochées dans la colonne au cadenas, à droite du PU HT (« Verrouiller prix » ; la case de l'en-tête coche ou décoche toutes les lignes d'un coup). Pour mélanger deux listes : forcez la première, cochez le cadenas des lignes à garder, puis forcez la seconde — seules les lignes non cochées prennent ses prix. Un clic sur le code d'une liste de prix ouvre le détail de ses produits.",
+        text: "Le menu « Liste forcée » (listes favorites des Réglages) impose une liste de prix prioritaire pour tout le devis ; les prix sont recalculés aussitôt, sauf ceux des lignes cochées dans la colonne au cadenas, à droite du PU HT (« Verrouiller prix » ; un clic sur le cadenas de l'en-tête verrouille ou déverrouille toutes les lignes d'un coup). Pour mélanger deux listes : forcez la première, cochez le cadenas des lignes à garder, puis forcez la seconde — seules les lignes non cochées prennent ses prix. Un clic sur le code d'une liste de prix ouvre le détail de ses produits.",
       },
       {
         title: "Titres, textes et sous-totaux",
@@ -54,7 +54,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Lignes en option",
-        text: "Case « Option » : la ligne n'est pas comptée dans le total HT ni dans les sous-totaux, mais dans « Total options HT », à part. Sur le PDF, les lignes en option sont écrites en gris clair : seules les lignes comprises dans le total restent en noir.",
+        text: "Case « Option » : la ligne n'est pas comptée dans le total HT ni dans les sous-totaux, mais dans « Total options HT », à part. Sur le PDF, les lignes en option sont écrites en gris clair : seules les lignes comprises dans le total restent en noir. Colonne à l'œil (à droite de « Option »), case cochée : le prix de la ligne est masqué sur le PDF (ni prix, ni remise, ni total), mais reste affiché dans l'appli et compté dans les totaux. Un clic sur l'œil de l'en-tête masque ou réaffiche le prix de toutes les lignes.",
       },
       {
         title: "Frais de port et de facturation",

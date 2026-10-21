@@ -11,6 +11,8 @@
   - À prévoir aussi sur le PDF.
   - [x] Sur le PDF, lignes en option entièrement en gris clair (les autres en noir).
 
+- [x] Masquer le prix d'une ligne sur le PDF (colonne à l'œil) ; la ligne reste comptée dans les totaux.
+  En-têtes cadenas et œil : l'icône seule, qui coche ou décoche toute la colonne.
 - [x] Remise supplémentaire négative (augmentation) : sur le PDF, incluse dans le PU HT, sans remise affichée.
 
 - [x] Listes de prix favorites et liste forcée sur un devis

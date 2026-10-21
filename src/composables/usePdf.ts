@@ -378,6 +378,9 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
       // Remise négative (augmentation) : jamais imprimée, le PU HT l'inclut déjà.
       const raise = (l.discount ?? 0) < 0;
       const unitPrice = raise ? netUnitPrice(l.unit_price, l.discount) : l.unit_price;
+      // Prix masqué (case de l'appli) : ni prix ni remise ni total sur la ligne ; elle reste comptée
+      // dans les totaux.
+      const hide = !!l.hide_price;
       body.push([
         ...(withEnedis ? [{ text: l.enedis_code ?? "", style: "mono", ...grey }] : []),
         { text: l.product_ref, style: "mono", ...grey },
@@ -385,10 +388,10 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
           ? { text: [l.designation, { text: "  (option)", style: "optionTag" }], italics: true, ...grey }
           : l.designation,
         { text: formatNumber(l.quantity), alignment: "right", ...grey },
-        ...(withPublic ? [price(l.public_price, { color: MUTED, ...grey })] : []),
-        price(unitPrice, { ...(withPublic ? { bold: true } : {}), ...grey }),
-        { text: l.discount > 0 ? `${formatNumber(l.discount)} %` : "", alignment: "right", ...grey },
-        { text: formatEuro(lineTotal(l)), alignment: "right", ...grey },
+        ...(withPublic ? [price(hide ? null : l.public_price, { color: MUTED, ...grey })] : []),
+        price(hide ? null : unitPrice, { ...(withPublic ? { bold: true } : {}), ...grey }),
+        { text: !hide && l.discount > 0 ? `${formatNumber(l.discount)} %` : "", alignment: "right", ...grey },
+        { text: hide ? "" : formatEuro(lineTotal(l)), alignment: "right", ...grey },
       ]);
     }
   }

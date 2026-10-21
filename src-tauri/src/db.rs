@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS quote_lines (
     is_option    INTEGER NOT NULL DEFAULT 0,
     -- 1 : prix verrouillé, gardé quand les prix sont recalculés (ex. changement de liste forcée).
     price_locked INTEGER NOT NULL DEFAULT 0,
+    -- 1 : prix masqué sur le PDF (la ligne reste comptée dans les totaux).
+    hide_price   INTEGER NOT NULL DEFAULT 0,
     price_source TEXT,
     line_total   REAL NOT NULL DEFAULT 0,
     -- Copies au moment du devis (affichage seulement, le prix seuil n'est jamais imprimé).
@@ -187,6 +189,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     add_column(conn, "quote_lines", "is_option", "INTEGER NOT NULL DEFAULT 0")?;
     add_column(conn, "quotes", "forced_price_list", "TEXT NOT NULL DEFAULT ''")?;
     add_column(conn, "quote_lines", "price_locked", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column(conn, "quote_lines", "hide_price", "INTEGER NOT NULL DEFAULT 0")?;
     // Prix remisé et prix LPN mémorisés sur les lignes.
     add_column(conn, "quote_lines", "discounted_price", "REAL")?;
     add_column(conn, "quote_lines", "lpn_price", "REAL")?;

@@ -117,4 +117,22 @@ describe("PDF du devis", () => {
     expect(new Set(colors("GRIS"))).toEqual(new Set(["#a3a8b0"]));
     expect(colors("NOIR").every((c) => c === undefined)).toBe(true);
   });
+
+  it("masque le prix d'une ligne cochée, et imprime une augmentation dans le PU HT", () => {
+    const item = (ref: string, extra: object) => ({ kind: "item", product_ref: ref, designation: ref, quantity: 2, unit_price: 100, discount: 0, public_price: 150, is_option: false, ...extra });
+    const q = {
+      ...quote,
+      lines: [item("CACHE", { hide_price: true, discount: 10 }), item("HAUSSE", { discount: -5 })],
+    } as unknown as Quote;
+    const all = texts(buildDocument(q, null, {}).content);
+    const after = (ref: string) => all.slice(all.indexOf(ref) + 1, all.indexOf(ref) + 6);
+    // Après la réf : quantité, prix public, PU HT, remise, total (la désignation, texte brut, n'est pas relevée).
+    expect(after("CACHE")).toEqual(["2", "", "", "", ""]);
+    const raised = after("HAUSSE");
+    expect(raised[2]).toContain("105,00");
+    expect(raised[3]).toBe("");
+    expect(raised[4]).toBe(formatEuro(210));
+    // La ligne masquée reste comptée : 180 + 210.
+    expect(all).toContain(formatEuro(390));
+  });
 });

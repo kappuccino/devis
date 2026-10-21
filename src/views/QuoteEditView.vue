@@ -80,6 +80,7 @@ const blankLine = (): EditLine => ({
   discount: 0,
   is_option: false,
   price_locked: false,
+  hide_price: false,
   enedis_code: null,
   price_source: null,
   public_price: null,
@@ -710,12 +711,20 @@ async function repriceLines(onlyPublic = false) {
   toast.add({ severity: "info", summary: "Prix recalculés", detail, life: 2500 });
 }
 
-/** Case d'en-tête « Verrouiller prix » : toutes les lignes (avec une réf) d'un coup. */
+/** En-tête de la colonne au cadenas : verrouiller (ou déverrouiller) toutes les lignes avec une réf. */
 const allLocked = computed(() => filledLines.value.length > 0 && filledLines.value.every((l) => l.price_locked));
 const someLocked = computed(() => filledLines.value.some((l) => l.price_locked));
 function toggleAllLocked() {
   const lock = !allLocked.value;
   filledLines.value.forEach((l) => (l.price_locked = lock));
+}
+
+/** En-tête de la colonne à l'œil : masquer (ou afficher) le prix de toutes les lignes sur le PDF. */
+const allHidden = computed(() => filledLines.value.length > 0 && filledLines.value.every((l) => l.hide_price));
+const someHidden = computed(() => filledLines.value.some((l) => l.hide_price));
+function toggleAllHidden() {
+  const hide = !allHidden.value;
+  filledLines.value.forEach((l) => (l.hide_price = hide));
 }
 
 /** Ajoute un titre, une ligne de texte ou un sous-total en fin de devis ; on la déplace ensuite à la poignée. */
@@ -1097,6 +1106,7 @@ const toQuoteLine = (l: EditLine): QuoteLine => ({
   discount: l.discount ?? 0,
   is_option: !!l.is_option,
   price_locked: !!l.price_locked,
+  hide_price: !!l.hide_price,
   price_source: l.price_source,
   public_price: l.public_price,
   discounted_price: l.discounted_price ?? null,
@@ -1295,6 +1305,7 @@ const snapshot = () =>
       l.discount,
       l.is_option,
       !!l.price_locked,
+      !!l.hide_price,
       l.price_source,
     ]),
   });
@@ -2082,22 +2093,23 @@ provide(LINE_ROW_ACTIONS, {
               <th v-tooltip.top="'Prix public − remise CFA / CFO du devis'" style="width: 76px" class="num">Prix remisé</th>
               <th v-tooltip.top="'Prix négocié de la liste de prix'" style="width: 76px" class="num">LPN</th>
               <th style="width: 80px" class="num">PU HT</th>
-              <th
-                v-tooltip.top="'Verrouiller prix : gardé quand les prix sont recalculés (ex. en changeant de liste forcée). Case du haut : toutes les lignes.'"
-                style="width: 40px"
-                class="select-cell"
-              >
-                <label class="lock-all">
-                  <input
-                    type="checkbox"
-                    :checked="allLocked"
-                    :indeterminate="someLocked && !allLocked"
-                    :disabled="!filledLines.length"
-                    aria-label="Verrouiller le prix de toutes les lignes"
-                    @change="toggleAllLocked"
-                  />
-                  <i class="pi pi-lock" aria-hidden="true" />
-                </label>
+              <th style="width: 34px" class="select-cell">
+                <button
+                  v-tooltip.top="
+                    allLocked
+                      ? 'Prix verrouillés (gardés quand les prix sont recalculés). Clic : tout déverrouiller'
+                      : 'Verrouiller le prix de toutes les lignes (gardé quand les prix sont recalculés, ex. en changeant de liste forcée)'
+                  "
+                  type="button"
+                  class="col-toggle"
+                  :class="{ on: allLocked, partial: someLocked && !allLocked }"
+                  :aria-pressed="allLocked"
+                  :disabled="!filledLines.length"
+                  aria-label="Verrouiller le prix de toutes les lignes"
+                  @click="toggleAllLocked"
+                >
+                  <i :class="someLocked ? 'pi pi-lock' : 'pi pi-lock-open'" />
+                </button>
               </th>
               <th v-tooltip.top="'Remise supplémentaire sur le prix de la ligne ; négative pour une augmentation (ex. −5 = +5 %)'" style="width: 64px" class="num">
                 Remise sup. (%)
@@ -2106,6 +2118,24 @@ provide(LINE_ROW_ACTIONS, {
             </template>
             <th v-tooltip.top="'Ligne en option : hors total HT, comptée dans « Total options »'" style="width: 48px" class="select-cell">
               Option
+            </th>
+            <th v-if="!isTemplate" style="width: 34px" class="select-cell">
+              <button
+                v-tooltip.top="
+                  allHidden
+                    ? 'Prix masqués sur le PDF (lignes comptées dans les totaux). Clic : tout afficher'
+                    : 'Masquer le prix de toutes les lignes sur le PDF (elles restent comptées dans les totaux)'
+                "
+                type="button"
+                class="col-toggle"
+                :class="{ on: allHidden, partial: someHidden && !allHidden }"
+                :aria-pressed="allHidden"
+                :disabled="!filledLines.length"
+                aria-label="Masquer le prix de toutes les lignes sur le PDF"
+                @click="toggleAllHidden"
+              >
+                <i :class="someHidden ? 'pi pi-eye-slash' : 'pi pi-eye'" />
+              </button>
             </th>
             <th v-if="!isTemplate" v-tooltip.top="'Non imprimé sur le devis'" style="width: 70px" class="num seuil">Prix seuil</th>
             <th style="width: 30px"></th>
@@ -2798,16 +2828,41 @@ provide(LINE_ROW_ACTIONS, {
   user-select: none;
 }
 
-.lock-all {
+/* En-têtes cadenas / œil : l'icône seule, qui coche ou décoche toute la colonne. Ouvert (gris) :
+   aucune ligne ; fermé estompé : une partie ; fermé en couleur : toutes. */
+.col-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  white-space: nowrap;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-muted);
   cursor: pointer;
 }
 
-.lock-all .pi {
-  font-size: 0.8rem;
+.col-toggle:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--app-accent) 10%, transparent);
+}
+
+.col-toggle:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.col-toggle.partial {
+  color: color-mix(in srgb, var(--app-accent) 55%, var(--app-muted));
+}
+
+.col-toggle.on {
+  color: var(--app-accent);
+}
+
+.col-toggle .pi {
+  font-size: 0.85rem;
 }
 
 /* Texte : noir, gras (taille 10–11 sur le PDF). */

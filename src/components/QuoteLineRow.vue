@@ -56,7 +56,7 @@ function setRef(v: string | ProductHit) {
       <input type="checkbox" :checked="selected" aria-label="Sélectionner la ligne" @click="a.onSelectClick(line, $event)" />
     </td>
     <template v-if="line.kind === 'text'">
-      <td :colspan="isTemplate ? 5 : 12">
+      <td :colspan="isTemplate ? 5 : 13">
         <Textarea
           :id="`text-${line.key}`"
           v-model="line.designation"
@@ -72,7 +72,7 @@ function setRef(v: string | ProductHit) {
     </template>
     <!-- Titre : sépare le devis en paragraphes (gras, rouge ; plus grand sur le PDF). -->
     <template v-else-if="line.kind === 'title'">
-      <td :colspan="isTemplate ? 5 : 12">
+      <td :colspan="isTemplate ? 5 : 13">
         <InputText
           :id="`text-${line.key}`"
           v-model="line.designation"
@@ -90,6 +90,7 @@ function setRef(v: string | ProductHit) {
       </td>
       <td v-if="!isTemplate" class="num subtotal-amount">{{ formatEuro(subtotal) }}</td>
       <td></td>
+      <td v-if="!isTemplate"></td>
       <td v-if="!isTemplate"></td>
     </template>
     <td>
@@ -262,6 +263,15 @@ function setRef(v: string | ProductHit) {
     </template>
     <td class="select-cell">
       <input v-if="!isEntry" v-model="line.is_option" type="checkbox" aria-label="Ligne en option" />
+    </td>
+    <td v-if="!isTemplate" class="select-cell">
+      <input
+        v-if="line.product_ref"
+        v-model="line.hide_price"
+        v-tooltip.top="line.hide_price ? 'Prix masqué sur le PDF' : ''"
+        type="checkbox"
+        aria-label="Masquer le prix sur le PDF"
+      />
     </td>
     <td v-if="!isTemplate" class="num seuil" :class="{ warn: isBelowThreshold(line) }">
       {{ formatUnitPrice(line.threshold_price) }}

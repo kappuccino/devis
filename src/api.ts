@@ -227,6 +227,8 @@ export interface QuoteLine {
   is_option: boolean;
   /** Prix verrouillé : gardé quand les prix du devis sont recalculés (changement de liste forcée…). */
   price_locked?: boolean;
+  /** Prix masqué sur le PDF (affiché dans l'appli, compté dans les totaux). */
+  hide_price?: boolean;
   price_source: string | null;
   public_price: number | null;
   /** Affiché dans l'appli, jamais sur le PDF. */

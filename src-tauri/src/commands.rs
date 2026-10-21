@@ -605,6 +605,9 @@ pub struct QuoteLine {
     /// Prix verrouillé : gardé quand les prix du devis sont recalculés (changement de liste forcée…).
     #[serde(default)]
     pub price_locked: bool,
+    /// Prix masqué sur le PDF (affiché dans l'appli, compté dans les totaux).
+    #[serde(default)]
+    pub hide_price: bool,
     /// Affichage seulement (jamais sur le PDF) : prix public remisé et prix LPN au moment du devis.
     #[serde(default)]
     pub discounted_price: Option<f64>,
@@ -758,7 +761,7 @@ pub fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
     quote.lines = query_all(
         conn,
         "SELECT kind, product_ref, designation, quantity, unit_price, price_source, public_price, threshold_price,
-                discount, is_option, enedis_code, discounted_price, lpn_price, lpn_list, price_locked
+                discount, is_option, enedis_code, discounted_price, lpn_price, lpn_list, price_locked, hide_price
          FROM quote_lines WHERE quote_id = ?1 ORDER BY position",
         [id],
         |r| {
@@ -778,6 +781,7 @@ pub fn load_quote(conn: &Connection, id: i64) -> CmdResult<Quote> {
                 lpn_price: r.get(12)?,
                 lpn_list: r.get(13)?,
                 price_locked: r.get(14)?,
+                hide_price: r.get(15)?,
             })
         },
     )?;
@@ -946,8 +950,8 @@ pub fn store_quote_numbered(conn: &mut Connection, mut quote: Quote, number: Opt
             "INSERT INTO quote_lines
              (quote_id, position, kind, product_ref, designation, quantity, unit_price, price_source, line_total,
               public_price, threshold_price, discount, is_option, enedis_code, discounted_price, lpn_price, lpn_list,
-              price_locked)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+              price_locked, hide_price)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
             params![
                 id,
                 i as i64,
@@ -966,7 +970,8 @@ pub fn store_quote_numbered(conn: &mut Connection, mut quote: Quote, number: Opt
                 l.discounted_price.map(round2),
                 l.lpn_price.map(round2),
                 l.lpn_list,
-                l.price_locked
+                l.price_locked,
+                l.hide_price
             ],
         )
         .map_err(err)?;
@@ -1308,6 +1313,7 @@ mod tests {
             discount: 0.0,
             is_option,
             price_locked: false,
+            hide_price: false,
             price_source: None,
             public_price: None,
             threshold_price: None,
