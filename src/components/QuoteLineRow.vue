@@ -93,7 +93,7 @@ function setRef(v: string | ProductHit) {
       <td v-if="!isTemplate"></td>
       <td v-if="!isTemplate"></td>
     </template>
-    <td>
+    <td class="remove-cell">
       <Button icon="pi pi-times" text rounded size="small" severity="secondary" @click="a.removeLine(line)" />
     </td>
   </tr>
@@ -246,18 +246,22 @@ function setRef(v: string | ProductHit) {
           aria-label="Verrouiller le prix"
         />
       </td>
+      <!-- Remise en % : le symbole suit la valeur, comme le € du PU HT. -->
       <td>
-        <InputText
-          :model-value="line.discountText"
-          inputmode="decimal"
-          autocomplete="off"
-          placeholder="–"
-          fluid
-          size="small"
-          class="num"
-          @update:model-value="(v: string | undefined) => a.onDiscountInput(line, v ?? '')"
-          @blur="onDiscountBlur"
-        />
+        <div class="euro-input">
+          <InputText
+            :model-value="line.discountText"
+            inputmode="decimal"
+            autocomplete="off"
+            placeholder="–"
+            fluid
+            size="small"
+            class="num"
+            @update:model-value="(v: string | undefined) => a.onDiscountInput(line, v ?? '')"
+            @blur="onDiscountBlur"
+          />
+          <span v-if="line.discountText.trim()">%</span>
+        </div>
       </td>
       <td class="num">{{ line.product_ref && line.quantity != null ? formatEuro(lineTotal(line)) : "" }}</td>
     </template>
@@ -276,7 +280,7 @@ function setRef(v: string | ProductHit) {
     <td v-if="!isTemplate" class="num seuil" :class="{ warn: isBelowThreshold(line) }">
       {{ formatUnitPrice(line.threshold_price) }}
     </td>
-    <td>
+    <td class="remove-cell">
       <Button
         v-if="line.product_ref"
         icon="pi pi-times"

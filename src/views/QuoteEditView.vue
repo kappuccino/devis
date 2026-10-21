@@ -455,10 +455,13 @@ const totalsPanel = ref<HTMLElement | null>(null);
 const totalHeader = ref<HTMLTableCellElement | null>(null);
 const totalColumn = ref({ width: 100, tail: 150 });
 function measureTotalColumn() {
-  const table = linesTable.value?.getBoundingClientRect();
   const th = totalHeader.value?.getBoundingClientRect();
-  if (!table || !th || !th.width) return;
-  totalColumn.value = { width: th.width, tail: table.right - th.right };
+  // Bord droit du contenu du pied (cadre des totaux), qui peut ne pas tomber sur celui du tableau.
+  const footer = totalsPanel.value?.parentElement;
+  if (!th || !th.width || !footer) return;
+  const style = getComputedStyle(footer);
+  const right = footer.getBoundingClientRect().right - parseFloat(style.paddingRight) - parseFloat(style.borderRightWidth);
+  totalColumn.value = { width: th.width, tail: right - th.right };
 }
 // Colonnes du panneau : libellé | saisie | montant | croix des frais. Le panneau s'arrête après la
 // croix ; une marge à droite le cale pour que le bord droit des montants tombe sous « Total HT ».
@@ -474,6 +477,7 @@ let tableObserver: ResizeObserver | null = null;
 onMounted(() => {
   tableObserver = new ResizeObserver(measureTotalColumn);
   if (linesTable.value) tableObserver.observe(linesTable.value);
+  if (totalsPanel.value?.parentElement) tableObserver.observe(totalsPanel.value.parentElement);
   measureTotalColumn();
 });
 onBeforeUnmount(() => tableObserver?.disconnect());
@@ -2050,7 +2054,8 @@ provide(LINE_ROW_ACTIONS, {
       </div>
     </div>
 
-    <div class="card" :class="{ 'lines-fullscreen': fullscreen }">
+    <!-- Lignes hors cadre (toute la largeur de la page) ; boutons, notes et totaux dans un cadre. -->
+    <div class="lines-area" :class="{ 'lines-fullscreen': fullscreen }">
       <!-- Lignes sélectionnées : copier / couper / supprimer. Le collage se fait au clavier (Ctrl+V / ⌘V),
            après la dernière ligne sélectionnée ou en fin de devis. -->
       <div v-if="selectedKeys.size" class="selection-bar">
@@ -2111,13 +2116,13 @@ provide(LINE_ROW_ACTIONS, {
                   <i :class="someLocked ? 'pi pi-lock' : 'pi pi-lock-open'" />
                 </button>
               </th>
-              <th v-tooltip.top="'Remise supplémentaire sur le prix de la ligne ; négative pour une augmentation (ex. −5 = +5 %)'" style="width: 64px" class="num">
-                Remise sup. (%)
+              <th v-tooltip.top="'Remise supplémentaire sur le prix de la ligne ; négative pour une augmentation (ex. −5 = +5 %)'" style="width: 72px" class="num">
+                Rem. sup.
               </th>
               <th ref="totalHeader" style="width: 100px" class="num">Total HT</th>
             </template>
-            <th v-tooltip.top="'Ligne en option : hors total HT, comptée dans « Total options »'" style="width: 48px" class="select-cell">
-              Option
+            <th v-tooltip.top="'Ligne en option : hors total HT, comptée dans « Total options »'" style="width: 30px" class="select-cell narrow-head">
+              Opt.
             </th>
             <th v-if="!isTemplate" style="width: 34px" class="select-cell">
               <button
@@ -2138,7 +2143,7 @@ provide(LINE_ROW_ACTIONS, {
               </button>
             </th>
             <th v-if="!isTemplate" v-tooltip.top="'Non imprimé sur le devis'" style="width: 70px" class="num seuil">Prix seuil</th>
-            <th style="width: 30px"></th>
+            <th style="width: 26px" class="remove-cell"></th>
           </tr>
         </thead>
         <tbody ref="tbodyEl">
@@ -2157,74 +2162,75 @@ provide(LINE_ROW_ACTIONS, {
           />
         </tbody>
       </table>
-      <!-- Sous le tableau : ajout de lignes à gauche, totaux à droite. Les montants sont alignés
-           sur la colonne « Total HT » (position mesurée, voir totalsStyle). -->
-      <div class="lines-footer">
-        <!-- À gauche : ajout de lignes, puis notes ; à droite : totaux. -->
+      <!-- Juste sous les lignes, hors du cadre : ajout de titres, textes, sous-totaux, frais. -->
+      <div class="add-lines">
+        <Button
+          v-tooltip.bottom="'Titre de paragraphe, ajouté en fin de devis, à déplacer avec la poignée'"
+          label="Titre"
+          icon="pi pi-bars"
+          text
+          size="small"
+          @click="insertSpecialLine('title')"
+        />
+        <Button
+          v-tooltip.bottom="'Ajoutée en fin de devis, à déplacer avec la poignée'"
+          label="Texte"
+          icon="pi pi-align-left"
+          text
+          size="small"
+          @click="insertSpecialLine('text')"
+        />
+        <Button
+          v-tooltip.bottom="'Additionne les articles depuis le sous-total précédent'"
+          label="Sous-total"
+          icon="pi pi-calculator"
+          text
+          size="small"
+          @click="insertSpecialLine('subtotal')"
+        />
+        <Button
+          v-if="!isTemplate"
+          v-tooltip.bottom="'Toujours en bas du devis, non remisés'"
+          label="Frais de port"
+          icon="pi pi-truck"
+          text
+          size="small"
+          :disabled="hasFee('shipping')"
+          @click="addFee('shipping')"
+        />
+        <Button
+          v-if="!isTemplate"
+          v-tooltip.bottom="'Toujours en bas du devis, non remisés'"
+          label="Frais de facturation"
+          icon="pi pi-receipt"
+          text
+          size="small"
+          :disabled="hasFee('billing')"
+          @click="addFee('billing')"
+        />
+        <Button
+          v-tooltip.bottom="
+            cleanupCount
+              ? 'Supprime les articles sans quantité, les lignes vides, et les titres, textes et sous-totaux qui n\'accompagnent plus aucun article'
+              : 'Rien à nettoyer'
+          "
+          :label="cleanupCount ? `Nettoyer (${cleanupCount})` : 'Nettoyer'"
+          icon="pi pi-eraser"
+          text
+          size="small"
+          severity="secondary"
+          :disabled="!cleanupCount"
+          @click="cleanUpLines"
+        />
+      </div>
+      <!-- Cadre du bas : notes à gauche, totaux à droite. Les montants sont alignés sur la colonne
+           « Total HT » (position mesurée, voir totalsStyle). -->
+      <div class="card lines-footer">
+        <!-- À gauche : notes ; à droite : totaux. -->
         <div class="footer-left">
-          <div class="add-lines">
-            <Button
-              v-tooltip.bottom="'Titre de paragraphe, ajouté en fin de devis, à déplacer avec la poignée'"
-              label="Titre"
-              icon="pi pi-bars"
-              text
-              size="small"
-              @click="insertSpecialLine('title')"
-            />
-            <Button
-              v-tooltip.bottom="'Ajoutée en fin de devis, à déplacer avec la poignée'"
-              label="Texte"
-              icon="pi pi-align-left"
-              text
-              size="small"
-              @click="insertSpecialLine('text')"
-            />
-            <Button
-              v-tooltip.bottom="'Additionne les articles depuis le sous-total précédent'"
-              label="Sous-total"
-              icon="pi pi-calculator"
-              text
-              size="small"
-              @click="insertSpecialLine('subtotal')"
-            />
-            <Button
-              v-if="!isTemplate"
-              v-tooltip.bottom="'Toujours en bas du devis, non remisés'"
-              label="Frais de port"
-              icon="pi pi-truck"
-              text
-              size="small"
-              :disabled="hasFee('shipping')"
-              @click="addFee('shipping')"
-            />
-            <Button
-              v-if="!isTemplate"
-              v-tooltip.bottom="'Toujours en bas du devis, non remisés'"
-              label="Frais de facturation"
-              icon="pi pi-receipt"
-              text
-              size="small"
-              :disabled="hasFee('billing')"
-              @click="addFee('billing')"
-            />
-            <Button
-              v-tooltip.bottom="
-                cleanupCount
-                  ? 'Supprime les articles sans quantité, les lignes vides, et les titres, textes et sous-totaux qui n\'accompagnent plus aucun article'
-                  : 'Rien à nettoyer'
-              "
-              :label="cleanupCount ? `Nettoyer (${cleanupCount})` : 'Nettoyer'"
-              icon="pi pi-eraser"
-              text
-              size="small"
-              severity="secondary"
-              :disabled="!cleanupCount"
-              @click="cleanUpLines"
-            />
-          </div>
           <div class="notes">
+            <Textarea id="notes" v-model="notes" rows="4" fluid auto-resize class="notes-input" />
             <label for="notes" class="muted">Notes (imprimées sur le devis)</label>
-            <Textarea id="notes" v-model="notes" rows="3" fluid auto-resize />
           </div>
         </div>
 
@@ -2473,7 +2479,6 @@ provide(LINE_ROW_ACTIONS, {
   row-gap: 0.4rem;
   align-items: start;
   padding-top: 1rem;
-  border-top: 1px solid var(--app-border);
 }
 
 .cd-caption {
@@ -2589,9 +2594,8 @@ provide(LINE_ROW_ACTIONS, {
   transition: left 0.18s ease;
   z-index: 900;
   overflow: auto;
-  padding-top: 0;
-  border: none;
-  border-radius: 0;
+  padding: 0 1rem 1rem;
+  background: var(--app-surface);
 }
 
 .lines-fullscreen .lines thead th {
@@ -2602,7 +2606,6 @@ provide(LINE_ROW_ACTIONS, {
 
 .lines th.fullscreen-cell {
   padding: 0;
-  vertical-align: middle;
   text-align: center;
 }
 
@@ -2637,7 +2640,7 @@ provide(LINE_ROW_ACTIONS, {
 
 .lines th {
   text-align: left;
-  vertical-align: bottom;
+  vertical-align: middle;
   font-weight: 600;
   font-size: 0.75rem;
   line-height: 1.2;
@@ -2645,6 +2648,12 @@ provide(LINE_ROW_ACTIONS, {
   padding: 6px;
   background: color-mix(in srgb, var(--app-muted) 8%, var(--app-surface));
   border: 1px solid var(--app-border);
+}
+
+/* En-tête court (« Opt. ») : colonne réduite à son libellé. */
+.lines th.narrow-head {
+  padding-left: 2px;
+  padding-right: 2px;
 }
 
 .lines th.num {
@@ -2706,7 +2715,8 @@ provide(LINE_ROW_ACTIONS, {
 
 /* Poignée et cases à cocher : centrées, sans « … » de débordement. */
 .lines :deep(td.drag-cell),
-.lines :deep(td.select-cell) {
+.lines :deep(td.select-cell),
+.lines :deep(td.remove-cell) {
   padding: 0;
   text-overflow: clip;
 }
@@ -2761,7 +2771,8 @@ provide(LINE_ROW_ACTIONS, {
   height: 22px;
 }
 
-.lines :deep(.drag-cell) {
+.lines :deep(.drag-cell),
+.lines :deep(.remove-cell) {
   text-align: center;
 }
 
@@ -2831,6 +2842,7 @@ provide(LINE_ROW_ACTIONS, {
 /* En-têtes cadenas / œil : l'icône seule, qui coche ou décoche toute la colonne. Ouvert (gris) :
    aucune ligne ; fermé estompé : une partie ; fermé en couleur : toutes. */
 .col-toggle {
+  vertical-align: middle;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2964,6 +2976,7 @@ provide(LINE_ROW_ACTIONS, {
   flex-wrap: wrap;
   gap: 0.25rem;
   white-space: nowrap;
+  margin-top: 0.4rem;
 }
 
 .seuil,
@@ -3033,6 +3046,11 @@ provide(LINE_ROW_ACTIONS, {
   margin-top: 0.75rem;
 }
 
+/* Lignes hors du cadre : fond des cellules comme dans un cadre. */
+.lines-area .lines {
+  background: var(--app-surface);
+}
+
 .footer-left {
   flex: 1;
   min-width: 0;
@@ -3045,6 +3063,12 @@ provide(LINE_ROW_ACTIONS, {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+/* Hauteur de 4 lignes et demie (rows n'accepte que des lignes entières) : padding et bordures
+   du champ en plus. Le champ s'agrandit ensuite avec le texte. */
+.notes :deep(.notes-input) {
+  min-height: calc(4.5lh + 1rem + 2px);
 }
 
 /* Colonnes : libellé | saisie | montant (largeur et position de « Total HT ») | reste du tableau.

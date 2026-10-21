@@ -218,6 +218,10 @@
     fichier est refusée à l'autre place.
   - A servi à restaurer les devis 26-JMOS-1754 à 1767 d'un poste, reconstruits depuis leurs PDF.
 
+- [x] Éditeur plus large (petits écrans) : lignes hors du cadre, boutons d'ajout juste sous les lignes,
+  cadre du bas réduit aux notes et aux totaux ; colonnes « Opt. », « Rem. sup. » (avec %) et suppression
+  resserrées, en-têtes centrés.
+
 - [ ] Lenteurs de saisie sur les gros devis (≈ 400 lignes, sensibles dès 200)
   - [x] Chaque ligne du tableau dans son propre composant (`QuoteLineRow`) : une frappe ne redessine
     que sa ligne.
