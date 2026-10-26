@@ -3,15 +3,19 @@
 // produits, pour une année ou toute la base. Montants HT après remise globale, frais compris ;
 // options exclues. Ce sont des montants devisés ; les affaires obtenues (coche de la liste des devis)
 // sont comptées à part : taux de transformation et montant obtenu.
+// Recherche d'une référence : ouvre son « Évolution du chiffrage » (la liste des devis où elle figure).
 import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import Select from "primevue/select";
+import AutoComplete, { type AutoCompleteCompleteEvent } from "primevue/autocomplete";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import { useToast } from "primevue/usetoast";
-import { api, type QuoteStats } from "../api";
+import { api, type QuotedRef, type QuoteStats } from "../api";
 import { errorMessage, formatEuro, formatNumber } from "../format";
 
 const toast = useToast();
+const router = useRouter();
 const stats = ref<QuoteStats | null>(null);
 const loading = ref(true);
 /** Année affichée ; null : toutes les années. */
@@ -94,6 +98,31 @@ function selectYear(y: string | null) {
   load(y);
 }
 
+// ---------- Recherche d'une référence ----------
+const refQuery = ref<string | QuotedRef>("");
+const refHits = ref<QuotedRef[]>([]);
+
+async function searchRefs(e: AutoCompleteCompleteEvent) {
+  try {
+    refHits.value = await api.searchQuotedRefs(e.query);
+  } catch (err) {
+    toast.add({ severity: "error", summary: "Recherche", detail: errorMessage(err) });
+  }
+}
+
+/** Écran « Évolution du chiffrage » de la référence, avec retour vers les statistiques. */
+const openRef = (productRef: string) =>
+  router.push({ path: `/produits/${encodeURIComponent(productRef)}/chiffrage`, query: { depuis: "statistiques" } });
+
+/** Entrée sur une saisie libre : la référence exacte si elle est dans les devis, sinon la seule proposée. */
+function openTypedRef() {
+  const q = refQuery.value;
+  if (typeof q !== "string" || !q.trim()) return;
+  const t = q.trim().toLowerCase();
+  const hit = refHits.value.find((h) => h.product_ref.toLowerCase() === t) ?? (refHits.value.length === 1 ? refHits.value[0] : null);
+  if (hit) openRef(hit.product_ref);
+}
+
 onMounted(async () => {
   // Par défaut : l'année en cours si elle a des devis, sinon toute la base.
   await load(null);
@@ -108,6 +137,28 @@ onMounted(async () => {
       <h1>Statistiques</h1>
       <span class="muted">montants HT devisés, remise globale déduite, frais compris, options exclues</span>
       <span class="spacer" />
+      <AutoComplete
+        v-model="refQuery"
+        :suggestions="refHits"
+        option-label="product_ref"
+        :delay="200"
+        :min-length="2"
+        placeholder="Référence dans les devis…"
+        aria-label="Rechercher une référence dans les devis"
+        class="ref-search"
+        empty-search-message="Aucun devis avec cette référence"
+        @complete="searchRefs"
+        @option-select="openRef($event.value.product_ref)"
+        @keydown.enter="openTypedRef"
+      >
+        <template #option="{ option }">
+          <div class="ref-opt">
+            <span class="mono">{{ option.product_ref }}</span>
+            <span class="muted ref-designation">{{ option.designation }}</span>
+            <span class="muted">{{ option.quotes }} devis</span>
+          </div>
+        </template>
+      </AutoComplete>
       <Select
         :model-value="year"
         :options="yearOptions"
@@ -245,7 +296,14 @@ onMounted(async () => {
       <!-- Produits les plus chiffrés -->
       <section class="card">
         <h2>Produits les plus chiffrés</h2>
-        <DataTable :value="stats.top_products" size="small" :loading="loading">
+        <DataTable
+          :value="stats.top_products"
+          size="small"
+          :loading="loading"
+          row-hover
+          class="clickable"
+          @row-click="openRef($event.data.product_ref)"
+        >
           <Column header="Référence" style="width: 130px">
             <template #body="{ data }"><span class="mono">{{ data.product_ref }}</span></template>
           </Column>
@@ -264,7 +322,10 @@ onMounted(async () => {
           </Column>
           <template #empty><span class="muted">Aucun produit.</span></template>
         </DataTable>
-        <p class="muted note">Montant des lignes avant remise globale du devis.</p>
+        <p class="muted note">
+          Montant des lignes avant remise globale du devis. Cliquez sur un produit pour la liste des devis où il
+          figure.
+        </p>
       </section>
     </template>
   </div>
@@ -273,6 +334,25 @@ onMounted(async () => {
 <style scoped>
 .year-select {
   min-width: 180px;
+}
+
+.ref-search {
+  width: 260px;
+}
+
+/* Propositions : affichées hors de la page (racine du document), d'où :global. */
+:global(.ref-opt) {
+  display: flex;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+:global(.ref-opt .ref-designation) {
+  flex: 1;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .empty {
@@ -453,5 +533,9 @@ h2 {
 .note {
   margin: 0.5rem 0 0;
   font-size: 0.8rem;
+}
+
+.clickable :deep(tbody tr) {
+  cursor: pointer;
 }
 </style>

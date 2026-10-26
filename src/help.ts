@@ -182,6 +182,10 @@ export const HELP: HelpSection[] = [
         title: "Chiffres de l'année",
         text: "Par année (ou toutes) : nombre de devis, montant total et moyen, clients, affaires obtenues et taux de transformation, montant obtenu ; devis par mois (part obtenue en vert) ; meilleurs clients, commerciaux et produits les plus chiffrés. Montants HT après remise globale, frais compris, options exclues ; un devis compte une fois, quel que soit le nombre de versions.",
       },
+      {
+        title: "Retrouver les devis d'une référence",
+        text: "Champ « Référence dans les devis… » en haut des Statistiques : tapez une référence (ou une partie de la désignation, ou un code ENEDIS). Seules les références présentes dans des devis sont proposées, avec leur nombre de devis, y compris celles qui ne sont plus au catalogue. Choisissez-en une : la liste des devis où elle figure s'affiche (date, client, quantité, prix), cliquez sur une ligne pour ouvrir le devis. Un clic sur un produit de « Produits les plus chiffrés » fait de même.",
+      },
     ],
   },
   {

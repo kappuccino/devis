@@ -72,7 +72,10 @@ watch(collapsed, (v) => {
 const toggle = () => (collapsed.value = !collapsed.value);
 const tip = (label: string) => (collapsed.value ? label : null);
 // /devis/12 et /devis-types/… gardent « Devis » actif ; /devis/nouveau a sa propre entrée.
+// Évolution du chiffrage ouverte depuis les Statistiques : « Statistiques » reste actif.
 const isActive = (to: string) =>
+  route.query.depuis === "statistiques" ? to === "/statistiques" : isActivePath(to);
+const isActivePath = (to: string) =>
   route.path === to ||
   (route.path.startsWith(`${to}/`) && route.path !== "/devis/nouveau") ||
   // Devis types : dans l'écran Devis.

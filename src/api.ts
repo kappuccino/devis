@@ -91,6 +91,14 @@ export interface QuoteStats {
   top_products: { product_ref: string; designation: string; quantity: number; total: number; quotes: number }[];
 }
 
+/** Référence trouvée dans les devis (recherche de l'écran Statistiques). */
+export interface QuotedRef {
+  product_ref: string;
+  designation: string;
+  /** Nombre de devis où elle figure. */
+  quotes: number;
+}
+
 /** Une référence dans un devis (écran « Évolution du chiffrage »). */
 export interface HistoryLine {
   quote_id: number;
@@ -350,6 +358,8 @@ export const api = {
     invoke<void>("set_client_price_list", { clientCode, priceListCode, attached }),
   /** Lignes de devis d'une référence, pour l'écran « Évolution du chiffrage ». */
   productPriceHistory: (productRef: string) => invoke<ProductHistory>("product_price_history", { productRef }),
+  /** Références des devis contenant le texte (réf, désignation ou code ENEDIS). */
+  searchQuotedRefs: (query: string) => invoke<QuotedRef[]>("search_quoted_refs", { query }),
   /** Statistiques d'une année (« 2026 ») ou de toute la base (null). */
   quoteStats: (year: string | null) => invoke<QuoteStats>("quote_stats", { year }),
   backupInfo: () => invoke<BackupInfo>("backup_info"),

@@ -307,6 +307,12 @@ pub fn product_price_history(state: State<AppState>, product_ref: String) -> Cmd
     crate::stats::product_history(&state.conn(), &product_ref)
 }
 
+/// Références présentes dans les devis (recherche de l'écran Statistiques).
+#[tauri::command]
+pub fn search_quoted_refs(state: State<AppState>, query: String) -> CmdResult<Vec<crate::stats::QuotedRef>> {
+    crate::stats::search_quoted_refs(&state.conn(), &query)
+}
+
 // ---------- Sauvegarde ----------
 
 #[derive(Serialize)]

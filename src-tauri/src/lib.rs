@@ -137,6 +137,7 @@ pub fn run() {
             commands::export_price_list,
             commands::quote_stats,
             commands::product_price_history,
+            commands::search_quoted_refs,
             commands::backup_info,
             commands::backup_now,
             commands::restore_backup,

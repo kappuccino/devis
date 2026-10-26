@@ -271,6 +271,33 @@ pub fn product_history(conn: &Connection, product_ref: &str) -> Result<ProductHi
     Ok(ProductHistory { product, lines })
 }
 
+/// Référence trouvée dans les devis (recherche de l'écran Statistiques).
+#[derive(Serialize, Debug, PartialEq)]
+pub struct QuotedRef {
+    pub product_ref: String,
+    pub designation: String,
+    /// Nombre de devis où elle figure (toutes versions, options comprises).
+    pub quotes: i64,
+}
+
+/// Références des lignes de devis (hors devis types) dont la référence, la désignation ou le code
+/// ENEDIS contient `query` ; y compris celles qui ne sont plus au catalogue.
+pub fn search_quoted_refs(conn: &Connection, query: &str) -> Result<Vec<QuotedRef>> {
+    let like = format!("%{}%", query.trim());
+    all(
+        conn,
+        "SELECT l.product_ref, MAX(l.designation), COUNT(DISTINCT l.quote_id)
+         FROM quote_lines l JOIN quotes q ON q.id = l.quote_id
+         WHERE l.kind = 'item' AND l.product_ref <> '' AND q.is_template = 0
+           AND (l.product_ref LIKE ?1 OR l.designation LIKE ?1
+                OR replace(COALESCE(l.enedis_code, ''), '.', '') LIKE replace(?1, '.', ''))
+         GROUP BY l.product_ref
+         ORDER BY l.product_ref NOT LIKE ?2, 3 DESC, l.product_ref LIMIT 50",
+        params![like, format!("{}%", query.trim())],
+        |r| Ok(QuotedRef { product_ref: r.get(0)?, designation: r.get(1)?, quotes: r.get(2)? }),
+    )
+}
+
 fn all<T>(
     conn: &Connection,
     sql: &str,
@@ -329,6 +356,30 @@ mod tests {
         let nets: Vec<(&str, f64, bool)> = h.lines.iter().map(|l| (l.date.as_str(), l.net_unit_price, l.is_option)).collect();
         assert_eq!(nets, [("2026-02-01", 120.0, false), ("2026-05-01", 85.5, false), ("2026-05-01", 80.0, true)]);
         assert!(product_history(&conn, "INCONNU").unwrap().product.is_none());
+    }
+
+    #[test]
+    fn search_quoted_refs_in_quotes_only() {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::init(&conn).unwrap();
+        quote(&conn, 1, "2026-03-10", ("C1", "ALPHA"), "", 0.0);
+        quote(&conn, 2, "2026-03-20", ("C1", "ALPHA"), "", 0.0);
+        quote(&conn, 3, "2026-03-20", ("", "Modèle"), "", 0.0);
+        conn.execute("UPDATE quotes SET is_template = 1 WHERE id = 3", []).unwrap();
+        line(&conn, 1, "X0946128", 1.0, 0.0, false);
+        line(&conn, 1, "0946128", 1.0, 0.0, false);
+        line(&conn, 2, "0946128", 1.0, 0.0, true);
+        line(&conn, 3, "0946999", 1.0, 0.0, false); // devis type : ignoré
+        let hits = search_quoted_refs(&conn, " 09461 ").unwrap();
+        // Les références qui commencent par la saisie d'abord, puis les plus fréquentes.
+        assert_eq!(
+            hits,
+            [
+                QuotedRef { product_ref: "0946128".into(), designation: "0946128".into(), quotes: 2 },
+                QuotedRef { product_ref: "X0946128".into(), designation: "X0946128".into(), quotes: 1 },
+            ]
+        );
+        assert!(search_quoted_refs(&conn, "0946999").unwrap().is_empty());
     }
 
     #[test]

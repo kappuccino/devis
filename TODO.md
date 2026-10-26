@@ -222,6 +222,10 @@
   cadre du bas réduit aux notes et aux totaux ; colonnes « Opt. », « Rem. sup. » (avec %) et suppression
   resserrées, en-têtes centrés.
 
+- [x] Statistiques : recherche d'une référence (réf, désignation ou code ENEDIS, parmi les références
+  des devis) qui ouvre la liste des devis où elle figure (écran « Évolution du chiffrage », retour vers
+  les Statistiques) ; clic sur un produit de « Produits les plus chiffrés » aussi.
+
 - [ ] Lenteurs de saisie sur les gros devis (≈ 400 lignes, sensibles dès 200)
   - [x] Chaque ligne du tableau dans son propre composant (`QuoteLineRow`) : une frappe ne redessine
     que sa ligne.

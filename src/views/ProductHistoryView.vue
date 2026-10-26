@@ -3,7 +3,7 @@
 // chiffres clés et tableau des devis, avec un filtre sur un ou plusieurs clients.
 // Prix net : prix de la ligne après sa remise, puis après la remise globale du devis (sauf option).
 import { computed, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import Button from "primevue/button";
 import MultiSelect from "primevue/multiselect";
 import Checkbox from "primevue/checkbox";
@@ -16,6 +16,9 @@ import { errorMessage, formatDate, formatNumber, formatPct, formatUnitPrice } fr
 
 const props = defineProps<{ productRef: string }>();
 const router = useRouter();
+const route = useRoute();
+/** Ouvert depuis la recherche des Statistiques : le retour y ramène. */
+const fromStats = computed(() => route.query.depuis === "statistiques");
 const toast = useToast();
 
 const history = ref<ProductHistory | null>(null);
@@ -138,7 +141,13 @@ const openQuote = (l: HistoryLine) => router.push(`/devis/${l.quote_id}`);
 <template>
   <div class="page">
     <div class="page-header">
-      <Button icon="pi pi-arrow-left" text rounded aria-label="Retour aux produits" @click="router.push('/produits')" />
+      <Button
+        icon="pi pi-arrow-left"
+        text
+        rounded
+        :aria-label="fromStats ? 'Retour aux statistiques' : 'Retour aux produits'"
+        @click="router.push(fromStats ? '/statistiques' : '/produits')"
+      />
       <div class="title">
         <h1>
           Évolution du chiffrage <span class="mono ref">{{ productRef }}</span>
