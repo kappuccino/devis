@@ -178,7 +178,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Clients ponctuels",
-        text: "Clients ajoutés depuis un devis (tag « Ponctuel ») : leur raison sociale et leur n° client se modifient dans leur fiche (par exemple pour remplacer P0001 par le vrai n° MFG/PRO) ; leurs devis suivent le nouveau n°. Un n° qui commence par « P » n'est pas imprimé sur le PDF du devis. Un réimport du fichier LPN les garde, avec leurs listes de prix (une liste disparue du fichier leur est retirée, l'import le signale). Si le fichier contient leur n°, ils deviennent des clients importés : le fichier fournit alors remises et listes de prix (l'import le signale).",
+        text: "Clients ajoutés depuis un devis (tag « Ponctuel ») : leur raison sociale et leur n° client se modifient dans leur fiche (par exemple pour remplacer P0001 par le vrai n° MFG/PRO) ; leurs devis suivent le nouveau n°. Un n° qui commence par « P » n'est imprimé ni sur le PDF du devis ni dans l'export Excel des prix (marqueur _CODE_ laissé vide). Un réimport du fichier LPN les garde, avec leurs listes de prix (une liste disparue du fichier leur est retirée, l'import le signale). Si le fichier contient leur n°, ils deviennent des clients importés : le fichier fournit alors remises et listes de prix (l'import le signale).",
       },
       {
         title: "Export Excel des prix d'un client",

@@ -2,7 +2,8 @@
 //!
 //! Le gabarit ne sert que pour le haut de la feuille (logo, titre, bloc client) : tout ce qui
 //! précède la ligne d'en-tête « Désignation » (colonne A) est gardé tel quel, avec ses styles.
-//! Les marqueurs `_NOM_CLIENT_`, `_EMAIL_`, `_NOM_`, `_PRENOM_`, `_CODE_` sont remplacés.
+//! Les marqueurs `_NOM_CLIENT_`, `_EMAIL_`, `_NOM_`, `_PRENOM_`, `_CODE_` sont remplacés (`_CODE_`
+//! vide pour un code en « P », interne aux clients ponctuels, comme sur le PDF).
 //! L'en-tête et les lignes sont ensuite réécrits avec les données de l'appli
 //! (Désignation | Nom. Enedis | Référence | Prix LPN HT), dans les styles du gabarit.
 //!
@@ -262,13 +263,14 @@ fn add_price_style(styles: &str, base: Option<&str>) -> Option<(String, String)>
 
 /// Remplace les marqueurs du haut de la feuille (textes partagés).
 fn fill_placeholders(xml: &str, h: &Header) -> String {
+    let code = if h.client_code.to_uppercase().starts_with('P') { "" } else { h.client_code.as_str() };
     // _NOM_CLIENT_ avant _NOM_, qui en est le début.
     [
-        ("_NOM_CLIENT_", &h.client_name),
-        ("_PRENOM_", &h.first_name),
-        ("_NOM_", &h.last_name),
-        ("_EMAIL_", &h.email),
-        ("_CODE_", &h.client_code),
+        ("_NOM_CLIENT_", h.client_name.as_str()),
+        ("_PRENOM_", h.first_name.as_str()),
+        ("_NOM_", h.last_name.as_str()),
+        ("_EMAIL_", h.email.as_str()),
+        ("_CODE_", code),
     ]
     .iter()
     .fold(xml.to_string(), |s, (k, v)| s.replace(k, &escape(v)))
@@ -430,6 +432,13 @@ mod tests {
                 (f.name().to_string(), s)
             })
             .collect()
+    }
+
+    #[test]
+    fn one_off_code_not_printed() {
+        let header = |code: &str| Header { client_code: code.into(), ..Default::default() };
+        assert_eq!(fill_placeholders("<t>Code : _CODE_</t>", &header("001200")), "<t>Code : 001200</t>");
+        assert_eq!(fill_placeholders("<t>Code : _CODE_</t>", &header("P0003")), "<t>Code : </t>");
     }
 
     #[test]
