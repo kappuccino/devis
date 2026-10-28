@@ -41,6 +41,14 @@ export const editText = (v: number | null, decimals: 2 | 3) =>
         maximumFractionDigits: decimals,
       });
 
+/**
+ * Référence libre : réf (ou code ENEDIS) hors catalogue et hors listes de prix. Ses colonnes (code
+ * ENEDIS, réf, désignation, prix public, prix remisé, seuil, PU HT) se saisissent à la main. Marquée
+ * par la source du prix ; seulement dans l'appli, le PDF l'imprime comme les autres lignes.
+ */
+export const CUSTOM_SOURCE = "Réf. libre";
+export const isCustom = (l: EditLine) => l.kind === "item" && l.price_source === CUSTOM_SOURCE;
+
 /** Prix net de la ligne (remise supplémentaire comprise) sous le prix seuil. */
 export const isBelowThreshold = (l: EditLine) =>
   l.threshold_price != null && netUnitPrice(l.unit_price, l.discount) < l.threshold_price;
@@ -79,6 +87,8 @@ export interface LineRowActions {
   onPriceInput(line: EditLine, text: string): void;
   onPriceBlur(line: EditLine): void;
   onDiscountInput(line: EditLine, text: string): void;
+  /** Prix public, prix remisé ou seuil saisi sur une ligne à référence libre. */
+  onCustomPrice(line: EditLine, field: "public_price" | "discounted_price" | "threshold_price", text: string): void;
   moveInColumn(line: EditLine, column: "qty" | "price", direction: 1 | -1, e?: Event): void;
 }
 

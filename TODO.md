@@ -233,6 +233,11 @@
   - Fiche client ouvrable depuis un devis ; à l'enregistrement, remises et listes reprises dans le
     devis et prix recalculés.
 
+- [x] Référence libre dans les devis : une réf ou un code ENEDIS inconnu n'est plus une erreur ; code
+  ENEDIS, réf, désignation, prix public, prix remisé, seuil et PU HT saisis à la main (PU qui suit le
+  prix remisé ou public tant qu'il n'est pas tapé). Marquée par la source du prix « Réf. libre », dans
+  l'appli seulement (PDF inchangé), non mémorisée au catalogue.
+
 - [ ] Lenteurs de saisie sur les gros devis (≈ 400 lignes, sensibles dès 200)
   - [x] Chaque ligne du tableau dans son propre composant (`QuoteLineRow`) : une frappe ne redessine
     que sa ligne.

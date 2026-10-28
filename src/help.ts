@@ -44,6 +44,10 @@ export const HELP: HelpSection[] = [
         text: "Tapez une référence ou un code ENEDIS : des propositions s'affichent. Le prix est calculé pour le client : le plus bas de ses listes de prix (LPN), sinon le prix public moins sa remise CFA ou CFO. Prix dégressifs : une liste peut avoir un meilleur prix à partir d'une quantité (ex. 82,49 € à l'unité, 80,01 € dès 150) ; le prix suit la quantité de la ligne, et l'infobulle de la colonne LPN donne les paliers. Un prix saisi à la main n'est pas modifié quand la quantité change. Les colonnes Prix public, Prix remisé et LPN montrent d'où vient le prix (en gras : celui retenu). Un même code ENEDIS peut correspondre à plusieurs produits : choisissez alors le bon dans la liste proposée."
       },
       {
+        title: "Référence libre (hors catalogue)",
+        text: "Une référence ou un code ENEDIS inconnu n'est pas refusé : la ligne devient une référence libre (réf en italique orangé, détail au survol). Toutes ses colonnes se saisissent à la main : code ENEDIS, référence, désignation, prix public, prix remisé, prix seuil et PU HT. Tant que le PU HT n'a pas été tapé, il suit le prix remisé, à défaut le prix public. Les valeurs saisies sont gardées lors d'un recalcul des prix. Sur le PDF, la ligne s'imprime comme les autres ; la référence n'est pas ajoutée au catalogue.",
+      },
+      {
         title: "Navigation au clavier",
         text: "Tab descend dans la colonne, Maj+Tab remonte. Après une référence ou un code ENEDIS, Tab valide la ligne et passe à sa quantité. Entrée ou flèches haut / bas dans les quantités ou dans les PU HT : même colonne de la ligne suivante / précédente (pratique pour forcer les prix ligne après ligne).",
         keys: ["Tab", "Maj+Tab", "Entrée", "↑", "↓"],

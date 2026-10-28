@@ -46,7 +46,7 @@ import { favoriteLists } from "../favorites";
 import { lastSalesRep, rememberSalesRep, salesRepList } from "../salesReps";
 import { applyColumnTabOrder } from "../gridNav";
 import QuoteLineRow from "../components/QuoteLineRow.vue";
-import { editText, LINE_ROW_ACTIONS, type EditLine } from "../editLine";
+import { CUSTOM_SOURCE, editText, isCustom, LINE_ROW_ACTIONS, type EditLine } from "../editLine";
 import {
   autoFeeChanges,
   feeRulesFrom,
@@ -188,6 +188,21 @@ async function priceForQuantity(line: EditLine) {
     });
   } catch {
     // Produit disparu entre-temps : on garde le prix de la ligne.
+  }
+}
+
+/**
+ * Prix saisi sur une ligne à référence libre (vide : pas de prix). Le PU HT suit le prix remisé,
+ * à défaut le prix public, tant qu'il n'a pas été saisi à la main.
+ */
+function onCustomPrice(line: EditLine, field: "public_price" | "discounted_price" | "threshold_price", text: string) {
+  const auto = line.discounted_price ?? line.public_price ?? 0;
+  const follows = line.unit_price === auto;
+  const v = parseNumber(text);
+  line[field] = text.trim() && v != null ? round2(v) : null;
+  if (follows && field !== "threshold_price") {
+    line.unit_price = line.discounted_price ?? line.public_price ?? 0;
+    line.priceText = line.unit_price ? editText(line.unit_price, 2) : "";
   }
 }
 
@@ -636,8 +651,11 @@ async function validateAndGoToQuantity(line: EditLine, field: "ref" | "enedis", 
   const known = field === "ref" ? line.resolvedRef : line.resolvedRef != null ? line.resolvedEnedis : null;
   if (!value || value === known) return;
   e.preventDefault();
-  if (field === "enedis") line.product_ref = value;
-  await resolve(line, false, field);
+  if (field === "enedis" && isCustom(line) && line.product_ref) line.resolvedEnedis = value;
+  else {
+    if (field === "enedis") line.product_ref = value;
+    await resolve(line, false, field);
+  }
   if (line.error) return;
   await nextTick();
   const qty = document.getElementById(`qty-${line.key}`);
@@ -706,16 +724,43 @@ async function resolve(line: EditLine, focusNext = false, field: "ref" | "enedis
     });
   } catch (e) {
     if (stale()) return;
-    Object.assign(line, {
-      resolvedRef: r,
-      price_source: null,
-      public_price: null,
-      threshold_price: null,
-      discounted_price: null,
-      lpn_price: null,
-      lpn_list: null,
-      error: errorMessage(e),
-    });
+    const message = errorMessage(e);
+    // Réf inconnue : référence libre, dont on saisit les colonnes à la main. Déjà libre, elle garde
+    // ses valeurs (recalcul des prix, réf corrigée) ; venue d'un produit, ses prix sont vidés.
+    if (/introuvable/.test(message)) {
+      const wasCustom = isCustom(line);
+      // PU calculé pour l'ancien produit : sans objet pour la nouvelle réf (un PU saisi est gardé).
+      if (!wasCustom && isAutoPrice(line)) Object.assign(line, { unit_price: 0, priceText: "" });
+      Object.assign(line, {
+        resolvedRef: r,
+        price_source: CUSTOM_SOURCE,
+        lpn_price: null,
+        lpn_list: null,
+        lpnTiers: undefined,
+        lpnMinQty: null,
+        error: null,
+        ...(wasCustom
+          ? {}
+          : {
+              public_price: null,
+              threshold_price: null,
+              discounted_price: null,
+              enedis_code: field === "enedis" ? r : null,
+              resolvedEnedis: field === "enedis" ? r : null,
+            }),
+      });
+    } else {
+      Object.assign(line, {
+        resolvedRef: r,
+        price_source: null,
+        public_price: null,
+        threshold_price: null,
+        discounted_price: null,
+        lpn_price: null,
+        lpn_list: null,
+        error: message,
+      });
+    }
   } finally {
     if (!stale()) line.pendingRef = null;
   }
@@ -744,7 +789,9 @@ function commitEnedis(line: EditLine, focusNext: boolean) {
   const unchanged = line.resolvedRef != null && code === line.resolvedEnedis;
   // Produit en cours de résolution (choix dans la liste) : rien à refaire.
   if (line.pendingRef != null) return;
-  if (unchanged) {
+  // Référence libre : le code ENEDIS se saisit librement, sans changer la réf.
+  if (unchanged || (isCustom(line) && line.product_ref)) {
+    line.resolvedEnedis = code;
     if (focusNext && !line.error) focusNewLine("enedis");
     return;
   }
@@ -1322,6 +1369,7 @@ async function fillMissingReferencePrices() {
     (l) =>
       l.kind === "item" &&
       l.product_ref &&
+      !isCustom(l) &&
       (l.public_price == null || (l.discounted_price == null && l.lpn_price == null)),
   );
   await Promise.all(
@@ -1734,6 +1782,7 @@ provide(LINE_ROW_ACTIONS, {
   onPriceInput,
   onPriceBlur,
   onDiscountInput,
+  onCustomPrice,
   moveInColumn,
 });
 </script>
@@ -2804,6 +2853,12 @@ provide(LINE_ROW_ACTIONS, {
 .lines :deep(td:has(> .p-textarea)),
 .lines :deep(td:has(> .p-autocomplete)) {
   padding: 0;
+}
+
+/* Référence libre (hors catalogue) : réf en italique orangé, seulement dans l'appli. */
+.lines :deep(.custom-ref) {
+  color: var(--app-warn);
+  font-style: italic;
 }
 
 /* Montant saisi : le symbole € suit le champ, comme dans les autres colonnes de prix. */

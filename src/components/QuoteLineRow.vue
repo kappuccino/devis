@@ -10,7 +10,7 @@ import Button from "primevue/button";
 import type { ProductHit } from "../api";
 import { formatEuro, formatUnitPrice } from "../format";
 import { lineTotal } from "../quoteLines";
-import { editText, isBelowThreshold, LINE_ROW_ACTIONS, lpnTooltip, type EditLine } from "../editLine";
+import { editText, isBelowThreshold, isCustom, LINE_ROW_ACTIONS, lpnTooltip, type EditLine } from "../editLine";
 
 const props = defineProps<{
   line: EditLine;
@@ -40,6 +40,14 @@ function setEnedis(v: string | ProductHit) {
 function setRef(v: string | ProductHit) {
   props.line.product_ref = typeof v === "string" ? v : v.ref;
 }
+
+type CustomPriceField = "public_price" | "discounted_price" | "threshold_price";
+/** Prix d'une référence libre, validé en quittant le champ (Entrée aussi). */
+function commitCustomPrice(field: CustomPriceField, e: Event) {
+  a.onCustomPrice(props.line, field, (e.target as HTMLInputElement).value);
+}
+const blurOnEnter = (e: KeyboardEvent) => (e.target as HTMLInputElement).blur();
+const CUSTOM_TIP = "Référence libre (hors catalogue) : code ENEDIS, désignation et prix se saisissent à la main";
 </script>
 
 <template>
@@ -150,7 +158,7 @@ function setRef(v: string | ProductHit) {
         </template>
       </AutoComplete>
     </td>
-    <td>
+    <td v-tooltip.top="isCustom(line) ? CUSTOM_TIP : ''">
       <AutoComplete
         :model-value="line.product_ref"
         :input-id="`ref-${line.key}`"
@@ -162,6 +170,7 @@ function setRef(v: string | ProductHit) {
         fluid
         size="small"
         placeholder="Réf…"
+        :input-class="isCustom(line) ? 'custom-ref' : undefined"
         :invalid="!!line.error"
         @update:model-value="setRef"
         @complete="a.searchProducts($event, line)"
@@ -200,11 +209,32 @@ function setRef(v: string | ProductHit) {
       />
     </td>
     <template v-if="!isTemplate">
-      <td class="num muted">{{ formatUnitPrice(line.public_price) }}</td>
-      <!-- En gras : le prix qui a fixé le PU HT (le plus bas des deux, ou la liste forcée). -->
-      <td class="num ref-price" :class="{ used: line.price_source?.startsWith('Public') }">
-        {{ formatUnitPrice(line.discounted_price) }}
-      </td>
+      <!-- Référence libre : prix public et prix remisé saisis à la main. -->
+      <template v-if="isCustom(line)">
+        <td v-for="field in ['public_price', 'discounted_price'] as const" :key="field">
+          <div class="euro-input">
+            <InputText
+              :model-value="editText(line[field], 2)"
+              inputmode="decimal"
+              autocomplete="off"
+              placeholder="–"
+              fluid
+              size="small"
+              class="num"
+              @change="commitCustomPrice(field, $event)"
+              @keydown.enter="blurOnEnter"
+            />
+            <span>€</span>
+          </div>
+        </td>
+      </template>
+      <template v-else>
+        <td class="num muted">{{ formatUnitPrice(line.public_price) }}</td>
+        <!-- En gras : le prix qui a fixé le PU HT (le plus bas des deux, ou la liste forcée). -->
+        <td class="num ref-price" :class="{ used: line.price_source?.startsWith('Public') }">
+          {{ formatUnitPrice(line.discounted_price) }}
+        </td>
+      </template>
       <td
         v-tooltip.top="lpnTooltip(line)"
         class="num ref-price"
@@ -277,7 +307,24 @@ function setRef(v: string | ProductHit) {
         aria-label="Masquer le prix sur le PDF"
       />
     </td>
-    <td v-if="!isTemplate" class="num seuil" :class="{ warn: isBelowThreshold(line) }">
+    <td v-if="!isTemplate && isCustom(line)" class="seuil">
+      <div class="euro-input">
+        <InputText
+          :model-value="editText(line.threshold_price, 2)"
+          inputmode="decimal"
+          autocomplete="off"
+          placeholder="–"
+          fluid
+          size="small"
+          class="num"
+          :invalid="isBelowThreshold(line)"
+          @change="commitCustomPrice('threshold_price', $event)"
+          @keydown.enter="blurOnEnter"
+        />
+        <span>€</span>
+      </div>
+    </td>
+    <td v-else-if="!isTemplate" class="num seuil" :class="{ warn: isBelowThreshold(line) }">
       {{ formatUnitPrice(line.threshold_price) }}
     </td>
     <td class="remove-cell">
