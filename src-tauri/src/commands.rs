@@ -143,13 +143,20 @@ pub struct Client {
     pub franco: Option<String>,
     pub siren: Option<String>,
     pub price_lists: Vec<String>,
+    /// Commentaire saisi sur la fiche (gardé à l'import LPN).
+    #[serde(default)]
+    pub comment: String,
+    /// Client ponctuel ajouté depuis un devis (code P0001…).
+    #[serde(default)]
+    pub is_one_off: bool,
 }
 
 const CLIENT_SELECT: &str =
     "SELECT c.code, c.name, c.group_name, c.subgroup, c.sales_rep, c.discount_cfa, c.discount_cfo,
             c.email, c.franco, c.siren,
-            (SELECT group_concat(price_list_code, ',') FROM client_price_lists WHERE client_code = c.code)
-     FROM clients c";
+            (SELECT group_concat(price_list_code, ',') FROM client_price_lists WHERE client_code = c.code),
+            COALESCE(cc.comment, ''), c.is_one_off
+     FROM clients c LEFT JOIN client_comments cc ON cc.client_code = c.code";
 
 fn map_client(r: &Row) -> rusqlite::Result<Client> {
     let lists: Option<String> = r.get(10)?;
@@ -167,6 +174,8 @@ fn map_client(r: &Row) -> rusqlite::Result<Client> {
         price_lists: lists
             .map(|l| l.split(',').map(str::to_string).collect())
             .unwrap_or_default(),
+        comment: r.get(11)?,
+        is_one_off: r.get(12)?,
     })
 }
 
@@ -184,23 +193,39 @@ pub fn get_client(state: State<AppState>, code: String) -> CmdResult<Option<Clie
         .map_err(err)
 }
 
-/// Modifie les remises et les listes de prix rattachées d'un client.
+/// Modifie les remises, les listes de prix rattachées et le commentaire d'un client ; le nom
+/// seulement pour un client ponctuel (les autres viennent du fichier LPN).
 #[tauri::command]
 pub fn update_client(
     state: State<AppState>,
     code: String,
+    name: String,
     discount_cfa: f64,
     discount_cfo: f64,
     price_lists: Vec<String>,
+    comment: String,
 ) -> CmdResult<()> {
-    let mut conn = state.conn();
+    save_client(&mut state.conn(), &code, &name, discount_cfa, discount_cfo, &price_lists, &comment)
+}
+
+fn save_client(
+    conn: &mut Connection,
+    code: &str,
+    name: &str,
+    discount_cfa: f64,
+    discount_cfo: f64,
+    price_lists: &[String],
+    comment: &str,
+) -> CmdResult<()> {
     let tx = conn.transaction().map_err(err)?;
     tx.execute(
-        "UPDATE clients SET discount_cfa = ?2, discount_cfo = ?3 WHERE code = ?1",
-        params![code, discount_cfa, discount_cfo],
+        "UPDATE clients SET discount_cfa = ?2, discount_cfo = ?3,
+             name = CASE WHEN is_one_off = 1 AND trim(?4) <> '' THEN trim(?4) ELSE name END
+         WHERE code = ?1",
+        params![code, discount_cfa, discount_cfo, name],
     )
     .map_err(err)?;
-    tx.execute("DELETE FROM client_price_lists WHERE client_code = ?1", [&code])
+    tx.execute("DELETE FROM client_price_lists WHERE client_code = ?1", [code])
         .map_err(err)?;
     for list in price_lists {
         tx.execute(
@@ -209,7 +234,88 @@ pub fn update_client(
         )
         .map_err(err)?;
     }
+    set_client_comment(&tx, code, comment)?;
     tx.commit().map_err(err)
+}
+
+/// Commentaire d'un client : vide, il est supprimé.
+fn set_client_comment(conn: &Connection, code: &str, comment: &str) -> CmdResult<()> {
+    let comment = comment.trim_end();
+    if comment.trim().is_empty() {
+        conn.execute("DELETE FROM client_comments WHERE client_code = ?1", [code])
+    } else {
+        conn.execute(
+            "INSERT INTO client_comments (client_code, comment) VALUES (?1, ?2)
+             ON CONFLICT(client_code) DO UPDATE SET comment = excluded.comment",
+            params![code, comment],
+        )
+    }
+    .map(|_| ())
+    .map_err(err)
+}
+
+/// Ajoute à la base un client ponctuel (code P0001, P0002… : les codes LPN sont numériques).
+#[tauri::command]
+pub fn create_one_off_client(
+    state: State<AppState>,
+    name: String,
+    discount_cfa: f64,
+    discount_cfo: f64,
+    price_list: Option<String>,
+) -> CmdResult<Client> {
+    add_one_off_client(&mut state.conn(), &name, discount_cfa, discount_cfo, price_list.as_deref())
+}
+
+fn add_one_off_client(
+    conn: &mut Connection,
+    name: &str,
+    discount_cfa: f64,
+    discount_cfo: f64,
+    price_list: Option<&str>,
+) -> CmdResult<Client> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Raison sociale manquante".into());
+    }
+    let tx = conn.transaction().map_err(err)?;
+    let last: i64 = tx
+        .query_row(
+            "SELECT COALESCE(MAX(CAST(substr(code, 2) AS INTEGER)), 0) FROM clients
+             WHERE code GLOB 'P[0-9]*' AND substr(code, 2) NOT GLOB '*[^0-9]*'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(err)?;
+    let code = format!("P{:04}", last + 1);
+    tx.execute(
+        "INSERT INTO clients (code, name, discount_cfa, discount_cfo, is_one_off) VALUES (?1, ?2, ?3, ?4, 1)",
+        params![code, name, discount_cfa, discount_cfo],
+    )
+    .map_err(err)?;
+    if let Some(list) = price_list.filter(|l| !l.is_empty()) {
+        link_client_price_list(&tx, &code, list, true)?;
+    }
+    let client = tx
+        .query_row(&format!("{CLIENT_SELECT} WHERE c.code = ?1"), [&code], map_client)
+        .map_err(err)?;
+    tx.commit().map_err(err)?;
+    Ok(client)
+}
+
+/// Rattache au client `code` les devis à client hors base portant le nom `client_name` (même nom,
+/// sans tenir compte de la casse ni des espaces autour). Renvoie le nombre de devis rattachés.
+#[tauri::command]
+pub fn link_quotes_to_client(state: State<AppState>, code: String, client_name: String) -> CmdResult<usize> {
+    link_quotes(&state.conn(), &code, &client_name)
+}
+
+fn link_quotes(conn: &Connection, code: &str, client_name: &str) -> CmdResult<usize> {
+    conn.execute(
+        "UPDATE quotes SET client_code = ?1
+         WHERE client_code = '' AND is_template = 0 AND lower(trim(client_name)) = lower(trim(?2))",
+        params![code, client_name],
+    )
+    .map_err(err)
 }
 
 /// Rattache (`attached`) ou détache un client d'une liste de prix.
@@ -1327,6 +1433,47 @@ mod tests {
             lpn_price: None,
             lpn_list: None,
         }
+    }
+
+    #[test]
+    fn one_off_clients_comments_and_quote_links() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::db::init(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO clients (code, name) VALUES ('001200', 'IMPORTÉ'), ('PX', 'CODE NON NUMÉRIQUE');
+             INSERT INTO price_lists (code) VALUES ('T1');
+             INSERT INTO quotes (number, client_code, client_name, date) VALUES
+                 ('D1', '', ' Dupont SARL ', '2026-01-01'), ('D2', '', 'DUPONT SARL', '2026-02-01'),
+                 ('D3', '001200', 'Dupont SARL', '2026-03-01'), ('D4', '', 'Autre', '2026-03-01');",
+        )
+        .unwrap();
+        let a = add_one_off_client(&mut conn, " Dupont SARL ", 10.0, 5.0, Some("T1")).unwrap();
+        assert_eq!((a.code.as_str(), a.name.as_str(), a.is_one_off), ("P0001", "Dupont SARL", true));
+        assert_eq!(a.price_lists, ["T1"]);
+        assert_eq!(add_one_off_client(&mut conn, "Autre", 0.0, 0.0, None).unwrap().code, "P0002");
+        assert!(add_one_off_client(&mut conn, "  ", 0.0, 0.0, None).is_err());
+
+        // Devis hors base du même nom rattachés ; pas ceux qui ont déjà un code.
+        assert_eq!(link_quotes(&conn, "P0001", "dupont sarl").unwrap(), 2);
+        let d3: String = conn.query_row("SELECT client_code FROM quotes WHERE number = 'D3'", [], |r| r.get(0)).unwrap();
+        assert_eq!(d3, "001200");
+
+        let get = |conn: &Connection, code: &str| {
+            conn.query_row(&format!("{CLIENT_SELECT} WHERE c.code = ?1"), [code], map_client).unwrap()
+        };
+        // Commentaire inséré, remplacé, supprimé ; nom modifié pour un ponctuel seulement.
+        save_client(&mut conn, "P0001", "Dupont & fils", 12.0, 5.0, &[], "Ligne 1\nLigne 2").unwrap();
+        save_client(&mut conn, "001200", "RENOMMÉ", 0.0, 0.0, &[], "Appeler avant").unwrap();
+        let (p, i) = (get(&conn, "P0001"), get(&conn, "001200"));
+        assert_eq!((p.name.as_str(), p.comment.as_str(), p.discount_cfa), ("Dupont & fils", "Ligne 1\nLigne 2", 12.0));
+        assert!(p.price_lists.is_empty());
+        assert_eq!((i.name.as_str(), i.comment.as_str()), ("IMPORTÉ", "Appeler avant"));
+        save_client(&mut conn, "001200", "", 0.0, 0.0, &[], "Autre chose").unwrap();
+        assert_eq!(get(&conn, "001200").comment, "Autre chose");
+        save_client(&mut conn, "001200", "", 0.0, 0.0, &[], "  ").unwrap();
+        assert_eq!(get(&conn, "001200").comment, "");
+        let rows: i64 = conn.query_row("SELECT COUNT(*) FROM client_comments", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 1);
     }
 
     #[test]

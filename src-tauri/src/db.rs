@@ -56,7 +56,16 @@ CREATE TABLE IF NOT EXISTS clients (
     discount_cfo REAL NOT NULL DEFAULT 0,
     email        TEXT,
     franco       TEXT,
-    siren        TEXT
+    siren        TEXT,
+    -- Client ponctuel ajouté depuis un devis (code P0001…) : conservé à l'import LPN.
+    is_one_off   INTEGER NOT NULL DEFAULT 0
+);
+
+-- Commentaires saisis sur les fiches clients. Sans clé étrangère : l'import LPN vide la table
+-- clients, le commentaire retrouve sa fiche par le code.
+CREATE TABLE IF NOT EXISTS client_comments (
+    client_code TEXT PRIMARY KEY,
+    comment     TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS price_lists (
@@ -85,7 +94,8 @@ CREATE TABLE IF NOT EXISTS client_price_lists (
 
 -- Les devis ne référencent pas les clients par clé étrangère : un réimport vide la table clients.
 -- Chaque devis porte ses propres conditions (raison sociale, remises, listes de prix), copiées du
--- client à sa sélection puis modifiables. client_code vide : client ponctuel, absent de la base.
+-- client à sa sélection puis modifiables. client_code vide : client ponctuel, absent de la base ;
+-- code P0001… : client ponctuel ajouté à la base.
 CREATE TABLE IF NOT EXISTS quotes (
     id          INTEGER PRIMARY KEY,
     number      TEXT NOT NULL UNIQUE,
@@ -224,6 +234,8 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     add_column(conn, "quotes", "comment", "TEXT NOT NULL DEFAULT ''")?;
     // Prix par quantité des listes de prix (refaire l'import LPN pour les renseigner).
     add_column(conn, "price_list_items", "min_qty", "REAL NOT NULL DEFAULT 0")?;
+    // Clients ponctuels ajoutés à la base.
+    add_column(conn, "clients", "is_one_off", "INTEGER NOT NULL DEFAULT 0")?;
     // Validité par défaut passée de 30 à 90 jours : l'ancienne valeur suit, une seule fois
     // (on peut ensuite la remettre à 30 jours dans les Réglages).
     if conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('migrated_validity_90', '1')", [])? == 1 {

@@ -28,6 +28,8 @@ pub struct ImportReport {
     pub price_lists: usize,
     pub price_list_items: usize,
     pub client_links: usize,
+    /// Clients ponctuels ajoutés depuis les devis, conservés (avec leurs listes de prix).
+    pub one_off_clients: usize,
     pub warnings: Vec<String>,
 }
 
@@ -61,11 +63,22 @@ fn import_ranges(
 ) -> rusqlite::Result<ImportReport> {
     let mut report = ImportReport::default();
     let tx = conn.transaction()?;
+    // Clients ponctuels (ajoutés depuis les devis) : conservés. Leurs listes de prix, effacées avec
+    // les listes, sont remises après l'import si elles existent encore.
+    report.one_off_clients =
+        tx.query_row("SELECT COUNT(*) FROM clients WHERE is_one_off = 1", [], |r| r.get::<_, i64>(0))? as usize;
+    let one_off_links: Vec<(String, String)> = tx
+        .prepare(
+            "SELECT cpl.client_code, cpl.price_list_code FROM client_price_lists cpl
+             JOIN clients c ON c.code = cpl.client_code WHERE c.is_one_off = 1",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
     tx.execute_batch(
         "DELETE FROM client_price_lists;
          DELETE FROM price_list_items;
          DELETE FROM price_lists;
-         DELETE FROM clients;
+         DELETE FROM clients WHERE is_one_off = 0;
          DELETE FROM products;",
     )?;
 
@@ -76,6 +89,17 @@ fn import_ranges(
         import_clients_ic(&tx, range, &mut report)?;
     }
     clients_for_lists(&tx, &mut report)?;
+
+    for (client, list) in one_off_links {
+        let restored = tx.execute(
+            "INSERT OR IGNORE INTO client_price_lists (client_code, price_list_code)
+             SELECT ?1, code FROM price_lists WHERE code = ?2",
+            params![client, list],
+        )?;
+        if restored == 0 {
+            report.warnings.push(format!("Client ponctuel {client} : la liste {list} n'est plus dans le fichier, elle lui est retirée"));
+        }
+    }
 
     tx.commit()?;
     Ok(report)
@@ -426,6 +450,45 @@ mod tests {
                 ("999000".into(), "T999000".into()),
             ]
         );
+    }
+
+    #[test]
+    fn reimport_keeps_one_off_clients_and_comments() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::db::init(&conn).unwrap();
+        let header: &[&str] = &["en-tête"];
+        let price = |list: &'static str| -> Vec<&'static str> {
+            let mut row = vec![""; 15];
+            (row[1], row[3], row[4], row[14]) = ("LISTE", list, "REF", "1");
+            row
+        };
+        let empty = range(&[header]);
+        let both = range(&[header, &price("T100000"), &price("T200000")]);
+        import_ranges(&mut conn, &empty, &empty, &both, None).unwrap();
+        conn.execute_batch(
+            "INSERT INTO clients (code, name, is_one_off) VALUES ('P0001', 'PONCTUEL', 1);
+             INSERT INTO client_price_lists VALUES ('P0001', 'T100000'), ('P0001', 'T200000');
+             INSERT INTO client_comments VALUES ('100000', 'Appeler avant'), ('P0001', 'Chantier unique');",
+        )
+        .unwrap();
+
+        // Réimport sans la liste T200000 : le ponctuel garde T100000, perd T200000 (avertissement).
+        let report = import_ranges(&mut conn, &empty, &empty, &range(&[header, &price("T100000")]), None).unwrap();
+        assert_eq!(report.one_off_clients, 1);
+        assert_eq!(report.warnings.len(), 1);
+        let lists: Vec<String> = conn
+            .prepare("SELECT price_list_code FROM client_price_lists WHERE client_code = 'P0001'")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(lists, ["T100000"]);
+        let one_off: (String, bool) =
+            conn.query_row("SELECT name, is_one_off FROM clients WHERE code = 'P0001'", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        assert_eq!(one_off, ("PONCTUEL".into(), true));
+        let comments: i64 = conn.query_row("SELECT COUNT(*) FROM client_comments", [], |r| r.get(0)).unwrap();
+        assert_eq!(comments, 2);
     }
 
     /// `LPN_XLSX=chemin/vers/LPN.xlsx cargo test -- --ignored --nocapture`

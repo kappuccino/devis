@@ -226,6 +226,13 @@
   des devis) qui ouvre la liste des devis où elle figure (écran « Évolution du chiffrage », retour vers
   les Statistiques) ; clic sur un produit de « Produits les plus chiffrés » aussi.
 
+- [x] Commentaire (multiligne) sur la fiche client, gardé à l'import LPN (table `client_comments`).
+  - Clients ponctuels ajoutables aux clients (code P0001…, tag « Ponctuel », gardés à l'import avec
+    leurs listes) : case « Ajouter aux clients » à la création, bouton sur les anciens devis (rattache
+    les devis du même nom).
+  - Fiche client ouvrable depuis un devis ; à l'enregistrement, remises et listes reprises dans le
+    devis et prix recalculés.
+
 - [ ] Lenteurs de saisie sur les gros devis (≈ 400 lignes, sensibles dès 200)
   - [x] Chaque ligne du tableau dans son propre composant (`QuoteLineRow`) : une frappe ne redessine
     que sa ligne.

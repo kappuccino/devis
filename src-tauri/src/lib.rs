@@ -133,6 +133,8 @@ pub fn run() {
             commands::list_clients,
             commands::get_client,
             commands::update_client,
+            commands::create_one_off_client,
+            commands::link_quotes_to_client,
             commands::set_client_price_list,
             commands::export_price_list,
             commands::quote_stats,

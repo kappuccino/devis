@@ -28,6 +28,7 @@ import { errorMessage, formatDate, formatEuro, MOD, round2, todayIso } from "../
 import { exportQuotePdf } from "../composables/usePdf";
 import QuoteDocsDialog from "../components/docs/QuoteDocsDialog.vue";
 import PriceListDrawer from "../components/PriceListDrawer.vue";
+import ClientFormDialog from "../components/ClientFormDialog.vue";
 import { readDraft, removeDraft, writeDraft, type QuoteDraft } from "../drafts";
 import { useConfirm } from "primevue/useconfirm";
 import { useLineClipboard } from "../composables/useLineClipboard";
@@ -400,7 +401,8 @@ async function applyClient(c: Client) {
 // Client ponctuel : n'existe que dans ce devis (nom, remises, une liste de prix au plus).
 const lastClientQuery = ref("");
 const ephemeralVisible = ref(false);
-const ephemeral = ref({ name: "", cfa: 0, cfo: 0, list: null as string | null });
+/** addToBase : le client est ajouté aux clients (code P0001…) au lieu de n'exister que dans ce devis. */
+const ephemeral = ref({ name: "", cfa: 0, cfo: 0, list: null as string | null, addToBase: true });
 const priceListOptions = computed(() =>
   allPriceLists.value.map((l) => ({ code: l.code, label: `${l.code}${l.label ? ` — ${l.label}` : ""}` })),
 );
@@ -411,14 +413,23 @@ function openEphemeral(name?: string) {
     cfa: discountCfa.value,
     cfo: discountCfo.value,
     list: !clientCode.value ? (priceLists.value[0] ?? null) : null,
+    addToBase: true,
   };
   ephemeralVisible.value = true;
 }
 
 async function applyEphemeral() {
-  const { name, cfa, cfo, list } = ephemeral.value;
+  const { name, cfa, cfo, list, addToBase } = ephemeral.value;
   if (!name.trim()) {
     toast.add({ severity: "warn", summary: "Indiquez la raison sociale", life: 2500 });
+    return;
+  }
+  if (addToBase) {
+    const c = await createOneOffClient(name, cfa ?? 0, cfo ?? 0, list);
+    if (!c) return;
+    ephemeralVisible.value = false;
+    client.value = c;
+    await applyClient(c);
     return;
   }
   ephemeralVisible.value = false;
@@ -429,6 +440,60 @@ async function applyEphemeral() {
   discountCfa.value = cfa ?? 0;
   discountCfo.value = cfo ?? 0;
   priceLists.value = list ? [list] : [];
+  await repriceLines();
+}
+
+/** Ajoute un client ponctuel à la base (code P0001…) ; null en cas d'erreur (message affiché). */
+async function createOneOffClient(name: string, cfa: number, cfo: number, list: string | null) {
+  try {
+    const c = await api.createOneOffClient(name.trim(), cfa, cfo, list);
+    clients.value.push(c);
+    return c;
+  } catch (e) {
+    toast.add({ severity: "error", summary: "Ajout du client", detail: errorMessage(e) });
+    return null;
+  }
+}
+
+/**
+ * Client hors base de ce devis (ancien client ponctuel) ajouté aux clients, avec les conditions du
+ * devis. Les devis enregistrés au même nom (celui-ci compris) lui sont rattachés.
+ */
+async function addCurrentClientToBase() {
+  const name = clientName.value.trim();
+  const c = await createOneOffClient(name, discountCfa.value ?? 0, discountCfo.value ?? 0, priceLists.value[0] ?? null);
+  if (!c) return;
+  client.value = c;
+  clientCode.value = c.code;
+  let linked = 0;
+  try {
+    linked = await api.linkQuotesToClient(c.code, name);
+  } catch (e) {
+    toast.add({ severity: "error", summary: "Rattachement des devis", detail: errorMessage(e) });
+  }
+  toast.add({
+    severity: "success",
+    summary: `Client ${c.code} ajouté aux clients`,
+    detail: linked ? `${linked} devis enregistré${linked > 1 ? "s" : ""} au nom « ${name} » rattaché${linked > 1 ? "s" : ""}` : undefined,
+    life: 4000,
+  });
+}
+
+// Fiche du client de la base (remises, listes, commentaire), modifiable depuis le devis.
+const clientFormVisible = ref(false);
+/** Client de la base du devis ; null pour un client hors base ou absent de ce poste. */
+const clientRecord = computed(() => (clientCode.value ? (clients.value.find((c) => c.code === clientCode.value) ?? null) : null));
+
+/** Fiche enregistrée : ses remises et listes passent dans le devis, et les prix sont recalculés. */
+async function onClientSaved(saved: Client) {
+  const i = clients.value.findIndex((c) => c.code === saved.code);
+  const previous = i >= 0 ? clients.value[i] : null;
+  if (i >= 0) clients.value[i] = saved;
+  if (client.value?.code === saved.code) client.value = saved;
+  if (previous && clientName.value.trim() === previous.name.trim()) clientName.value = saved.name;
+  discountCfa.value = saved.discount_cfa;
+  discountCfo.value = saved.discount_cfo;
+  priceLists.value = [...saved.price_lists];
   await repriceLines();
 }
 
@@ -1833,7 +1898,10 @@ provide(LINE_ROW_ACTIONS, {
             <template #option="{ option }">
               <div class="opt">
                 <span>{{ option.name }}</span>
-                <span class="muted mono">{{ option.code }}</span>
+                <span class="opt-code">
+                  <Tag v-if="option.is_one_off" value="Ponctuel" severity="info" class="small-tag" />
+                  <span class="muted mono">{{ option.code }}</span>
+                </span>
               </div>
             </template>
             <template #empty>
@@ -1841,7 +1909,7 @@ provide(LINE_ROW_ACTIONS, {
             </template>
           </AutoComplete>
           <Button
-            v-tooltip.bottom="'Client qui n\'existe que dans ce devis'"
+            v-tooltip.bottom="'Client hors fichier LPN : ajouté aux clients, ou seulement dans ce devis'"
             label="Client ponctuel"
             icon="pi pi-user-plus"
             severity="secondary"
@@ -1851,7 +1919,13 @@ provide(LINE_ROW_ACTIONS, {
         </div>
 
         <Dialog v-model:visible="ephemeralVisible" modal header="Client ponctuel" :style="{ width: '480px' }">
-          <p class="muted dialog-hint">Ce client n'est pas ajouté à la base : il n'existe que dans ce devis.</p>
+          <p class="muted dialog-hint">
+            {{
+              ephemeral.addToBase
+                ? "Ce client est ajouté aux clients (tag « Ponctuel ») : on le retrouve dans la recherche pour les prochains devis."
+                : "Ce client n'est pas ajouté aux clients : il n'existe que dans ce devis."
+            }}
+          </p>
           <form class="form-grid" @submit.prevent="applyEphemeral">
             <label for="eph-name">Raison sociale *</label>
             <InputText id="eph-name" v-model="ephemeral.name" autofocus />
@@ -1870,6 +1944,11 @@ provide(LINE_ROW_ACTIONS, {
               placeholder="Aucune (prix public − remises)"
               :virtual-scroller-options="{ itemSize: 36 }"
             />
+            <span />
+            <div class="eph-add">
+              <Checkbox v-model="ephemeral.addToBase" input-id="eph-add" binary />
+              <label for="eph-add">Ajouter aux clients</label>
+            </div>
             <button type="submit" hidden />
           </form>
           <template #footer>
@@ -1877,6 +1956,7 @@ provide(LINE_ROW_ACTIONS, {
             <Button label="Valider" icon="pi pi-check" @click="applyEphemeral" />
           </template>
         </Dialog>
+        <ClientFormDialog v-model:visible="clientFormVisible" :client="clientRecord" @saved="onClientSaved" />
       </div>
       <div class="field">
         <InputText id="date" v-model="date" v-tooltip.bottom="'Date du devis'" aria-label="Date du devis" type="date" />
@@ -1897,7 +1977,33 @@ provide(LINE_ROW_ACTIONS, {
           <div class="field">
             <div class="cd-inline">
               <Tag v-if="clientCode" :value="`Code ${clientCode}`" severity="secondary" />
-              <Tag v-else value="Client ponctuel" severity="info" />
+              <Tag v-if="clientRecord?.is_one_off" value="Ponctuel" severity="info" />
+              <Button
+                v-if="clientRecord"
+                v-tooltip.bottom="
+                  clientRecord.comment
+                    ? { value: clientRecord.comment, class: 'comment-tooltip' }
+                    : 'Remises, listes de prix et commentaire du client'
+                "
+                label="Fiche client"
+                :icon="clientRecord.comment ? 'pi pi-comment' : 'pi pi-id-card'"
+                severity="secondary"
+                text
+                size="small"
+                @click="clientFormVisible = true"
+              />
+              <template v-if="!clientCode">
+                <Tag value="Client ponctuel" severity="info" />
+                <Button
+                  v-tooltip.bottom="'Ajoute ce client aux clients et lui rattache les devis enregistrés à son nom'"
+                  label="Ajouter aux clients"
+                  icon="pi pi-user-plus"
+                  severity="secondary"
+                  text
+                  size="small"
+                  @click="addCurrentClientToBase"
+                />
+              </template>
               <Button
                 v-tooltip.bottom="'Retirer le client de ce devis (les prix sont recalculés sans remise)'"
                 label="Retirer le client"
@@ -2585,6 +2691,27 @@ provide(LINE_ROW_ACTIONS, {
   gap: 0.75rem;
   justify-content: space-between;
   width: 100%;
+}
+
+.opt-code {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.small-tag {
+  font-size: 0.7rem;
+  padding: 0.05rem 0.4rem;
+}
+
+.eph-add {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.eph-add label {
+  color: inherit;
 }
 
 /* Plein écran : la carte des lignes couvre toute la zone de contenu (la barre latérale reste

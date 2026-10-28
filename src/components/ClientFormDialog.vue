@@ -2,13 +2,20 @@
 import { computed, ref, watch } from "vue";
 import Dialog from "primevue/dialog";
 import InputNumber from "primevue/inputnumber";
+import InputText from "primevue/inputtext";
+import Textarea from "primevue/textarea";
+import Tag from "primevue/tag";
 import MultiSelect from "primevue/multiselect";
 import Button from "primevue/button";
 import { useToast } from "primevue/usetoast";
 import { api, type Client, type PriceList } from "../api";
 import { errorMessage } from "../format";
 
-/** Modification des remises et listes de prix d'un client de la base (le reste vient du fichier Excel). */
+/**
+ * Fiche d'un client de la base : remises, listes de prix et commentaire. Le reste vient du fichier
+ * Excel, sauf pour un client ponctuel (ajouté depuis un devis), dont la raison sociale se modifie ici.
+ * Ouverte depuis la liste des clients et depuis un devis.
+ */
 const props = defineProps<{ client: Client | null }>();
 const visible = defineModel<boolean>("visible", { required: true });
 const emit = defineEmits<{ saved: [client: Client] }>();
@@ -16,7 +23,7 @@ const emit = defineEmits<{ saved: [client: Client] }>();
 const toast = useToast();
 const priceLists = ref<PriceList[]>([]);
 const saving = ref(false);
-const form = ref({ discount_cfa: 0, discount_cfo: 0, price_lists: [] as string[] });
+const form = ref({ name: "", discount_cfa: 0, discount_cfo: 0, price_lists: [] as string[], comment: "" });
 
 const listOptions = computed(() =>
   priceLists.value.map((l) => ({ code: l.code, label: `${l.code}${l.label ? ` — ${l.label}` : ""} (${l.item_count})` })),
@@ -25,7 +32,13 @@ const listOptions = computed(() =>
 watch(visible, async (open) => {
   const c = props.client;
   if (!open || !c) return;
-  form.value = { discount_cfa: c.discount_cfa, discount_cfo: c.discount_cfo, price_lists: [...c.price_lists] };
+  form.value = {
+    name: c.name,
+    discount_cfa: c.discount_cfa,
+    discount_cfo: c.discount_cfo,
+    price_lists: [...c.price_lists],
+    comment: c.comment,
+  };
   if (!priceLists.value.length) {
     try {
       priceLists.value = await api.listPriceLists();
@@ -40,10 +53,22 @@ async function save() {
   if (!c) return;
   saving.value = true;
   try {
-    const { discount_cfa, discount_cfo, price_lists } = form.value;
-    await api.updateClient(c.code, discount_cfa, discount_cfo, price_lists);
+    const f = form.value;
+    if (c.is_one_off && !f.name.trim()) {
+      toast.add({ severity: "warn", summary: "Indiquez la raison sociale", life: 2500 });
+      return;
+    }
+    const saved: Client = {
+      ...c,
+      name: c.is_one_off ? f.name.trim() : c.name,
+      discount_cfa: f.discount_cfa ?? 0,
+      discount_cfo: f.discount_cfo ?? 0,
+      price_lists: [...f.price_lists],
+      comment: f.comment.trimEnd(),
+    };
+    await api.updateClient(saved);
     toast.add({ severity: "success", summary: "Client enregistré", life: 2000 });
-    emit("saved", { ...c, discount_cfa, discount_cfo, price_lists: [...price_lists] });
+    emit("saved", saved);
     visible.value = false;
   } catch (e) {
     toast.add({ severity: "error", summary: "Enregistrement", detail: errorMessage(e) });
@@ -54,14 +79,34 @@ async function save() {
 </script>
 
 <template>
-  <Dialog v-model:visible="visible" modal :header="client?.name" :style="{ width: '560px' }" :draggable="false">
+  <Dialog v-model:visible="visible" modal :style="{ width: '560px' }" :draggable="false">
+    <template #header>
+      <div class="cf-header">
+        <span class="p-dialog-title">{{ client?.name }}</span>
+        <Tag v-if="client?.is_one_off" value="Ponctuel" severity="info" />
+      </div>
+    </template>
     <div v-if="client" class="form-grid">
       <label>Code</label><span class="mono">{{ client.code }}</span>
-      <label>Groupe</label><span>{{ client.group_name }} {{ client.subgroup ? `/ ${client.subgroup}` : "" }}</span>
-      <label>Commercial</label><span>{{ client.sales_rep }}</span>
-      <label>Email</label><span>{{ client.email }}</span>
-      <label>SIREN</label><span>{{ client.siren }}</span>
-      <label>Franco</label><span>{{ client.franco }}</span>
+      <template v-if="client.is_one_off">
+        <label for="cf-name">Raison sociale</label>
+        <InputText id="cf-name" v-model="form.name" />
+      </template>
+      <template v-if="!client.is_one_off || client.group_name">
+        <label>Groupe</label><span>{{ client.group_name }} {{ client.subgroup ? `/ ${client.subgroup}` : "" }}</span>
+      </template>
+      <template v-if="!client.is_one_off || client.sales_rep">
+        <label>Commercial</label><span>{{ client.sales_rep }}</span>
+      </template>
+      <template v-if="!client.is_one_off || client.email">
+        <label>Email</label><span>{{ client.email }}</span>
+      </template>
+      <template v-if="!client.is_one_off || client.siren">
+        <label>SIREN</label><span>{{ client.siren }}</span>
+      </template>
+      <template v-if="!client.is_one_off || client.franco">
+        <label>Franco</label><span>{{ client.franco }}</span>
+      </template>
       <label for="cf-cfa">Remise CFA</label>
       <InputNumber v-model="form.discount_cfa" input-id="cf-cfa" :min="0" :max="100" :max-fraction-digits="2" suffix=" %" />
       <label for="cf-cfo">Remise CFO</label>
@@ -77,6 +122,14 @@ async function save() {
         placeholder="Aucune"
         :virtual-scroller-options="{ itemSize: 38 }"
       />
+      <label for="cf-comment" class="cf-comment-label">Commentaire</label>
+      <Textarea
+        id="cf-comment"
+        v-model="form.comment"
+        rows="4"
+        auto-resize
+        placeholder="Annotations sur le client (non imprimées, gardées à l'import LPN)"
+      />
     </div>
     <template #footer>
       <Button label="Annuler" severity="secondary" text @click="visible = false" />
@@ -88,5 +141,20 @@ async function save() {
 <style scoped>
 .form-grid {
   grid-template-columns: 130px 1fr;
+}
+
+.cf-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.cf-comment-label {
+  align-self: start;
+  padding-top: 0.5rem;
+}
+
+#cf-comment {
+  max-height: 320px;
 }
 </style>

@@ -342,6 +342,10 @@ onMounted(async () => {
               {{ formatNumber(report.price_lists) }} listes ({{ formatNumber(report.price_list_items) }} prix),
               {{ formatNumber(report.client_links) }} rattachements client → liste
               (dont {{ formatNumber(report.lists_linked_to_existing) }} listes rattachées au client existant de même code).
+              <template v-if="report.one_off_clients">
+                {{ formatNumber(report.one_off_clients) }} client(s) ponctuel(s) conservé(s).
+              </template>
+              Les commentaires des fiches clients sont conservés.
             </Message>
             <Message v-for="w in report.warnings" :key="w" severity="warn" :closable="false">{{ w }}</Message>
           </div>

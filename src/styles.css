@@ -138,3 +138,9 @@ h2 {
   white-space: pre-line;
   max-width: 36rem;
 }
+
+/* Infobulle d'un commentaire client : sauts de ligne gardés. */
+.comment-tooltip .p-tooltip-text {
+  white-space: pre-line;
+  max-width: 28rem;
+}

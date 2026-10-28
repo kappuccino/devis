@@ -25,7 +25,15 @@ export const HELP: HelpSection[] = [
     items: [
       {
         title: "Créer un devis",
-        text: "« Nouveau devis » dans le menu. Choisissez un client de la base (recherche par nom ou code) ou un « Client ponctuel » qui n'existe que dans ce devis. Les remises CFA / CFO et les listes de prix du client sont copiées dans le devis et restent modifiables.",
+        text: "« Nouveau devis » dans le menu. Choisissez un client de la base (recherche par nom ou code) ou un « Client ponctuel ». Les remises CFA / CFO et les listes de prix du client sont copiées dans le devis et restent modifiables.",
+      },
+      {
+        title: "Client ponctuel",
+        text: "Bouton « Client ponctuel » à côté de la recherche client : raison sociale, remises et une liste de prix. Case « Ajouter aux clients » (cochée) : le client est ajouté aux clients avec un code P0001, P0002… et le tag « Ponctuel », et on le retrouve dans la recherche pour les prochains devis. Décochée : il n'existe que dans ce devis. Sur un ancien devis à client ponctuel, le bouton « Ajouter aux clients » (à côté du tag « Client ponctuel ») l'ajoute avec les conditions du devis, et lui rattache les devis enregistrés au même nom.",
+      },
+      {
+        title: "Fiche client depuis un devis",
+        text: "Bouton « Fiche client » à côté du code du client : la même fenêtre que dans l'écran Clients (remises, listes de prix, commentaire). À l'enregistrement, les remises et les listes de prix sont reprises dans le devis et les prix recalculés (les prix verrouillés sont gardés). Une bulle sur le bouton signale un commentaire : survolez-le pour le lire.",
       },
       {
         title: "Nom de l'affaire",
@@ -154,7 +162,15 @@ export const HELP: HelpSection[] = [
     items: [
       {
         title: "Fiches clients",
-        text: "Clients importés du fichier LPN : code, raison sociale, groupe, commercial, remises CFA / CFO et listes de prix rattachées, modifiables (un réimport du fichier LPN les remplace). Les clients présents seulement dans la feuille « CLIENTS IC » sont aussi importés, avec leur code et leur raison sociale uniquement (ni remise ni liste de prix) : sur leurs devis, forcer une liste de prix favorite. Chaque liste de prix crée aussi son propre client, même si d'autres clients l'utilisent déjà (ex. une liste de groupe) : son code est celui de la liste sans le « T » (T205000 → 205000), son nom est l'intitulé de la liste, et la liste lui est rattachée. Si un client a déjà ce code, il garde son nom et la liste lui est simplement rattachée, en plus de ses autres listes. Un code client présent sur plusieurs lignes de « gestion tarifs » donne un seul client (la première ligne), qui reçoit les listes de prix de toutes ces lignes.",
+        text: "Clients importés du fichier LPN : code, raison sociale, groupe, commercial, remises CFA / CFO et listes de prix rattachées, modifiables (un réimport du fichier LPN les remplace, sauf les commentaires et les clients ponctuels). Les clients présents seulement dans la feuille « CLIENTS IC » sont aussi importés, avec leur code et leur raison sociale uniquement (ni remise ni liste de prix) : sur leurs devis, forcer une liste de prix favorite. Chaque liste de prix crée aussi son propre client, même si d'autres clients l'utilisent déjà (ex. une liste de groupe) : son code est celui de la liste sans le « T » (T205000 → 205000), son nom est l'intitulé de la liste, et la liste lui est rattachée. Si un client a déjà ce code, il garde son nom et la liste lui est simplement rattachée, en plus de ses autres listes. Un code client présent sur plusieurs lignes de « gestion tarifs » donne un seul client (la première ligne), qui reçoit les listes de prix de toutes ces lignes.",
+      },
+      {
+        title: "Commentaire sur un client",
+        text: "Cliquez sur un client : champ « Commentaire » en bas de sa fiche, sur plusieurs lignes, pour vos annotations (non imprimées). Il est gardé lors d'un réimport du fichier LPN. Une bulle à côté de la raison sociale signale un commentaire : survolez-la pour le lire. La recherche de l'écran Clients porte aussi sur les commentaires.",
+      },
+      {
+        title: "Clients ponctuels",
+        text: "Clients ajoutés depuis un devis (code P0001, P0002…, tag « Ponctuel ») : leur raison sociale se modifie dans leur fiche. Un réimport du fichier LPN les garde, avec leurs listes de prix (une liste disparue du fichier leur est retirée, l'import le signale).",
       },
       {
         title: "Export Excel des prix d'un client",

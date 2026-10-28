@@ -25,7 +25,9 @@ const filtered = computed(() => {
   const q = query.value.trim().toLowerCase();
   if (!q) return clients.value;
   return clients.value.filter((c) =>
-    [c.code, c.name, c.group_name, c.subgroup, c.sales_rep, c.siren].some((v) => v?.toLowerCase().includes(q)),
+    [c.code, c.name, c.group_name, c.subgroup, c.sales_rep, c.siren, c.comment].some((v) =>
+      v?.toLowerCase().includes(q),
+    ),
   );
 });
 
@@ -67,7 +69,7 @@ onMounted(load);
       <h1>Clients</h1>
       <span class="muted">{{ filtered.length }} / {{ clients.length }}</span>
       <span class="spacer" />
-      <InputText v-model="search" placeholder="Nom, code, groupe, commercial…" style="width: 280px" />
+      <InputText v-model="search" placeholder="Nom, code, groupe, commercial, commentaire…" style="width: 280px" />
     </div>
     <DataTable
       :value="filtered"
@@ -85,9 +87,20 @@ onMounted(load);
       <Column field="code" header="Code" sortable>
         <template #body="{ data }">
           <span class="mono">{{ data.code }}</span>
+          <Tag v-if="data.is_one_off" value="Ponctuel" severity="info" class="one-off-tag" />
         </template>
       </Column>
-      <Column field="name" header="Raison sociale" sortable />
+      <Column field="name" header="Raison sociale" sortable>
+        <template #body="{ data }">
+          {{ data.name }}
+          <i
+            v-if="data.comment"
+            v-tooltip.top="{ value: data.comment, class: 'comment-tooltip' }"
+            class="pi pi-comment comment-icon"
+            aria-label="Commentaire"
+          />
+        </template>
+      </Column>
       <Column field="group_name" header="Groupe" sortable />
       <Column field="sales_rep" header="Commercial" sortable />
       <Column field="discount_cfa" header="Remise CFA" sortable class="num">
@@ -133,5 +146,17 @@ onMounted(load);
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
+}
+
+.one-off-tag {
+  margin-left: 0.4rem;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+}
+
+.comment-icon {
+  margin-left: 0.35rem;
+  color: var(--app-muted);
+  font-size: 0.85rem;
 }
 </style>

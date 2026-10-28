@@ -32,6 +32,10 @@ export interface Client {
   franco: string | null;
   siren: string | null;
   price_lists: string[];
+  /** Commentaire saisi sur la fiche (gardé à l'import LPN). */
+  comment: string;
+  /** Client ponctuel ajouté depuis un devis (code P0001…), gardé à l'import LPN. */
+  is_one_off: boolean;
 }
 
 /** Conditions de prix d'un devis : copiées du client à sa sélection, modifiables sur le devis. */
@@ -330,6 +334,8 @@ export interface ImportReport {
   price_lists: number;
   price_list_items: number;
   client_links: number;
+  /** Clients ponctuels (ajoutés depuis les devis) conservés. */
+  one_off_clients: number;
   warnings: string[];
 }
 
@@ -351,8 +357,22 @@ export const api = {
 
   listClients: () => invoke<Client[]>("list_clients"),
   getClient: (code: string) => invoke<Client | null>("get_client", { code }),
-  updateClient: (code: string, discountCfa: number, discountCfo: number, priceLists: string[]) =>
-    invoke<void>("update_client", { code, discountCfa, discountCfo, priceLists }),
+  /** Le nom n'est modifié que pour un client ponctuel. */
+  updateClient: (c: Pick<Client, "code" | "name" | "discount_cfa" | "discount_cfo" | "price_lists" | "comment">) =>
+    invoke<void>("update_client", {
+      code: c.code,
+      name: c.name,
+      discountCfa: c.discount_cfa,
+      discountCfo: c.discount_cfo,
+      priceLists: c.price_lists,
+      comment: c.comment,
+    }),
+  /** Ajoute un client ponctuel à la base (code P0001…). */
+  createOneOffClient: (name: string, discountCfa: number, discountCfo: number, priceList: string | null) =>
+    invoke<Client>("create_one_off_client", { name, discountCfa, discountCfo, priceList }),
+  /** Rattache au client les devis à client hors base du même nom ; renvoie leur nombre. */
+  linkQuotesToClient: (code: string, clientName: string) =>
+    invoke<number>("link_quotes_to_client", { code, clientName }),
 
   setClientPriceList: (clientCode: string, priceListCode: string, attached: boolean) =>
     invoke<void>("set_client_price_list", { clientCode, priceListCode, attached }),
