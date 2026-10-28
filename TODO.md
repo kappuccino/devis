@@ -238,6 +238,9 @@
   prix remisé ou public tant qu'il n'est pas tapé). Marquée par la source du prix « Réf. libre », dans
   l'appli seulement (PDF inchangé), non mémorisée au catalogue.
 
+- [x] Clients : colonne « Devis » (nombre, triable), flèche qui déplie les devis du client (clic : ouvre
+  le devis) et lien « Voir dans la liste des devis » (écran Devis filtré sur le client).
+
 - [ ] Lenteurs de saisie sur les gros devis (≈ 400 lignes, sensibles dès 200)
   - [x] Chaque ligne du tableau dans son propre composant (`QuoteLineRow`) : une frappe ne redessine
     que sa ligne.

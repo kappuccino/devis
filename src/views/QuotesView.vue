@@ -23,6 +23,12 @@ const toast = useToast();
 /** Onglet : devis, ou devis types (modèles sans client ni prix) ; gardé dans l'URL (?onglet=types). */
 const tab = computed<"quotes" | "types">(() => (route.query.onglet === "types" ? "types" : "quotes"));
 const setTab = (t: "quotes" | "types") => router.replace({ query: t === "types" ? { onglet: "types" } : {} });
+/** Devis d'un seul client (code), depuis l'écran Clients : « Voir dans la liste des devis ». */
+const clientFilter = computed(() => (typeof route.query.client === "string" ? route.query.client : null));
+const clientFilterName = computed(
+  () => quotes.value.find((q) => q.client_code === clientFilter.value)?.client_name ?? clientFilter.value,
+);
+const clearClientFilter = () => router.replace({ query: {} });
 
 const templates = ref<QuoteTemplate[]>([]);
 const templateSearch = ref("");
@@ -75,6 +81,7 @@ const filtered = computed(() => {
   return quotes.value.filter(
     (d) =>
       (status.value === "all" || (status.value === "won") === !!d.won_at) &&
+      (!clientFilter.value || d.client_code === clientFilter.value) &&
       (!q || [d.number, d.client_name, d.client_code ?? "", d.project_name, d.comment].some((v) => v.toLowerCase().includes(q))),
   );
 });
@@ -244,6 +251,16 @@ onMounted(() => {
       </nav>
       <span class="spacer" />
       <template v-if="tab === 'quotes'">
+        <Button
+          v-if="clientFilter"
+          v-tooltip.bottom="'Afficher les devis de tous les clients'"
+          :label="`Client : ${clientFilterName}`"
+          icon="pi pi-times"
+          icon-pos="right"
+          severity="secondary"
+          outlined
+          @click="clearClientFilter"
+        />
         <Select v-model="status" :options="statusOptions" option-label="label" option-value="value" aria-label="Suivi" />
         <InputText v-model="search" placeholder="N°, client, affaire…" style="width: 240px" />
         <Button

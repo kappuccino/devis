@@ -6,14 +6,20 @@ import Column from "primevue/column";
 import InputText from "primevue/inputtext";
 import Tag from "primevue/tag";
 import { useToast } from "primevue/usetoast";
-import { api, type Client } from "../api";
-import { errorMessage, formatPct } from "../format";
+import { useRouter } from "vue-router";
+import { api, type Client, type QuoteSummary } from "../api";
+import { errorMessage, formatDate, formatEuro, formatPct } from "../format";
 import Button from "primevue/button";
 import ClientFormDialog from "../components/ClientFormDialog.vue";
 import PriceListExportDialog from "../components/PriceListExportDialog.vue";
 
 const toast = useToast();
+const router = useRouter();
 const clients = ref<Client[]>([]);
+/** Devis de chaque client (par code), du plus récent au plus ancien ; versions comprises. */
+const quotesByClient = ref(new Map<string, QuoteSummary[]>());
+/** Clients dépliés (code → true) : leurs devis s'affichent sous la ligne. */
+const expanded = ref<Record<string, boolean>>({});
 const loading = ref(true);
 const search = ref("");
 const query = useDebouncedSearch(search);
@@ -21,10 +27,13 @@ const query = useDebouncedSearch(search);
 const dialogVisible = ref(false);
 const editing = ref<Client | null>(null);
 
+/** Clients avec leur nombre de devis (colonne triable). */
+const rows = computed(() => clients.value.map((c) => ({ ...c, quote_count: quotesByClient.value.get(c.code)?.length ?? 0 })));
+
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase();
-  if (!q) return clients.value;
-  return clients.value.filter((c) =>
+  if (!q) return rows.value;
+  return rows.value.filter((c) =>
     [c.code, c.name, c.group_name, c.subgroup, c.sales_rep, c.siren, c.comment].some((v) =>
       v?.toLowerCase().includes(q),
     ),
@@ -34,13 +43,29 @@ const filtered = computed(() => {
 async function load() {
   loading.value = true;
   try {
-    clients.value = await api.listClients();
+    const [list, quotes] = await Promise.all([api.listClients(), api.listQuotes()]);
+    clients.value = list;
+    const byClient = new Map<string, QuoteSummary[]>();
+    // Liste déjà triée du plus récent au plus ancien.
+    for (const q of quotes) {
+      if (q.client_code) byClient.set(q.client_code, [...(byClient.get(q.client_code) ?? []), q]);
+    }
+    quotesByClient.value = byClient;
   } catch (e) {
     toast.add({ severity: "error", summary: "Chargement des clients", detail: errorMessage(e) });
   } finally {
     loading.value = false;
   }
 }
+
+function toggleQuotes(code: string) {
+  const next = { ...expanded.value };
+  if (next[code]) delete next[code];
+  else next[code] = true;
+  expanded.value = next;
+}
+
+const openQuote = (q: QuoteSummary) => router.push(`/devis/${q.id}`);
 
 function openClient(client: Client) {
   editing.value = client;
@@ -81,9 +106,25 @@ onMounted(load);
       striped-rows
       selection-mode="single"
       data-key="code"
+      :expanded-rows="expanded"
       class="card"
       @row-click="openClient($event.data)"
     >
+      <!-- Flèche : déplie les devis du client (seulement s'il en a). -->
+      <Column style="width: 36px" class="expander-cell">
+        <template #body="{ data }">
+          <Button
+            v-if="data.quote_count"
+            :icon="expanded[data.code] ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
+            text
+            rounded
+            size="small"
+            severity="secondary"
+            :aria-label="expanded[data.code] ? 'Replier les devis' : 'Déplier les devis'"
+            @click.stop="toggleQuotes(data.code)"
+          />
+        </template>
+      </Column>
       <Column field="code" header="Code" sortable>
         <template #body="{ data }">
           <span class="mono">{{ data.code }}</span>
@@ -109,6 +150,11 @@ onMounted(load);
       <Column field="discount_cfo" header="Remise CFO" sortable class="num">
         <template #body="{ data }">{{ formatPct(data.discount_cfo) }}</template>
       </Column>
+      <Column field="quote_count" header="Devis" sortable class="num" style="width: 80px">
+        <template #body="{ data }">
+          <span :class="{ muted: !data.quote_count }">{{ data.quote_count || "–" }}</span>
+        </template>
+      </Column>
       <Column header="Listes de prix">
         <template #body="{ data }">
           <div class="tags">
@@ -131,6 +177,57 @@ onMounted(load);
           />
         </template>
       </Column>
+      <template #expansion="{ data }">
+        <div class="client-quotes">
+          <table>
+            <thead>
+              <tr>
+                <th>N°</th>
+                <th>Date</th>
+                <th>Affaire</th>
+                <th class="num">Total HT</th>
+                <th>Obtenue</th>
+                <th>Commentaire</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="q in quotesByClient.get(data.code) ?? []"
+                :key="q.id"
+                v-tooltip.left="'Ouvrir le devis'"
+                :class="{ superseded: q.superseded }"
+                @click="openQuote(q)"
+              >
+                <td>
+                  <span class="mono link">{{ q.number }}</span>
+                  <span v-if="q.superseded" class="muted old">ancienne version</span>
+                </td>
+                <td>{{ formatDate(q.date) }}</td>
+                <td>{{ q.project_name }}</td>
+                <td class="num">
+                  <strong>{{ formatEuro(q.total_net) }}</strong>
+                </td>
+                <td>
+                  <i
+                    v-if="q.won_at"
+                    v-tooltip.top="`Affaire obtenue (cochée le ${formatDate(q.won_at)})`"
+                    class="pi pi-check-circle won"
+                  />
+                </td>
+                <td class="muted">{{ q.comment }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <Button
+            label="Voir dans la liste des devis"
+            icon="pi pi-arrow-right"
+            icon-pos="right"
+            text
+            size="small"
+            @click="router.push({ path: '/devis', query: { client: data.code } })"
+          />
+        </div>
+      </template>
       <template #empty>
         <span class="muted">Aucun client. Importez le fichier LPN depuis les Réglages.</span>
       </template>
@@ -152,6 +249,64 @@ onMounted(load);
   margin-left: 0.4rem;
   font-size: 0.7rem;
   padding: 0.1rem 0.4rem;
+}
+
+.expander-cell :deep(.p-button) {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+/* Devis d'un client, dépliés sous sa ligne. */
+.client-quotes {
+  padding: 0.25rem 0 0.5rem 2.5rem;
+}
+
+.client-quotes table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.client-quotes th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--app-muted);
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.client-quotes td {
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.client-quotes .num {
+  text-align: right;
+}
+
+.client-quotes tbody tr {
+  cursor: pointer;
+}
+
+.client-quotes tbody tr:hover {
+  background: color-mix(in srgb, var(--app-accent) 6%, transparent);
+}
+
+.client-quotes tr.superseded td {
+  opacity: 0.6;
+}
+
+.client-quotes .link {
+  color: var(--app-accent);
+}
+
+.client-quotes .old {
+  margin-left: 0.4rem;
+  font-size: 0.85em;
+}
+
+.client-quotes .won {
+  color: var(--app-success);
 }
 
 .comment-icon {
