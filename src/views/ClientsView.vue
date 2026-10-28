@@ -80,7 +80,9 @@ function openExport(client: Client) {
   exportVisible.value = true;
 }
 
-function onSaved(saved: Client) {
+function onSaved(saved: Client, previousCode: string) {
+  // N° changé (client ponctuel) : ses devis aussi, tout est relu.
+  if (saved.code !== previousCode) return load();
   const i = clients.value.findIndex((c) => c.code === saved.code);
   if (i >= 0) clients.value[i] = saved;
 }

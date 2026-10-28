@@ -193,23 +193,74 @@ pub fn get_client(state: State<AppState>, code: String) -> CmdResult<Option<Clie
         .map_err(err)
 }
 
-/// Modifie les remises, les listes de prix rattachées et le commentaire d'un client ; le nom
-/// seulement pour un client ponctuel (les autres viennent du fichier LPN).
+/// Modifie les remises, les listes de prix rattachées et le commentaire d'un client ; le nom et le
+/// code (`new_code`) seulement pour un client ponctuel (les autres viennent du fichier LPN).
 #[tauri::command]
 pub fn update_client(
     state: State<AppState>,
     code: String,
+    new_code: String,
     name: String,
     discount_cfa: f64,
     discount_cfo: f64,
     price_lists: Vec<String>,
     comment: String,
 ) -> CmdResult<()> {
-    save_client(&mut state.conn(), &code, &name, discount_cfa, discount_cfo, &price_lists, &comment)
+    let mut conn = state.conn();
+    let tx = conn.transaction().map_err(err)?;
+    let code = rename_one_off_client(&tx, &code, &new_code)?;
+    save_client(&tx, &code, &name, discount_cfa, discount_cfo, &price_lists, &comment)?;
+    tx.commit().map_err(err)
+}
+
+/// Code d'un client ponctuel saisi à la main (son vrai n° client ou un n° provisoire) : en
+/// majuscules comme les codes importés, et libre.
+fn check_new_client_code(conn: &Connection, code: &str) -> CmdResult<String> {
+    let code = code.trim().to_uppercase();
+    if code.is_empty() {
+        return Err("N° client manquant".into());
+    }
+    let taken: Option<String> = conn
+        .query_row("SELECT name FROM clients WHERE code = ?1", [&code], |r| r.get(0))
+        .optional()
+        .map_err(err)?;
+    match taken {
+        Some(name) => Err(format!("Le n° {code} est déjà celui du client {name}")),
+        None => Ok(code),
+    }
+}
+
+/// Change le code d'un client ponctuel, avec ses listes, son commentaire et ses devis. Renvoie le
+/// code à utiliser ensuite (inchangé si `new_code` est vide ou identique, ou si le client est importé).
+fn rename_one_off_client(tx: &Connection, code: &str, new_code: &str) -> CmdResult<String> {
+    let wanted = new_code.trim().to_uppercase();
+    if wanted.is_empty() || wanted == code {
+        return Ok(code.to_string());
+    }
+    let one_off: bool = tx
+        .query_row("SELECT is_one_off FROM clients WHERE code = ?1", [code], |r| r.get(0))
+        .optional()
+        .map_err(err)?
+        .unwrap_or(false);
+    if !one_off {
+        return Ok(code.to_string());
+    }
+    let wanted = check_new_client_code(tx, &wanted)?;
+    // Les liens vers l'ancien code sont vérifiés à la fin de la transaction, une fois tout renommé.
+    tx.execute_batch("PRAGMA defer_foreign_keys = ON").map_err(err)?;
+    for sql in [
+        "UPDATE clients SET code = ?2 WHERE code = ?1",
+        "UPDATE client_price_lists SET client_code = ?2 WHERE client_code = ?1",
+        "UPDATE client_comments SET client_code = ?2 WHERE client_code = ?1",
+        "UPDATE quotes SET client_code = ?2 WHERE client_code = ?1",
+    ] {
+        tx.execute(sql, params![code, wanted]).map_err(err)?;
+    }
+    Ok(wanted)
 }
 
 fn save_client(
-    conn: &mut Connection,
+    tx: &Connection,
     code: &str,
     name: &str,
     discount_cfa: f64,
@@ -217,7 +268,6 @@ fn save_client(
     price_lists: &[String],
     comment: &str,
 ) -> CmdResult<()> {
-    let tx = conn.transaction().map_err(err)?;
     tx.execute(
         "UPDATE clients SET discount_cfa = ?2, discount_cfo = ?3,
              name = CASE WHEN is_one_off = 1 AND trim(?4) <> '' THEN trim(?4) ELSE name END
@@ -234,8 +284,7 @@ fn save_client(
         )
         .map_err(err)?;
     }
-    set_client_comment(&tx, code, comment)?;
-    tx.commit().map_err(err)
+    set_client_comment(tx, code, comment)
 }
 
 /// Commentaire d'un client : vide, il est supprimé.
@@ -254,20 +303,23 @@ fn set_client_comment(conn: &Connection, code: &str, comment: &str) -> CmdResult
     .map_err(err)
 }
 
-/// Ajoute à la base un client ponctuel (code P0001, P0002… : les codes LPN sont numériques).
+/// Ajoute à la base un client ponctuel, avec le code saisi (`code`) ou à défaut le suivant de
+/// P0001, P0002… (les codes LPN sont numériques).
 #[tauri::command]
 pub fn create_one_off_client(
     state: State<AppState>,
+    code: Option<String>,
     name: String,
     discount_cfa: f64,
     discount_cfo: f64,
     price_list: Option<String>,
 ) -> CmdResult<Client> {
-    add_one_off_client(&mut state.conn(), &name, discount_cfa, discount_cfo, price_list.as_deref())
+    add_one_off_client(&mut state.conn(), code.as_deref(), &name, discount_cfa, discount_cfo, price_list.as_deref())
 }
 
 fn add_one_off_client(
     conn: &mut Connection,
+    code: Option<&str>,
     name: &str,
     discount_cfa: f64,
     discount_cfo: f64,
@@ -278,15 +330,20 @@ fn add_one_off_client(
         return Err("Raison sociale manquante".into());
     }
     let tx = conn.transaction().map_err(err)?;
-    let last: i64 = tx
-        .query_row(
-            "SELECT COALESCE(MAX(CAST(substr(code, 2) AS INTEGER)), 0) FROM clients
-             WHERE code GLOB 'P[0-9]*' AND substr(code, 2) NOT GLOB '*[^0-9]*'",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(err)?;
-    let code = format!("P{:04}", last + 1);
+    let code = match code.filter(|c| !c.trim().is_empty()) {
+        Some(code) => check_new_client_code(&tx, code)?,
+        None => {
+            let last: i64 = tx
+                .query_row(
+                    "SELECT COALESCE(MAX(CAST(substr(code, 2) AS INTEGER)), 0) FROM clients
+                     WHERE code GLOB 'P[0-9]*' AND substr(code, 2) NOT GLOB '*[^0-9]*'",
+                    [],
+                    |r| r.get(0),
+                )
+                .map_err(err)?;
+            format!("P{:04}", last + 1)
+        }
+    };
     tx.execute(
         "INSERT INTO clients (code, name, discount_cfa, discount_cfo, is_one_off) VALUES (?1, ?2, ?3, ?4, 1)",
         params![code, name, discount_cfa, discount_cfo],
@@ -1447,11 +1504,11 @@ mod tests {
                  ('D3', '001200', 'Dupont SARL', '2026-03-01'), ('D4', '', 'Autre', '2026-03-01');",
         )
         .unwrap();
-        let a = add_one_off_client(&mut conn, " Dupont SARL ", 10.0, 5.0, Some("T1")).unwrap();
+        let a = add_one_off_client(&mut conn, None, " Dupont SARL ", 10.0, 5.0, Some("T1")).unwrap();
         assert_eq!((a.code.as_str(), a.name.as_str(), a.is_one_off), ("P0001", "Dupont SARL", true));
         assert_eq!(a.price_lists, ["T1"]);
-        assert_eq!(add_one_off_client(&mut conn, "Autre", 0.0, 0.0, None).unwrap().code, "P0002");
-        assert!(add_one_off_client(&mut conn, "  ", 0.0, 0.0, None).is_err());
+        assert_eq!(add_one_off_client(&mut conn, None, "Autre", 0.0, 0.0, None).unwrap().code, "P0002");
+        assert!(add_one_off_client(&mut conn, None, "  ", 0.0, 0.0, None).is_err());
 
         // Devis hors base du même nom rattachés ; pas ceux qui ont déjà un code.
         assert_eq!(link_quotes(&conn, "P0001", "dupont sarl").unwrap(), 2);
@@ -1462,18 +1519,41 @@ mod tests {
             conn.query_row(&format!("{CLIENT_SELECT} WHERE c.code = ?1"), [code], map_client).unwrap()
         };
         // Commentaire inséré, remplacé, supprimé ; nom modifié pour un ponctuel seulement.
-        save_client(&mut conn, "P0001", "Dupont & fils", 12.0, 5.0, &[], "Ligne 1\nLigne 2").unwrap();
-        save_client(&mut conn, "001200", "RENOMMÉ", 0.0, 0.0, &[], "Appeler avant").unwrap();
+        save_client(&conn, "P0001", "Dupont & fils", 12.0, 5.0, &[], "Ligne 1\nLigne 2").unwrap();
+        save_client(&conn, "001200", "RENOMMÉ", 0.0, 0.0, &[], "Appeler avant").unwrap();
         let (p, i) = (get(&conn, "P0001"), get(&conn, "001200"));
         assert_eq!((p.name.as_str(), p.comment.as_str(), p.discount_cfa), ("Dupont & fils", "Ligne 1\nLigne 2", 12.0));
         assert!(p.price_lists.is_empty());
         assert_eq!((i.name.as_str(), i.comment.as_str()), ("IMPORTÉ", "Appeler avant"));
-        save_client(&mut conn, "001200", "", 0.0, 0.0, &[], "Autre chose").unwrap();
+        save_client(&conn, "001200", "", 0.0, 0.0, &[], "Autre chose").unwrap();
         assert_eq!(get(&conn, "001200").comment, "Autre chose");
-        save_client(&mut conn, "001200", "", 0.0, 0.0, &[], "  ").unwrap();
+        save_client(&conn, "001200", "", 0.0, 0.0, &[], "  ").unwrap();
         assert_eq!(get(&conn, "001200").comment, "");
         let rows: i64 = conn.query_row("SELECT COUNT(*) FROM client_comments", [], |r| r.get(0)).unwrap();
         assert_eq!(rows, 1);
+
+        // Code saisi à la main : en majuscules, refusé s'il est déjà pris.
+        let forced = add_one_off_client(&mut conn, Some(" 4567a "), "Avec numéro", 0.0, 0.0, None).unwrap();
+        assert_eq!(forced.code, "4567A");
+        assert!(add_one_off_client(&mut conn, Some("001200"), "Doublon", 0.0, 0.0, None).is_err());
+        assert_eq!(add_one_off_client(&mut conn, Some(" "), "Auto", 0.0, 0.0, None).unwrap().code, "P0003");
+
+        // Changement de code d'un ponctuel : listes, commentaire et devis suivent.
+        save_client(&conn, "P0001", "Dupont & fils", 12.0, 5.0, &["T1".into()], "Ligne 1").unwrap();
+        let tx = conn.transaction().unwrap();
+        assert_eq!(rename_one_off_client(&tx, "P0001", " 98765 ").unwrap(), "98765");
+        tx.commit().unwrap();
+        let renamed = get(&conn, "98765");
+        assert_eq!((renamed.name.as_str(), renamed.comment.as_str(), renamed.is_one_off), ("Dupont & fils", "Ligne 1", true));
+        assert_eq!(renamed.price_lists, ["T1"]);
+        let quotes: i64 =
+            conn.query_row("SELECT COUNT(*) FROM quotes WHERE client_code = '98765'", [], |r| r.get(0)).unwrap();
+        assert_eq!(quotes, 2);
+        let tx = conn.transaction().unwrap();
+        assert!(rename_one_off_client(&tx, "98765", "001200").is_err());
+        // Client importé : code inchangé.
+        assert_eq!(rename_one_off_client(&tx, "001200", "X1").unwrap(), "001200");
+        assert_eq!(rename_one_off_client(&tx, "98765", "").unwrap(), "98765");
     }
 
     #[test]

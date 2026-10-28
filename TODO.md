@@ -241,6 +241,10 @@
 - [x] Clients : colonne « Devis » (nombre, triable), flèche qui déplie les devis du client (clic : ouvre
   le devis) et lien « Voir dans la liste des devis » (écran Devis filtré sur le client).
 
+- [x] Client ponctuel : n° client saisi à la création (vrai n° MFG/PRO ou provisoire ; vide : P0001…)
+  et modifiable sur sa fiche (listes, commentaire et devis suivent). Code en « P » non imprimé sur le
+  PDF. À l'import LPN, un ponctuel dont le n° est dans le fichier devient client importé.
+
 - [ ] Lenteurs de saisie sur les gros devis (≈ 400 lignes, sensibles dès 200)
   - [x] Chaque ligne du tableau dans son propre composant (`QuoteLineRow`) : une frappe ne redessine
     que sa ligne.

@@ -64,9 +64,12 @@ fn import_ranges(
     let mut report = ImportReport::default();
     let tx = conn.transaction()?;
     // Clients ponctuels (ajoutés depuis les devis) : conservés. Leurs listes de prix, effacées avec
-    // les listes, sont remises après l'import si elles existent encore.
-    report.one_off_clients =
-        tx.query_row("SELECT COUNT(*) FROM clients WHERE is_one_off = 1", [], |r| r.get::<_, i64>(0))? as usize;
+    // les listes, sont remises après l'import si elles existent encore. Un ponctuel dont le code est
+    // dans le fichier devient un client importé (le fichier l'emporte).
+    let one_off_codes: Vec<String> = tx
+        .prepare("SELECT code FROM clients WHERE is_one_off = 1 ORDER BY code")?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
     let one_off_links: Vec<(String, String)> = tx
         .prepare(
             "SELECT cpl.client_code, cpl.price_list_code FROM client_price_lists cpl
@@ -90,7 +93,27 @@ fn import_ranges(
     }
     clients_for_lists(&tx, &mut report)?;
 
+    let mut found_in_file = Vec::new();
+    for code in &one_off_codes {
+        let still_one_off: bool =
+            tx.query_row("SELECT is_one_off FROM clients WHERE code = ?1", [code], |r| r.get(0))?;
+        if still_one_off {
+            report.one_off_clients += 1;
+        } else {
+            found_in_file.push(code.as_str());
+        }
+    }
+    if !found_in_file.is_empty() {
+        report.warnings.push(format!(
+            "{} client(s) ponctuel(s) trouvé(s) dans le fichier, désormais clients importés : {}",
+            found_in_file.len(),
+            found_in_file.join(", ")
+        ));
+    }
     for (client, list) in one_off_links {
+        if found_in_file.contains(&client.as_str()) {
+            continue;
+        }
         let restored = tx.execute(
             "INSERT OR IGNORE INTO client_price_lists (client_code, price_list_code)
              SELECT ?1, code FROM price_lists WHERE code = ?2",
@@ -237,9 +260,14 @@ fn import_clients(tx: &Connection, range: &Range<Data>, report: &mut ImportRepor
         .collect::<Result<_, _>>()?;
 
     let mut client_stmt = tx.prepare(
-        "INSERT OR IGNORE INTO clients
+        "INSERT INTO clients
          (code, name, group_name, subgroup, sales_rep, discount_cfa, discount_cfo, email, franco, siren)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+         ON CONFLICT(code) DO UPDATE SET name = excluded.name, group_name = excluded.group_name,
+             subgroup = excluded.subgroup, sales_rep = excluded.sales_rep, discount_cfa = excluded.discount_cfa,
+             discount_cfo = excluded.discount_cfo, email = excluded.email, franco = excluded.franco,
+             siren = excluded.siren, is_one_off = 0
+         WHERE clients.is_one_off = 1",
     )?;
     let mut link_stmt =
         tx.prepare("INSERT OR IGNORE INTO client_price_lists (client_code, price_list_code) VALUES (?1, ?2)")?;
@@ -308,7 +336,10 @@ fn import_clients(tx: &Connection, range: &Range<Data>, report: &mut ImportRepor
 /// code et raison sociale seulement, sans remise ni liste de prix.
 fn import_clients_ic(tx: &Connection, range: &Range<Data>, report: &mut ImportReport) -> rusqlite::Result<()> {
     // A code | B raison sociale
-    let mut stmt = tx.prepare("INSERT OR IGNORE INTO clients (code, name) VALUES (?1, ?2)")?;
+    let mut stmt = tx.prepare(
+        "INSERT INTO clients (code, name) VALUES (?1, ?2)
+         ON CONFLICT(code) DO UPDATE SET name = excluded.name, is_one_off = 0 WHERE clients.is_one_off = 1",
+    )?;
     for row in data_rows(range) {
         let Some(code) = text(row, 0).map(|c| c.to_uppercase()) else { continue };
         if code.chars().all(|c| c == '0') {
@@ -330,7 +361,11 @@ fn clients_for_lists(tx: &Connection, report: &mut ImportReport) -> rusqlite::Re
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<Result<_, _>>()?;
 
-    let mut client_stmt = tx.prepare("INSERT OR IGNORE INTO clients (code, name) VALUES (?1, ?2)")?;
+    // Un client ponctuel de même code devient client importé, en gardant son nom.
+    let mut client_stmt = tx.prepare(
+        "INSERT INTO clients (code, name) VALUES (?1, ?2)
+         ON CONFLICT(code) DO UPDATE SET is_one_off = 0 WHERE clients.is_one_off = 1",
+    )?;
     let mut link_stmt =
         tx.prepare("INSERT OR IGNORE INTO client_price_lists (client_code, price_list_code) VALUES (?1, ?2)")?;
     for (list, label) in lists {
@@ -466,16 +501,28 @@ mod tests {
         let both = range(&[header, &price("T100000"), &price("T200000")]);
         import_ranges(&mut conn, &empty, &empty, &both, None).unwrap();
         conn.execute_batch(
-            "INSERT INTO clients (code, name, is_one_off) VALUES ('P0001', 'PONCTUEL', 1);
-             INSERT INTO client_price_lists VALUES ('P0001', 'T100000'), ('P0001', 'T200000');
+            "INSERT INTO clients (code, name, is_one_off) VALUES ('P0001', 'PONCTUEL', 1), ('300000', 'VRAI CODE', 1);
+             INSERT INTO client_price_lists VALUES ('P0001', 'T100000'), ('P0001', 'T200000'), ('300000', 'T100000');
              INSERT INTO client_comments VALUES ('100000', 'Appeler avant'), ('P0001', 'Chantier unique');",
         )
         .unwrap();
 
         // Réimport sans la liste T200000 : le ponctuel garde T100000, perd T200000 (avertissement).
-        let report = import_ranges(&mut conn, &empty, &empty, &range(&[header, &price("T100000")]), None).unwrap();
+        // Le ponctuel 300000, présent dans le fichier (liste T300000), devient client importé : il
+        // garde son nom mais prend les listes du fichier.
+        let lists = range(&[header, &price("T100000"), &price("T300000")]);
+        let report = import_ranges(&mut conn, &empty, &empty, &lists, None).unwrap();
         assert_eq!(report.one_off_clients, 1);
-        assert_eq!(report.warnings.len(), 1);
+        assert_eq!(report.warnings.len(), 2, "{:?}", report.warnings);
+        let found: (String, bool, String) = conn
+            .query_row(
+                "SELECT name, is_one_off, (SELECT group_concat(price_list_code) FROM client_price_lists
+                 WHERE client_code = code) FROM clients WHERE code = '300000'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(found, ("VRAI CODE".into(), false, "T300000".into()));
         let lists: Vec<String> = conn
             .prepare("SELECT price_list_code FROM client_price_lists WHERE client_code = 'P0001'")
             .unwrap()

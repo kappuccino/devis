@@ -13,17 +13,19 @@ import { errorMessage } from "../format";
 
 /**
  * Fiche d'un client de la base : remises, listes de prix et commentaire. Le reste vient du fichier
- * Excel, sauf pour un client ponctuel (ajouté depuis un devis), dont la raison sociale se modifie ici.
+ * Excel, sauf pour un client ponctuel (ajouté depuis un devis), dont la raison sociale et le n° client
+ * se modifient ici (son vrai n° MFG/PRO, ou un n° provisoire ; ses devis suivent).
  * Ouverte depuis la liste des clients et depuis un devis.
  */
 const props = defineProps<{ client: Client | null }>();
 const visible = defineModel<boolean>("visible", { required: true });
-const emit = defineEmits<{ saved: [client: Client] }>();
+/** previousCode : code avant l'enregistrement (différent de client.code si le n° a été changé). */
+const emit = defineEmits<{ saved: [client: Client, previousCode: string] }>();
 
 const toast = useToast();
 const priceLists = ref<PriceList[]>([]);
 const saving = ref(false);
-const form = ref({ name: "", discount_cfa: 0, discount_cfo: 0, price_lists: [] as string[], comment: "" });
+const form = ref({ code: "", name: "", discount_cfa: 0, discount_cfo: 0, price_lists: [] as string[], comment: "" });
 
 const listOptions = computed(() =>
   priceLists.value.map((l) => ({ code: l.code, label: `${l.code}${l.label ? ` — ${l.label}` : ""} (${l.item_count})` })),
@@ -33,6 +35,7 @@ watch(visible, async (open) => {
   const c = props.client;
   if (!open || !c) return;
   form.value = {
+    code: c.code,
     name: c.name,
     discount_cfa: c.discount_cfa,
     discount_cfo: c.discount_cfo,
@@ -58,17 +61,28 @@ async function save() {
       toast.add({ severity: "warn", summary: "Indiquez la raison sociale", life: 2500 });
       return;
     }
+    const code = c.is_one_off ? f.code.trim().toUpperCase() : c.code;
+    if (!code) {
+      toast.add({ severity: "warn", summary: "Indiquez le n° client", life: 2500 });
+      return;
+    }
     const saved: Client = {
       ...c,
+      code,
       name: c.is_one_off ? f.name.trim() : c.name,
       discount_cfa: f.discount_cfa ?? 0,
       discount_cfo: f.discount_cfo ?? 0,
       price_lists: [...f.price_lists],
       comment: f.comment.trimEnd(),
     };
-    await api.updateClient(saved);
-    toast.add({ severity: "success", summary: "Client enregistré", life: 2000 });
-    emit("saved", saved);
+    await api.updateClient({ ...saved, code: c.code }, code);
+    toast.add({
+      severity: "success",
+      summary: "Client enregistré",
+      detail: code !== c.code ? `N° ${c.code} remplacé par ${code}, devis compris` : undefined,
+      life: code !== c.code ? 4000 : 2000,
+    });
+    emit("saved", saved, c.code);
     visible.value = false;
   } catch (e) {
     toast.add({ severity: "error", summary: "Enregistrement", detail: errorMessage(e) });
@@ -87,10 +101,19 @@ async function save() {
       </div>
     </template>
     <div v-if="client" class="form-grid">
-      <label>Code</label><span class="mono">{{ client.code }}</span>
       <template v-if="client.is_one_off">
+        <label for="cf-code">N° client</label>
+        <InputText
+          id="cf-code"
+          v-model="form.code"
+          v-tooltip.bottom="'Son vrai n° (MFG/PRO) ou un n° provisoire. Un n° commençant par P n\'est pas imprimé sur le PDF.'"
+          class="mono"
+        />
         <label for="cf-name">Raison sociale</label>
         <InputText id="cf-name" v-model="form.name" />
+      </template>
+      <template v-else>
+        <label>Code</label><span class="mono">{{ client.code }}</span>
       </template>
       <template v-if="!client.is_one_off || client.group_name">
         <label>Groupe</label><span>{{ client.group_name }} {{ client.subgroup ? `/ ${client.subgroup}` : "" }}</span>

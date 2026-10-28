@@ -218,7 +218,10 @@ export function buildDocument(quote: Quote, client: Client | null, s: Settings):
   const clientDetails: Content[] = [
     // La raison sociale enregistrée dans le devis fait foi (client ponctuel ou nom ajusté).
     { text: quote.client_name, bold: true, fontSize: 9.5 },
-    ...(quote.client_code ? [{ text: `Code client : ${quote.client_code}`, color: MUTED }] : []),
+    // Code en « P » (client ponctuel, P0001… ou n° provisoire) : interne, pas imprimé.
+    ...(quote.client_code && !quote.client_code.toUpperCase().startsWith("P")
+      ? [{ text: `Code client : ${quote.client_code}`, color: MUTED }]
+      : []),
     ...(client?.siren ? [{ text: `SIREN : ${client.siren}`, color: MUTED }] : []),
     // Contact du devis ; à défaut, l'email général du client.
     ...(quote.contact_name ? [{ text: `À l'attention de ${quote.contact_name}`, margin: [0, 4, 0, 0] as [number, number, number, number] }] : []),

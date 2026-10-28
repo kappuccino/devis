@@ -417,13 +417,15 @@ async function applyClient(c: Client) {
 const lastClientQuery = ref("");
 const ephemeralVisible = ref(false);
 /** addToBase : le client est ajouté aux clients (code P0001…) au lieu de n'exister que dans ce devis. */
-const ephemeral = ref({ name: "", cfa: 0, cfo: 0, list: null as string | null, addToBase: true });
+/** code : n° client saisi (vrai n° ou provisoire) ; vide, il est attribué (P0001…). */
+const ephemeral = ref({ code: "", name: "", cfa: 0, cfo: 0, list: null as string | null, addToBase: true });
 const priceListOptions = computed(() =>
   allPriceLists.value.map((l) => ({ code: l.code, label: `${l.code}${l.label ? ` — ${l.label}` : ""}` })),
 );
 
 function openEphemeral(name?: string) {
   ephemeral.value = {
+    code: "",
     name: name ?? (clientCode.value ? lastClientQuery.value : clientName.value || lastClientQuery.value),
     cfa: discountCfa.value,
     cfo: discountCfo.value,
@@ -434,13 +436,13 @@ function openEphemeral(name?: string) {
 }
 
 async function applyEphemeral() {
-  const { name, cfa, cfo, list, addToBase } = ephemeral.value;
+  const { code, name, cfa, cfo, list, addToBase } = ephemeral.value;
   if (!name.trim()) {
     toast.add({ severity: "warn", summary: "Indiquez la raison sociale", life: 2500 });
     return;
   }
   if (addToBase) {
-    const c = await createOneOffClient(name, cfa ?? 0, cfo ?? 0, list);
+    const c = await createOneOffClient(name, cfa ?? 0, cfo ?? 0, list, code);
     if (!c) return;
     ephemeralVisible.value = false;
     client.value = c;
@@ -458,10 +460,13 @@ async function applyEphemeral() {
   await repriceLines();
 }
 
-/** Ajoute un client ponctuel à la base (code P0001…) ; null en cas d'erreur (message affiché). */
-async function createOneOffClient(name: string, cfa: number, cfo: number, list: string | null) {
+/**
+ * Ajoute un client ponctuel à la base, avec le n° saisi ou à défaut P0001… ; null en cas d'erreur
+ * (message affiché).
+ */
+async function createOneOffClient(name: string, cfa: number, cfo: number, list: string | null, code = "") {
   try {
-    const c = await api.createOneOffClient(name.trim(), cfa, cfo, list);
+    const c = await api.createOneOffClient(code.trim() || null, name.trim(), cfa, cfo, list);
     clients.value.push(c);
     return c;
   } catch (e) {
@@ -500,11 +505,13 @@ const clientFormVisible = ref(false);
 const clientRecord = computed(() => (clientCode.value ? (clients.value.find((c) => c.code === clientCode.value) ?? null) : null));
 
 /** Fiche enregistrée : ses remises et listes passent dans le devis, et les prix sont recalculés. */
-async function onClientSaved(saved: Client) {
-  const i = clients.value.findIndex((c) => c.code === saved.code);
+async function onClientSaved(saved: Client, previousCode: string) {
+  const i = clients.value.findIndex((c) => c.code === previousCode);
   const previous = i >= 0 ? clients.value[i] : null;
   if (i >= 0) clients.value[i] = saved;
-  if (client.value?.code === saved.code) client.value = saved;
+  if (client.value?.code === previousCode) client.value = saved;
+  // N° changé : les devis enregistrés ont suivi, celui-ci aussi.
+  if (clientCode.value === previousCode) clientCode.value = saved.code;
   if (previous && clientName.value.trim() === previous.name.trim()) clientName.value = saved.name;
   discountCfa.value = saved.discount_cfa;
   discountCfo.value = saved.discount_cfo;
@@ -1998,6 +2005,16 @@ provide(LINE_ROW_ACTIONS, {
               <Checkbox v-model="ephemeral.addToBase" input-id="eph-add" binary />
               <label for="eph-add">Ajouter aux clients</label>
             </div>
+            <template v-if="ephemeral.addToBase">
+              <label for="eph-code">N° client</label>
+              <InputText
+                id="eph-code"
+                v-model="ephemeral.code"
+                v-tooltip.bottom="'Son vrai n° (MFG/PRO) ou un n° provisoire ; modifiable ensuite sur la fiche. Un n° commençant par P n\'est pas imprimé sur le PDF.'"
+                class="mono"
+                placeholder="Automatique (P0001…)"
+              />
+            </template>
             <button type="submit" hidden />
           </form>
           <template #footer>
