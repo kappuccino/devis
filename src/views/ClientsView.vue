@@ -12,6 +12,7 @@ import { errorMessage, formatDate, formatEuro, formatPct } from "../format";
 import Button from "primevue/button";
 import ClientFormDialog from "../components/ClientFormDialog.vue";
 import { prefixFirst } from "../clientSearch";
+import { clientSalesReps } from "../salesReps";
 import PriceListExportDialog from "../components/PriceListExportDialog.vue";
 
 const toast = useToast();
@@ -42,6 +43,7 @@ const filtered = computed(() => {
   );
   return prefixFirst(found, q);
 });
+const salesReps = computed(() => clientSalesReps(clients.value));
 
 async function load() {
   loading.value = true;
@@ -238,7 +240,7 @@ onMounted(load);
       </template>
     </DataTable>
 
-    <ClientFormDialog v-model:visible="dialogVisible" :client="editing" @saved="onSaved" />
+    <ClientFormDialog v-model:visible="dialogVisible" :client="editing" :sales-reps="salesReps" @saved="onSaved" />
     <PriceListExportDialog v-model:visible="exportVisible" :client="exporting" />
   </div>
 </template>

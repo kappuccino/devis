@@ -29,7 +29,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Client ponctuel",
-        text: "Bouton « Client ponctuel » à côté de la recherche client : raison sociale, remises et une liste de prix. Case « Ajouter aux clients » (cochée) : le client est ajouté aux clients avec le tag « Ponctuel » et le « N° client » saisi (son vrai n° MFG/PRO ou un n° provisoire) ; laissé vide, le n° est attribué : P0001, P0002…, et on le retrouve dans la recherche pour les prochains devis. Décochée : il n'existe que dans ce devis. Sur un ancien devis à client ponctuel, le bouton « Ajouter aux clients » (à côté du tag « Client ponctuel ») l'ajoute avec les conditions du devis, et lui rattache les devis enregistrés au même nom.",
+        text: "Bouton « Client ponctuel » à côté de la recherche client : raison sociale, remises et une liste de prix. Case « Ajouter aux clients » (cochée) : le client est ajouté aux clients avec le tag « Ponctuel » et le « N° client » saisi (son vrai n° MFG/PRO ou un n° provisoire) ; laissé vide, le n° est attribué : P0001, P0002… On peut aussi lui affecter un commercial (choisi parmi ceux des fiches clients, ou saisi). On le retrouve dans la recherche pour les prochains devis. Décochée : il n'existe que dans ce devis. Sur un ancien devis à client ponctuel, le bouton « Ajouter aux clients » (à côté du tag « Client ponctuel ») l'ajoute avec les conditions du devis, et lui rattache les devis enregistrés au même nom.",
       },
       {
         title: "Fiche client depuis un devis",
@@ -182,7 +182,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Clients ponctuels",
-        text: "Clients ajoutés depuis un devis (tag « Ponctuel ») : leur raison sociale et leur n° client se modifient dans leur fiche (par exemple pour remplacer P0001 par le vrai n° MFG/PRO) ; leurs devis suivent le nouveau n°. Un n° qui commence par « P » n'est imprimé ni sur le PDF du devis ni dans l'export Excel des prix (marqueur _CODE_ laissé vide). Un réimport du fichier LPN les garde, avec leurs listes de prix (une liste disparue du fichier leur est retirée, l'import le signale). Si le fichier contient leur n°, ils deviennent des clients importés : le fichier fournit alors remises et listes de prix (l'import le signale).",
+        text: "Clients ajoutés depuis un devis (tag « Ponctuel ») : leur raison sociale, leur commercial et leur n° client se modifient dans leur fiche (par exemple pour remplacer P0001 par le vrai n° MFG/PRO) ; leurs devis suivent le nouveau n°. Un n° qui commence par « P » n'est imprimé ni sur le PDF du devis ni dans l'export Excel des prix (marqueur _CODE_ laissé vide). Un réimport du fichier LPN les garde, avec leurs listes de prix (une liste disparue du fichier leur est retirée, l'import le signale). Si le fichier contient leur n°, ils deviennent des clients importés : le fichier fournit alors remises et listes de prix (l'import le signale).",
       },
       {
         title: "Export Excel des prix d'un client",

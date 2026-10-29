@@ -193,14 +193,17 @@ pub fn get_client(state: State<AppState>, code: String) -> CmdResult<Option<Clie
         .map_err(err)
 }
 
-/// Modifie les remises, les listes de prix rattachées et le commentaire d'un client ; le nom et le
-/// code (`new_code`) seulement pour un client ponctuel (les autres viennent du fichier LPN).
+/// Modifie les remises, les listes de prix rattachées et le commentaire d'un client ; le nom, le
+/// commercial et le code (`new_code`) seulement pour un client ponctuel (les autres viennent du
+/// fichier LPN).
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn update_client(
     state: State<AppState>,
     code: String,
     new_code: String,
     name: String,
+    sales_rep: String,
     discount_cfa: f64,
     discount_cfo: f64,
     price_lists: Vec<String>,
@@ -210,7 +213,18 @@ pub fn update_client(
     let tx = conn.transaction().map_err(err)?;
     let code = rename_one_off_client(&tx, &code, &new_code)?;
     save_client(&tx, &code, &name, discount_cfa, discount_cfo, &price_lists, &comment)?;
+    set_one_off_sales_rep(&tx, &code, &sales_rep)?;
     tx.commit().map_err(err)
+}
+
+/// Commercial d'un client ponctuel (vide : aucun) ; sans effet sur un client importé.
+fn set_one_off_sales_rep(conn: &Connection, code: &str, sales_rep: &str) -> CmdResult<()> {
+    conn.execute(
+        "UPDATE clients SET sales_rep = NULLIF(trim(?2), '') WHERE code = ?1 AND is_one_off = 1",
+        params![code, sales_rep],
+    )
+    .map(|_| ())
+    .map_err(err)
 }
 
 /// Code d'un client ponctuel saisi à la main (son vrai n° client ou un n° provisoire) : en
@@ -310,11 +324,20 @@ pub fn create_one_off_client(
     state: State<AppState>,
     code: Option<String>,
     name: String,
+    sales_rep: Option<String>,
     discount_cfa: f64,
     discount_cfo: f64,
     price_list: Option<String>,
 ) -> CmdResult<Client> {
-    add_one_off_client(&mut state.conn(), code.as_deref(), &name, discount_cfa, discount_cfo, price_list.as_deref())
+    let mut conn = state.conn();
+    let client = add_one_off_client(&mut conn, code.as_deref(), &name, discount_cfa, discount_cfo, price_list.as_deref())?;
+    match sales_rep.filter(|s| !s.trim().is_empty()) {
+        Some(rep) => {
+            set_one_off_sales_rep(&conn, &client.code, &rep)?;
+            Ok(Client { sales_rep: Some(rep.trim().to_string()), ..client })
+        }
+        None => Ok(client),
+    }
 }
 
 fn add_one_off_client(
@@ -1531,6 +1554,14 @@ mod tests {
         assert_eq!(get(&conn, "001200").comment, "");
         let rows: i64 = conn.query_row("SELECT COUNT(*) FROM client_comments", [], |r| r.get(0)).unwrap();
         assert_eq!(rows, 1);
+
+        // Commercial : modifiable pour un ponctuel seulement.
+        set_one_off_sales_rep(&conn, "P0001", " jacques ").unwrap();
+        set_one_off_sales_rep(&conn, "001200", "jacques").unwrap();
+        assert_eq!(get(&conn, "P0001").sales_rep.as_deref(), Some("jacques"));
+        assert_eq!(get(&conn, "001200").sales_rep, None);
+        set_one_off_sales_rep(&conn, "P0001", "").unwrap();
+        assert_eq!(get(&conn, "P0001").sales_rep, None);
 
         // Code saisi à la main : en majuscules, refusé s'il est déjà pris.
         let forced = add_one_off_client(&mut conn, Some(" 4567a "), "Avec numéro", 0.0, 0.0, None).unwrap();

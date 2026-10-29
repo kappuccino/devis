@@ -358,24 +358,32 @@ export const api = {
   listClients: () => invoke<Client[]>("list_clients"),
   getClient: (code: string) => invoke<Client | null>("get_client", { code }),
   /**
-   * Le nom et le code (`newCode`, devis compris) ne sont modifiés que pour un client ponctuel.
+   * Le nom, le commercial et le code (`newCode`, devis compris) ne sont modifiés que pour un client
+   * ponctuel.
    */
   updateClient: (
-    c: Pick<Client, "code" | "name" | "discount_cfa" | "discount_cfo" | "price_lists" | "comment">,
+    c: Pick<Client, "code" | "name" | "sales_rep" | "discount_cfa" | "discount_cfo" | "price_lists" | "comment">,
     newCode = c.code,
   ) =>
     invoke<void>("update_client", {
       code: c.code,
       newCode,
       name: c.name,
+      salesRep: c.sales_rep ?? "",
       discountCfa: c.discount_cfa,
       discountCfo: c.discount_cfo,
       priceLists: c.price_lists,
       comment: c.comment,
     }),
   /** Ajoute un client ponctuel à la base, avec le code donné ou à défaut P0001, P0002… */
-  createOneOffClient: (code: string | null, name: string, discountCfa: number, discountCfo: number, priceList: string | null) =>
-    invoke<Client>("create_one_off_client", { code, name, discountCfa, discountCfo, priceList }),
+  createOneOffClient: (
+    code: string | null,
+    name: string,
+    salesRep: string | null,
+    discountCfa: number,
+    discountCfo: number,
+    priceList: string | null,
+  ) => invoke<Client>("create_one_off_client", { code, name, salesRep, discountCfa, discountCfo, priceList }),
   /** Rattache au client les devis à client hors base du même nom ; renvoie leur nombre. */
   linkQuotesToClient: (code: string, clientName: string) =>
     invoke<number>("link_quotes_to_client", { code, clientName }),

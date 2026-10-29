@@ -6,6 +6,7 @@ import InputText from "primevue/inputtext";
 import Textarea from "primevue/textarea";
 import Tag from "primevue/tag";
 import MultiSelect from "primevue/multiselect";
+import Select from "primevue/select";
 import Button from "primevue/button";
 import { useToast } from "primevue/usetoast";
 import { api, type Client, type PriceList } from "../api";
@@ -17,7 +18,8 @@ import { errorMessage } from "../format";
  * se modifient ici (son vrai n° MFG/PRO, ou un n° provisoire ; ses devis suivent).
  * Ouverte depuis la liste des clients et depuis un devis.
  */
-const props = defineProps<{ client: Client | null }>();
+/** salesReps : commerciaux proposés pour un client ponctuel (saisie libre possible). */
+const props = defineProps<{ client: Client | null; salesReps?: string[] }>();
 const visible = defineModel<boolean>("visible", { required: true });
 /** previousCode : code avant l'enregistrement (différent de client.code si le n° a été changé). */
 const emit = defineEmits<{ saved: [client: Client, previousCode: string] }>();
@@ -25,7 +27,7 @@ const emit = defineEmits<{ saved: [client: Client, previousCode: string] }>();
 const toast = useToast();
 const priceLists = ref<PriceList[]>([]);
 const saving = ref(false);
-const form = ref({ code: "", name: "", discount_cfa: 0, discount_cfo: 0, price_lists: [] as string[], comment: "" });
+const form = ref({ code: "", name: "", sales_rep: "" as string | null, discount_cfa: 0, discount_cfo: 0, price_lists: [] as string[], comment: "" });
 
 const listOptions = computed(() =>
   priceLists.value.map((l) => ({ code: l.code, label: `${l.code}${l.label ? ` — ${l.label}` : ""} (${l.item_count})` })),
@@ -37,6 +39,7 @@ watch(visible, async (open) => {
   form.value = {
     code: c.code,
     name: c.name,
+    sales_rep: c.sales_rep ?? "",
     discount_cfa: c.discount_cfa,
     discount_cfo: c.discount_cfo,
     price_lists: [...c.price_lists],
@@ -70,6 +73,7 @@ async function save() {
       ...c,
       code,
       name: c.is_one_off ? f.name.trim() : c.name,
+      sales_rep: c.is_one_off ? f.sales_rep?.trim() || null : c.sales_rep,
       discount_cfa: f.discount_cfa ?? 0,
       discount_cfo: f.discount_cfo ?? 0,
       price_lists: [...f.price_lists],
@@ -118,7 +122,18 @@ async function save() {
       <template v-if="!client.is_one_off || client.group_name">
         <label>Groupe</label><span>{{ client.group_name }} {{ client.subgroup ? `/ ${client.subgroup}` : "" }}</span>
       </template>
-      <template v-if="!client.is_one_off || client.sales_rep">
+      <template v-if="client.is_one_off">
+        <label for="cf-rep">Commercial</label>
+        <Select
+          v-model="form.sales_rep"
+          :options="salesReps ?? []"
+          input-id="cf-rep"
+          editable
+          show-clear
+          placeholder="Aucun (choisir ou saisir)"
+        />
+      </template>
+      <template v-else>
         <label>Commercial</label><span>{{ client.sales_rep }}</span>
       </template>
       <template v-if="!client.is_one_off || client.email">

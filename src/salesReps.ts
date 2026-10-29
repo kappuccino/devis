@@ -29,3 +29,7 @@ export function rememberSalesRep(name: string) {
     // stockage indisponible : pas de valeur par défaut, sans gravité
   }
 }
+
+/** Commerciaux des fiches clients (colonne du fichier LPN), sans doublon, triés : proposés pour un client ponctuel. */
+export const clientSalesReps = (clients: { sales_rep: string | null }[]): string[] =>
+  [...new Set(clients.map((c) => c.sales_rep?.trim() ?? "").filter(Boolean))].sort((a, b) => a.localeCompare(b, "fr"));

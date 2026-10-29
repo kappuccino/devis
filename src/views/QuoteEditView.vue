@@ -43,7 +43,7 @@ import {
   type FeeKind,
 } from "../quoteLines";
 import { favoriteLists } from "../favorites";
-import { lastSalesRep, rememberSalesRep, salesRepList } from "../salesReps";
+import { clientSalesReps, lastSalesRep, rememberSalesRep, salesRepList } from "../salesReps";
 import { prefixFirst } from "../clientSearch";
 import { applyColumnTabOrder } from "../gridNav";
 import QuoteLineRow from "../components/QuoteLineRow.vue";
@@ -419,7 +419,9 @@ const lastClientQuery = ref("");
 const ephemeralVisible = ref(false);
 /** addToBase : le client est ajouté aux clients (code P0001…) au lieu de n'exister que dans ce devis. */
 /** code : n° client saisi (vrai n° ou provisoire) ; vide, il est attribué (P0001…). */
-const ephemeral = ref({ code: "", name: "", cfa: 0, cfo: 0, list: null as string | null, addToBase: true });
+const ephemeral = ref({ code: "", name: "", salesRep: "" as string | null, cfa: 0, cfo: 0, list: null as string | null, addToBase: true });
+/** Commerciaux des fiches clients, proposés pour un client ponctuel. */
+const clientSalesRepOptions = computed(() => clientSalesReps(clients.value));
 const priceListOptions = computed(() =>
   allPriceLists.value.map((l) => ({ code: l.code, label: `${l.code}${l.label ? ` — ${l.label}` : ""}` })),
 );
@@ -427,6 +429,7 @@ const priceListOptions = computed(() =>
 function openEphemeral(name?: string) {
   ephemeral.value = {
     code: "",
+    salesRep: "",
     name: name ?? (clientCode.value ? lastClientQuery.value : clientName.value || lastClientQuery.value),
     cfa: discountCfa.value,
     cfo: discountCfo.value,
@@ -437,13 +440,13 @@ function openEphemeral(name?: string) {
 }
 
 async function applyEphemeral() {
-  const { code, name, cfa, cfo, list, addToBase } = ephemeral.value;
+  const { code, name, salesRep, cfa, cfo, list, addToBase } = ephemeral.value;
   if (!name.trim()) {
     toast.add({ severity: "warn", summary: "Indiquez la raison sociale", life: 2500 });
     return;
   }
   if (addToBase) {
-    const c = await createOneOffClient(name, cfa ?? 0, cfo ?? 0, list, code);
+    const c = await createOneOffClient(name, cfa ?? 0, cfo ?? 0, list, code, salesRep ?? "");
     if (!c) return;
     ephemeralVisible.value = false;
     client.value = c;
@@ -465,9 +468,9 @@ async function applyEphemeral() {
  * Ajoute un client ponctuel à la base, avec le n° saisi ou à défaut P0001… ; null en cas d'erreur
  * (message affiché).
  */
-async function createOneOffClient(name: string, cfa: number, cfo: number, list: string | null, code = "") {
+async function createOneOffClient(name: string, cfa: number, cfo: number, list: string | null, code = "", salesRep = "") {
   try {
-    const c = await api.createOneOffClient(code.trim() || null, name.trim(), cfa, cfo, list);
+    const c = await api.createOneOffClient(code.trim() || null, name.trim(), salesRep.trim() || null, cfa, cfo, list);
     clients.value.push(c);
     return c;
   } catch (e) {
@@ -2017,6 +2020,15 @@ provide(LINE_ROW_ACTIONS, {
                 class="mono"
                 placeholder="Automatique (P0001…)"
               />
+              <label for="eph-rep">Commercial</label>
+              <Select
+                v-model="ephemeral.salesRep"
+                :options="clientSalesRepOptions"
+                input-id="eph-rep"
+                editable
+                show-clear
+                placeholder="Aucun (choisir ou saisir)"
+              />
             </template>
             <button type="submit" hidden />
           </form>
@@ -2025,7 +2037,12 @@ provide(LINE_ROW_ACTIONS, {
             <Button label="Valider" icon="pi pi-check" @click="applyEphemeral" />
           </template>
         </Dialog>
-        <ClientFormDialog v-model:visible="clientFormVisible" :client="clientRecord" @saved="onClientSaved" />
+        <ClientFormDialog
+          v-model:visible="clientFormVisible"
+          :client="clientRecord"
+          :sales-reps="clientSalesRepOptions"
+          @saved="onClientSaved"
+        />
       </div>
       <div class="field">
         <InputText id="date" v-model="date" v-tooltip.bottom="'Date du devis'" aria-label="Date du devis" type="date" />

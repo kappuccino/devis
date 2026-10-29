@@ -248,6 +248,9 @@
 - [x] Recherche de clients (écran Clients et devis) : ceux dont la raison sociale commence par le texte
   tapé en tête, puis un mot ou le code, puis les autres (mêmes résultats).
 
+- [x] Commercial d'un client ponctuel : à la création (fenêtre « Client ponctuel ») et sur sa fiche,
+  choisi parmi les commerciaux des fiches clients ou saisi.
+
 - [ ] Lenteurs de saisie sur les gros devis (≈ 400 lignes, sensibles dès 200)
   - [x] Chaque ligne du tableau dans son propre composant (`QuoteLineRow`) : une frappe ne redessine
     que sa ligne.
