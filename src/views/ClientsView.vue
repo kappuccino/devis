@@ -11,6 +11,7 @@ import { api, type Client, type QuoteSummary } from "../api";
 import { errorMessage, formatDate, formatEuro, formatPct } from "../format";
 import Button from "primevue/button";
 import ClientFormDialog from "../components/ClientFormDialog.vue";
+import { prefixFirst } from "../clientSearch";
 import PriceListExportDialog from "../components/PriceListExportDialog.vue";
 
 const toast = useToast();
@@ -30,14 +31,16 @@ const editing = ref<Client | null>(null);
 /** Clients avec leur nombre de devis (colonne triable). */
 const rows = computed(() => clients.value.map((c) => ({ ...c, quote_count: quotesByClient.value.get(c.code)?.length ?? 0 })));
 
+/** Résultats de la recherche : ceux qui commencent par le texte tapé d'abord. */
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase();
   if (!q) return rows.value;
-  return rows.value.filter((c) =>
+  const found = rows.value.filter((c) =>
     [c.code, c.name, c.group_name, c.subgroup, c.sales_rep, c.siren, c.comment].some((v) =>
       v?.toLowerCase().includes(q),
     ),
   );
+  return prefixFirst(found, q);
 });
 
 async function load() {

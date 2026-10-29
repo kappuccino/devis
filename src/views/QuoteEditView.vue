@@ -44,6 +44,7 @@ import {
 } from "../quoteLines";
 import { favoriteLists } from "../favorites";
 import { lastSalesRep, rememberSalesRep, salesRepList } from "../salesReps";
+import { prefixFirst } from "../clientSearch";
 import { applyColumnTabOrder } from "../gridNav";
 import QuoteLineRow from "../components/QuoteLineRow.vue";
 import { CUSTOM_SOURCE, editText, isCustom, LINE_ROW_ACTIONS, type EditLine } from "../editLine";
@@ -601,9 +602,11 @@ const ephemeralList = computed({
 function searchClients(e: AutoCompleteCompleteEvent) {
   lastClientQuery.value = e.query.trim();
   const q = e.query.trim().toLowerCase();
-  clientSuggestions.value = clients.value
-    .filter((c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q))
-    .slice(0, 50);
+  // Ceux qui commencent par le texte tapé d'abord, avant la coupure à 50.
+  clientSuggestions.value = prefixFirst(
+    clients.value.filter((c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)),
+    q,
+  ).slice(0, 50);
 }
 
 /**

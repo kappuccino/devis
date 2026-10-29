@@ -245,6 +245,9 @@
   et modifiable sur sa fiche (listes, commentaire et devis suivent). Code en « P » non imprimé sur le
   PDF ni dans l'export Excel (_CODE_). À l'import LPN, un ponctuel dont le n° est dans le fichier devient client importé.
 
+- [x] Recherche de clients (écran Clients et devis) : ceux dont la raison sociale commence par le texte
+  tapé en tête, puis un mot ou le code, puis les autres (mêmes résultats).
+
 - [ ] Lenteurs de saisie sur les gros devis (≈ 400 lignes, sensibles dès 200)
   - [x] Chaque ligne du tableau dans son propre composant (`QuoteLineRow`) : une frappe ne redessine
     que sa ligne.

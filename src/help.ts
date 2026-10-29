@@ -169,6 +169,10 @@ export const HELP: HelpSection[] = [
         text: "Clients importés du fichier LPN : code, raison sociale, groupe, commercial, remises CFA / CFO et listes de prix rattachées, modifiables (un réimport du fichier LPN les remplace, sauf les commentaires et les clients ponctuels). Les clients présents seulement dans la feuille « CLIENTS IC » sont aussi importés, avec leur code et leur raison sociale uniquement (ni remise ni liste de prix) : sur leurs devis, forcer une liste de prix favorite. Chaque liste de prix crée aussi son propre client, même si d'autres clients l'utilisent déjà (ex. une liste de groupe) : son code est celui de la liste sans le « T » (T205000 → 205000), son nom est l'intitulé de la liste, et la liste lui est rattachée. Si un client a déjà ce code, il garde son nom et la liste lui est simplement rattachée, en plus de ses autres listes. Un code client présent sur plusieurs lignes de « gestion tarifs » donne un seul client (la première ligne), qui reçoit les listes de prix de toutes ces lignes.",
       },
       {
+        title: "Rechercher un client",
+        text: "Champ de recherche en haut de l'écran Clients : nom, code, groupe, commercial, SIREN ou commentaire. Les clients dont la raison sociale commence par le texte tapé viennent en tête, puis ceux dont un mot de la raison sociale ou le code commence par ce texte, puis les autres résultats. Un clic sur un titre de colonne trie la liste autrement. La recherche client d'un devis suit le même ordre.",
+      },
+      {
         title: "Devis d'un client",
         text: "Colonne « Devis » : nombre de devis du client (triable). La flèche à gauche du code déplie ses devis sous la ligne, du plus récent au plus ancien : n°, date, affaire, total HT, affaire obtenue et commentaire. Cliquez sur un devis pour l'ouvrir. « Voir dans la liste des devis » ouvre l'écran Devis filtré sur ce client, avec toutes les actions (PDF, version, duplication…) ; la croix du bouton « Client : … » retire le filtre. Les anciens devis à client ponctuel n'apparaissent qu'une fois le client ajouté aux clients (bouton « Ajouter aux clients » du devis).",
       },
