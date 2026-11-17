@@ -57,6 +57,10 @@ export const HELP: HelpSection[] = [
         text: "Le PU HT reste modifiable. Remise supplémentaire possible par ligne — négative pour une augmentation (ex. −5 = +5 % ; sur le PDF, le PU HT inclut l'augmentation et aucune remise n'apparaît) —, et remise globale sur les produits (les frais ne sont jamais remisés). Une ligne sous le prix seuil est signalée en rouge ; le prix seuil n'est jamais imprimé.",
       },
       {
+        title: "Formule dans le PU HT",
+        text: "Comme sous Excel, le PU HT accepte une formule qui commence par « = » : « =24,3*0,4 », « =24,3*(1-40%) ». Opérations + − * / et parenthèses, « % » pour un pourcentage, virgule ou point décimal. Le résultat s'affiche dès qu'on quitte la case (Tab, Entrée, flèches) ; la formule n'est pas gardée. Une formule illisible est signalée et le prix reste inchangé. Fonctionne aussi pour les frais et les prix d'une référence libre.",
+      },
+      {
         title: "Liste de prix forcée",
         text: "Le menu « Liste forcée » (listes favorites des Réglages) impose une liste de prix prioritaire pour tout le devis ; les prix sont recalculés aussitôt, sauf ceux des lignes cochées dans la colonne au cadenas, à droite du PU HT (« Verrouiller prix » ; un clic sur le cadenas de l'en-tête verrouille ou déverrouille toutes les lignes d'un coup). Pour mélanger deux listes : forcez la première, cochez le cadenas des lignes à garder, puis forcez la seconde — seules les lignes non cochées prennent ses prix. Un clic sur le code d'une liste de prix ouvre le détail de ses produits.",
       },

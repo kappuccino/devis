@@ -45,6 +45,7 @@ import {
 import { favoriteLists } from "../favorites";
 import { clientSalesReps, lastSalesRep, rememberSalesRep, salesRepList } from "../salesReps";
 import { prefixFirst } from "../clientSearch";
+import { evalAmount, isFormula } from "../formula";
 import { applyColumnTabOrder } from "../gridNav";
 import QuoteLineRow from "../components/QuoteLineRow.vue";
 import { CUSTOM_SOURCE, editText, isCustom, LINE_ROW_ACTIONS, type EditLine } from "../editLine";
@@ -122,9 +123,11 @@ function onQtyInput(line: EditLine, text: string) {
   scheduleQtyPrice(line);
 }
 
+/** PU HT saisi : nombre ou formule (« =24,3*0,4 ») ; une formule en cours de frappe garde le dernier prix lisible. */
 function onPriceInput(line: EditLine, text: string) {
   line.priceText = text;
-  line.unit_price = parseNumber(text) ?? 0;
+  const v = evalAmount(text);
+  if (v != null || !isFormula(text)) line.unit_price = v ?? 0;
 }
 
 /** PU calculé par l'appli (prix de liste ou prix public remisé), et non saisi à la main. */
@@ -199,7 +202,7 @@ async function priceForQuantity(line: EditLine) {
 function onCustomPrice(line: EditLine, field: "public_price" | "discounted_price" | "threshold_price", text: string) {
   const auto = line.discounted_price ?? line.public_price ?? 0;
   const follows = line.unit_price === auto;
-  const v = parseNumber(text);
+  const v = evalAmount(text);
   line[field] = text.trim() && v != null ? round2(v) : null;
   if (follows && field !== "threshold_price") {
     line.unit_price = line.discounted_price ?? line.public_price ?? 0;
@@ -215,6 +218,14 @@ function onDiscountInput(line: EditLine, text: string) {
 }
 
 function onPriceBlur(line: EditLine) {
+  if (isFormula(line.priceText) && evalAmount(line.priceText) == null) {
+    toast.add({
+      severity: "warn",
+      summary: "Formule illisible",
+      detail: `« ${line.priceText.trim()} » : prix gardé à ${editText(line.unit_price, 2)} €`,
+      life: 4000,
+    });
+  }
   line.unit_price = round2(line.unit_price);
   line.priceText = editText(line.unit_price, 2);
 }

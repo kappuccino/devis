@@ -251,6 +251,9 @@
 - [x] Commercial d'un client ponctuel : à la création (fenêtre « Client ponctuel ») et sur sa fiche,
   choisi parmi les commerciaux des fiches clients ou saisi.
 
+- [x] Formule dans le PU HT, comme sous Excel (« =24,3*0,4 », « =24,3*(1-40%) ») : + − * /,
+  parenthèses, %, remplacée par son résultat en quittant la case (frais et prix d'une réf libre aussi).
+
 - [ ] Lenteurs de saisie sur les gros devis (≈ 400 lignes, sensibles dès 200)
   - [x] Chaque ligne du tableau dans son propre composant (`QuoteLineRow`) : une frappe ne redessine
     que sa ligne.
