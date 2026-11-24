@@ -2295,7 +2295,7 @@ provide(LINE_ROW_ACTIONS, {
             <th style="width: 78px">ENEDIS</th>
             <th style="width: 100px">Référence</th>
             <th>Désignation</th>
-            <th style="width: 56px" class="num">Qté</th>
+            <th style="width: 48px" class="num">Qté</th>
             <template v-if="!isTemplate">
               <th style="width: 76px" class="num">Prix public</th>
               <th v-tooltip.top="'Prix public − remise CFA / CFO du devis'" style="width: 76px" class="num">Prix remisé</th>
@@ -2322,6 +2322,7 @@ provide(LINE_ROW_ACTIONS, {
               <th v-tooltip.top="'Remise supplémentaire sur le prix de la ligne ; négative pour une augmentation (ex. −5 = +5 %)'" style="width: 72px" class="num">
                 Rem. sup.
               </th>
+              <th v-tooltip.top="'PU HT après la remise sup. de la ligne'" style="width: 92px" class="num nowrap-head">Prix rem. sup.</th>
               <th ref="totalHeader" style="width: 100px" class="num">Total HT</th>
             </template>
             <th v-tooltip.top="'Ligne en option : hors total HT, comptée dans « Total options »'" style="width: 30px" class="select-cell narrow-head">
@@ -2827,6 +2828,11 @@ provide(LINE_ROW_ACTIONS, {
   position: sticky;
   top: 0;
   z-index: 2;
+}
+
+.lines th.nowrap-head {
+  white-space: nowrap;
+  padding-inline: 4px;
 }
 
 .lines th.fullscreen-cell {

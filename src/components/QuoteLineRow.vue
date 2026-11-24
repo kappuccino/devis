@@ -9,7 +9,7 @@ import Textarea from "primevue/textarea";
 import Button from "primevue/button";
 import type { ProductHit } from "../api";
 import { formatEuro, formatUnitPrice } from "../format";
-import { lineTotal } from "../quoteLines";
+import { lineTotal, netUnitPrice } from "../quoteLines";
 import { editText, isBelowThreshold, isCustom, LINE_ROW_ACTIONS, lpnTooltip, type EditLine } from "../editLine";
 
 const props = defineProps<{
@@ -64,7 +64,7 @@ const CUSTOM_TIP = "Référence libre (hors catalogue) : code ENEDIS, désignati
       <input type="checkbox" :checked="selected" aria-label="Sélectionner la ligne" @click="a.onSelectClick(line, $event)" />
     </td>
     <template v-if="line.kind === 'text'">
-      <td :colspan="isTemplate ? 5 : 13">
+      <td :colspan="isTemplate ? 5 : 14">
         <Textarea
           :id="`text-${line.key}`"
           v-model="line.designation"
@@ -80,7 +80,7 @@ const CUSTOM_TIP = "Référence libre (hors catalogue) : code ENEDIS, désignati
     </template>
     <!-- Titre : sépare le devis en paragraphes (gras, rouge ; plus grand sur le PDF). -->
     <template v-else-if="line.kind === 'title'">
-      <td :colspan="isTemplate ? 5 : 13">
+      <td :colspan="isTemplate ? 5 : 14">
         <InputText
           :id="`text-${line.key}`"
           v-model="line.designation"
@@ -93,7 +93,7 @@ const CUSTOM_TIP = "Référence libre (hors catalogue) : code ENEDIS, désignati
       <td v-if="!isTemplate"></td>
     </template>
     <template v-else>
-      <td :colspan="isTemplate ? 4 : 10">
+      <td :colspan="isTemplate ? 4 : 11">
         <InputText v-model="line.designation" fluid size="small" class="subtotal-label" />
       </td>
       <td v-if="!isTemplate" class="num subtotal-amount">{{ formatEuro(subtotal) }}</td>
@@ -293,6 +293,8 @@ const CUSTOM_TIP = "Référence libre (hors catalogue) : code ENEDIS, désignati
           <span v-if="line.discountText.trim()">%</span>
         </div>
       </td>
+      <!-- PU HT après la remise sup. de la ligne (vide sans remise sup.). -->
+      <td class="num">{{ line.product_ref && line.discount ? formatUnitPrice(netUnitPrice(line.unit_price, line.discount)) : "" }}</td>
       <td class="num">{{ line.product_ref && line.quantity != null ? formatEuro(lineTotal(line)) : "" }}</td>
     </template>
     <td class="select-cell">

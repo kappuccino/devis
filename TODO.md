@@ -254,6 +254,9 @@
 - [x] Formule dans le PU HT, comme sous Excel (« =24,3*0,4 », « =24,3*(1-40%) ») : + − * /,
   parenthèses, %, remplacée par son résultat en quittant la case (frais et prix d'une réf libre aussi).
 
+- [x] Devis : colonne « Prix rem. sup. » (PU HT après la remise sup. de la ligne, vide sans remise),
+  entre « Rem. sup. » et « Total HT » ; place prise sur la colonne Qté et la désignation.
+
 - [ ] Lenteurs de saisie sur les gros devis (≈ 400 lignes, sensibles dès 200)
   - [x] Chaque ligne du tableau dans son propre composant (`QuoteLineRow`) : une frappe ne redessine
     que sa ligne.

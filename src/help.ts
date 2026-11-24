@@ -54,7 +54,7 @@ export const HELP: HelpSection[] = [
       },
       {
         title: "Prix, remises et prix seuil",
-        text: "Le PU HT reste modifiable. Remise supplémentaire possible par ligne — négative pour une augmentation (ex. −5 = +5 % ; sur le PDF, le PU HT inclut l'augmentation et aucune remise n'apparaît) —, et remise globale sur les produits (les frais ne sont jamais remisés). Une ligne sous le prix seuil est signalée en rouge ; le prix seuil n'est jamais imprimé.",
+        text: "Le PU HT reste modifiable. Remise supplémentaire possible par ligne (colonne « Rem. sup. ») — négative pour une augmentation (ex. −5 = +5 % ; sur le PDF, le PU HT inclut l'augmentation et aucune remise n'apparaît) — ; la colonne « Prix rem. sup. » affiche alors le PU HT après cette remise (vide sans remise sup.), et remise globale sur les produits (les frais ne sont jamais remisés). Une ligne sous le prix seuil est signalée en rouge ; le prix seuil n'est jamais imprimé.",
       },
       {
         title: "Formule dans le PU HT",
